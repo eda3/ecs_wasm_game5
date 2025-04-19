@@ -68,7 +68,7 @@ pub fn apply_game_state(
         let player_entity = Entity(player_data.id as usize); // PlayerId(u32) を usize にキャスト
         world.create_entity_with_id(player_entity); // 存在しなければ作成
         // Player コンポーネントを追加/更新
-        world.add_component(player_entity, Player { name: player_data.name });
+        world.add_component(player_entity, Player { name: player_data.name, is_current_turn: false });
     }
 
     // --- 3. 新しいカード情報を反映 --- 
