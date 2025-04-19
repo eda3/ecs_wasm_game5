@@ -95,11 +95,83 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'MakeMove':
-                    // TODO: カード移動のリクエストを処理するロジック
-                    console.log(`  Player ${ws.playerId} requested a move:`, parsedMessage.payload);
-                    // 現状は受け取ったログを出すだけ
-                    // 将来的には、ここで gameState.cards を更新し、
-                    // broadcastGameStateUpdate(); を呼ぶことになる。
+                    const { moved_entity, target_stack } = parsedMessage.payload || {};
+                    // ペイロードに必要な情報があるかチェック
+                    if (moved_entity === undefined || target_stack === undefined || moved_entity.id === undefined) { // moved_entity.id もチェック
+                        console.error('  Invalid MakeMove payload received:', parsedMessage.payload);
+                        // (任意) エラーメッセージをクライアントに送り返す
+                        // ws.send(JSON.stringify({ type: 'MoveRejected', payload: { reason: 'Invalid payload' } }));
+                        break;
+                    }
+
+                    // --- 1. 動かすカードを探す ---                    
+                    const movedCardIndex = gameState.cards.findIndex(card => card.entity && card.entity.id === moved_entity.id); // Rust側のEntityは { id: usize } だったはず
+
+                    if (movedCardIndex === -1) {
+                        console.error(`  MakeMove Error: Moved card with entity ID ${moved_entity.id} not found!`);
+                        // ws.send(JSON.stringify({ type: 'MoveRejected', payload: { reason: 'Card not found' } }));
+                        break;
+                    }
+
+                    const movedCard = gameState.cards[movedCardIndex];
+                    // 元の情報をディープコピーしておく（移動元判定のため）
+                    const oldStackType = movedCard.stack_type;
+                    const oldStackIndex = movedCard.stack_index;
+                    const oldPositionInStack = movedCard.position_in_stack;
+                    console.log(`  Processing move for Card ID ${movedCard.entity.id} (${movedCard.rank} of ${movedCard.suit}) from ${oldStackType}${oldStackIndex !== null ? '[' + oldStackIndex + ']' : ''} pos ${oldPositionInStack}`);
+                    console.log(`  Target Stack: ${target_stack.stack_type}${target_stack.stack_index !== null ? '[' + target_stack.stack_index + ']' : ''}`);
+
+                    // --- 2. 新しい StackInfo を計算 ---                    
+                    const newStackType = target_stack.stack_type; // stack_type を取得
+                    const newStackIndex = target_stack.stack_index; // stack_index を取得 (Tableau/Foundation の場合に値が入る)
+
+                    // 新しい position_in_stack を計算
+                    let maxPosInTarget = -1;
+                    gameState.cards.forEach(card => {
+                        // 自分自身は除外して計算
+                        if (card.entity.id !== movedCard.entity.id &&
+                            card.stack_type === newStackType &&
+                            card.stack_index === newStackIndex) // stack_index も比較 (null 同士もOK)
+                        {
+                            if (card.position_in_stack > maxPosInTarget) {
+                                maxPosInTarget = card.position_in_stack;
+                            }
+                        }
+                    });
+                    const newPositionInStack = maxPosInTarget + 1;
+
+                    // --- 3. gameState.cards を更新 ---                    
+                    movedCard.stack_type = newStackType;
+                    movedCard.stack_index = newStackIndex; // null か 数値
+                    movedCard.position_in_stack = newPositionInStack;
+                    // 表向きにするかどうか？ (例: Foundation に置いたら必ず表)
+                    // movedCard.is_face_up = true; // 必要に応じて追加
+
+                    console.log(`  Updated Card ID ${movedCard.entity.id} stack to ${newStackType}${newStackIndex !== null ? '[' + newStackIndex + ']' : ''} pos ${newPositionInStack}`);
+
+                    // --- 4. 移動元の山に残ったカードを表にする処理 ---                    
+                    if (oldStackType === 'Tableau' && oldPositionInStack > 0) {
+                        const positionToReveal = oldPositionInStack - 1;
+                        // 同じ Tableau の山 (oldStackIndex) の、一つ下 (positionToReveal) のカードを探す
+                        const cardToRevealIndex = gameState.cards.findIndex(card =>
+                            card.stack_type === oldStackType &&
+                            card.stack_index === oldStackIndex &&
+                            card.position_in_stack === positionToReveal
+                        );
+
+                        if (cardToRevealIndex !== -1) {
+                            const cardToReveal = gameState.cards[cardToRevealIndex];
+                            if (!cardToReveal.is_face_up) {
+                                cardToReveal.is_face_up = true;
+                                console.log(`  Revealed card ID ${cardToReveal.entity.id} (${cardToReveal.rank} of ${cardToReveal.suit}) at old position.`);
+                            }
+                        } else {
+                            console.log(`  No card found to reveal at ${oldStackType}[${oldStackIndex}] pos ${positionToReveal}.`);
+                        }
+                    }
+
+                    // --- 5. 全員に更新されたゲーム状態をブロードキャスト ---                    
+                    broadcastGameStateUpdate();
                     break;
 
                 case 'RequestGameState':
@@ -150,12 +222,12 @@ function broadcastGameStateUpdate() {
         type: 'GameStateUpdate',
         payload: {
             current_game_state: {
-                players: Object.values(gameState.players),
+                players: Object.values(gameState.players), // Object.values で配列に変換
                 cards: gameState.cards,
             }
         }
     };
-    broadcast(JSON.stringify(updateMessage));
+    broadcast(JSON.stringify(updateMessage)); // ブロードキャストヘルパーを使う
 }
 
 console.log("WebSocket server setup complete. Waiting for connections...👂"); 

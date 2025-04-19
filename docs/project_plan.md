@@ -31,7 +31,7 @@
 - [x] レンダリング準備: JSから定期的にWASMのゲーム状態を取得し、コンソール等に表示 (デバッグ用) // bootstrap.js のボタンと定期更新で部分的に実装！⚙️
 - [x] レンダリング準備: Canvas や DOM を使った基本的なカード描画 (JS側) // bootstrap.js と style.css で実装！🃏
 
-## フェーズ 3: ネットワーク実装 🌐🤝 (ほぼ完了)
+## フェーズ 3: ネットワーク実装 🌐🤝 (完了！ 🎉)
 
 - [x] 通信プロトコル定義: `ClientMessage` (クライアント → サーバー) の定義 (JoinGame, MakeMove など) // ProvideInitialState追加済！✅
 - [x] 通信プロトコル定義: `ServerMessage` (サーバー → クライアント) の定義 (GameJoined, GameStateUpdate, MoveRejected など)
@@ -54,9 +54,9 @@
 - [x] サーバー側(JS): `JoinGame` メッセージ受信処理と `GameJoined` 応答実装 // server/ws_server.js で実装！📥 & gameState.cards 送信するように修正！✅
 - [x] サーバー側(JS): プレイヤーリストの管理と `PlayerJoined`/`PlayerLeft` のブロードキャスト実装 // server/ws_server.js で実装！💾
 - [x] サーバー側(JS): ゲーム状態管理: カード情報 (`gameState.cards`) の保持と初期化 // server/ws_server.js で `ProvideInitialState` 受信時に設定するように変更！✅
-- [ ] サーバー側(JS): `MakeMove` メッセージ受信処理 (今は無視)
-- [ ] サーバー側(JS): カード移動を `gameState.cards` に反映させるロジック
-- [ ] サーバー側(JS): ゲーム状態の変更を全クライアントに通知する `GameStateUpdate` メッセージのブロードキャスト実装
+- [x] サーバー側(JS): `MakeMove` メッセージ受信処理 // server/ws_server.js で実装！✅
+- [x] サーバー側(JS): カード移動を `gameState.cards` に反映させるロジック // server/ws_server.js で基本ロジック実装！✅
+- [x] サーバー側(JS): ゲーム状態の変更を全クライアントに通知する `GameStateUpdate` メッセージのブロードキャスト実装 // server/ws_server.js で `broadcastGameStateUpdate()` を呼び出すように実装！✅
 
 ## フェーズ 4: ソリティアのルールとインタラクション実装 🎮👆
 
