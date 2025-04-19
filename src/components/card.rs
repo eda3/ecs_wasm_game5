@@ -58,6 +58,28 @@ pub enum Rank {
     King,    // K (13 扱い)
 }
 
+// ↓↓↓ 逆方向の Rank の From トレイト実装を追加！ ↓↓↓
+impl From<crate::component::Rank> for Rank {
+    fn from(component_rank: crate::component::Rank) -> Self {
+        match component_rank {
+            crate::component::Rank::Ace => Rank::Ace,
+            crate::component::Rank::Two => Rank::Two,
+            crate::component::Rank::Three => Rank::Three,
+            crate::component::Rank::Four => Rank::Four,
+            crate::component::Rank::Five => Rank::Five,
+            crate::component::Rank::Six => Rank::Six,
+            crate::component::Rank::Seven => Rank::Seven,
+            crate::component::Rank::Eight => Rank::Eight,
+            crate::component::Rank::Nine => Rank::Nine,
+            crate::component::Rank::Ten => Rank::Ten,
+            crate::component::Rank::Jack => Rank::Jack,
+            crate::component::Rank::Queen => Rank::Queen,
+            crate::component::Rank::King => Rank::King,
+        }
+    }
+}
+// ↑↑↑ 逆方向の Rank の From トレイト実装を追加！ ↑↑↑
+
 /// カードそのものを表すコンポーネントだよ！🃏
 ///
 /// これがエンティティに付けられる「データ」になるんだ。
