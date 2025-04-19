@@ -11,12 +11,15 @@ use js_sys::Error;
 
 use crate::world::World;
 use crate::network::{NetworkManager, ConnectionStatus};
-use crate::protocol::{ServerMessage, PlayerId};
+use crate::protocol::{
+    ServerMessage, PlayerId, GameStateData, PlayerData, CardData, PositionData, StackType
+};
 use crate::systems::deal_system::DealInitialCardsSystem;
 use crate::components::dragging_info::DraggingInfo;
 use crate::components::card::Card;
-use crate::components::stack::{StackInfo, StackType};
+use crate::components::stack::StackInfo;
 use crate::components::position::Position;
+use crate::components::player::Player;
 use crate::entity::Entity;
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
@@ -54,7 +57,7 @@ impl GameApp {
         // println! マクロなどは使える
         println!("GameApp: Initializing..."); // 代わりに println! を使用
 
-        // --- World, Network, Canvas の初期化は init_handler に委譲 --- 
+        // --- World, Network, Canvas の初期化は init_handler に委譲 ---
         let world_arc = super::init_handler::initialize_world(); // app:: -> super::
         let message_queue_arc = Arc::new(Mutex::new(VecDeque::new()));
         let network_manager_arc = super::init_handler::initialize_network(Arc::clone(&message_queue_arc)); // app:: -> super::
@@ -63,7 +66,7 @@ impl GameApp {
         let (canvas, context) = super::init_handler::initialize_canvas() // app:: -> super::
             .expect("Failed to initialize canvas and context");
 
-        // --- その他のフィールド初期化 --- 
+        // --- その他のフィールド初期化 ---
         let my_player_id_arc = Arc::new(Mutex::new(None));
         let deal_system = DealInitialCardsSystem::default();
         let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
@@ -129,53 +132,135 @@ impl GameApp {
         );
     }
 
-    // WASM から World の状態を取得して JSON 文字列で返す (デバッグ・描画用)
+    /// WASM 側 (`GameApp`) が保持しているゲームの世界 (`World`) の現在の状態を、
+    /// JSON 文字列形式で取得するためのメソッドだよ！ JavaScript 側から呼び出して、
+    /// デバッグ目的でコンソールに表示したり、画面描画に使ったりすることを想定してるよ！ ✨
+    ///
+    /// # 戻り値 (Return Value)
+    /// - `Ok(String)`: `World` の状態を表す `GameStateData` を JSON 文字列に変換して返すよ！成功！🎉
+    /// - `Err(JsValue)`: 何か問題が発生した場合（`World` のロック失敗、JSON への変換失敗など）は、
+    ///                  JavaScript 側でエラーとして扱える `JsValue` を返すよ。失敗！😭
+    ///
+    /// # 処理の流れ (Process Flow)
+    /// 1. `World` のデータを安全に読み書きするために、`Mutex` をロックするよ。(`lock().expect()` は仮。本当は `?` でエラー伝播したいけど、`wasm-bindgen` の制約で少し工夫が必要かも)
+    /// 2. `World` から「プレイヤー (`Player`)」コンポーネントを持つ全てのエンティティを取得するよ。
+    /// 3. 各プレイヤーエンティティから `PlayerData` を作るよ。`Player` コンポーネントから名前などを取得する。
+    /// 4. `World` から「カード (`Card`)」コンポーネントを持つ全てのエンティティを取得するよ。
+    /// 5. 各カードエンティティから `CardData` を作るよ。`Card`, `StackInfo`, `Position` コンポーネントから必要な情報を取得する。
+    /// 6. 作成した `PlayerData` のリストと `CardData` のリストを使って、`GameStateData` 構造体のインスタンスを作るよ。
+    /// 7. `GameStateData` インスタンスを `serde_json::to_string` を使って JSON 文字列に変換（シリアライズ）するよ。
+    /// 8. 成功したら JSON 文字列を `Ok` で包んで、失敗したらエラー情報を `Err(JsValue)` で包んで返すよ。
+    ///
+    /// # 関数型スタイルについて (Functional Style Notes)
+    /// - `World` からエンティティリストを取得した後、`iter()`, `map()`, `filter_map()`, `collect()` などの
+    ///   イテレータメソッドを積極的に使って、データを変換・収集していくよ！ これは Rust でよく使われるイディオム（慣用句）だよ！ ✨
+    /// - `for` ループを完全に排除するわけじゃないけど、データの変換処理は `map` とかで書くとスッキリすることが多いよ！ 👍
     #[wasm_bindgen]
-    pub fn get_world_state_json(&self) -> String {
-        println!("GameApp: get_world_state_json called.");
-        let world = self.world.lock().expect("Failed to lock world for getting state");
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
-        println!("  Found {} card entities. Preparing JSON data...", card_entities.len());
-        for &entity in &card_entities {
-            let card_opt = world.get_component::<Card>(entity);
-            let stack_info_opt = world.get_component::<StackInfo>(entity);
-            let position_opt = world.get_component::<Position>(entity);
+    pub fn get_world_state_json(&self) -> Result<String, JsValue> {
+        // デバッグ用にコンソールに出力！ (JavaScript の console.log みたいなもの)
+        println!("GameApp: get_world_state_json called. Preparing world state...");
 
-            if let (Some(card), Some(stack_info), Some(position)) = (card_opt, stack_info_opt, position_opt) {
-                let (stack_type_str, stack_index_json) = match stack_info.stack_type {
-                    StackType::Stock => ("Stock", serde_json::Value::Null),
-                    StackType::Waste => ("Waste", serde_json::Value::Null),
-                    StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
-                    StackType::Tableau(index) => ("Tableau", serde_json::json!(index)),
-                    StackType::Hand => ("Hand", serde_json::Value::Null),
-                };
-                let card_json = serde_json::json!({
-                    "entity_id": entity.0,
-                    "suit": format!("{:?}", card.suit),
-                    "rank": format!("{:?}", card.rank),
-                    "is_face_up": card.is_face_up,
-                    "stack_type": stack_type_str,
-                    "stack_index": stack_index_json,
-                    "order": stack_info.position_in_stack,
-                    "x": position.x,
-                    "y": position.y,
-                });
-                cards_json_data.push(card_json);
-            } else {
-                // コンポーネントが見つからない場合の処理 (エラーログなど)
-                eprintln!("Warning: Components not found for entity {:?}", entity);
-            }
-        }
-        println!("  Card data preparation complete.");
-        let final_json = serde_json::json!({ "cards": cards_json_data });
-        match serde_json::to_string(&final_json) {
-            Ok(json_string) => { println!("  Successfully serialized world state to JSON."); json_string }
-            Err(e) => {
-                eprintln!("Error serializing world state to JSON: {}", e);
-                serde_json::json!({ "error": "Failed to serialize world state", "details": e.to_string() }).to_string()
-            }
-        }
+        // 1. World の Mutex をロックする！ 🔑
+        //   - `self.world` は `Arc<Mutex<World>>` 型だよ。複数の場所から安全に World を使うための仕組み。
+        //   - `.lock()` で Mutex のロックを取得しようとする。他の誰かがロックしてたら、解除されるまで待つよ。
+        //   - `.map_err(|e| ...)`: もしロック取得に失敗 (前の所有者がパニックしたとか) したら...
+        //     - `e.to_string()` でエラー内容を文字列にして、
+        //     - `Error::new()` で JavaScript の Error オブジェクトを作って、
+        //     - `JsValue::from()` でそれを `JsValue` に変換して `Err` として返すよ。JS にエラーを伝える！
+        //   - `?` 演算子: `Result` が `Ok(値)` なら中の値を取り出し、`Err(エラー)` なら即座に関数からそのエラーを返す、超便利なやつ！ ✨
+        let world = self.world.lock()
+            .map_err(|e| JsValue::from(Error::new(&format!("Failed to lock world: {}", e))))?;
+
+        // --- 2. プレイヤー (`Player`) データの収集 ---
+        println!("  Collecting player data...");
+        // `world.get_all_entities_with_component::<Player>()` で Player コンポーネントを持つ全エンティティIDを取得。
+        let player_entities = world.get_all_entities_with_component::<Player>();
+        // `iter()`: エンティティIDのリストをイテレータ（順番に処理できるやつ）に変換。
+        // `filter_map(|&entity| ...)`: 各エンティティID (`entity`) に対して処理を行う。
+        //   - `world.get_component::<Player>(entity)` で Player コンポーネントを取得 (Option<Player> が返る)。
+        //   - `map(|player| ...)`: もし Player コンポーネントが取得できたら (`Some(player)`)、PlayerData を作る。
+        //     - `PlayerData { id: entity.0 as PlayerId, name: player.name.clone() }`
+        //       - `entity.0` は Entity 型の中の usize 値。それを PlayerId (u32) にキャスト。
+        //       - `player.name.clone()`: Player コンポーネントから名前をコピーしてくる。
+        //   - `filter_map` は `Some(PlayerData)` だけを集めて、`None` は無視する。万が一 Player が取れなくても大丈夫！
+        // `collect::<Vec<_>>()`: イテレータの結果 (PlayerData) を Vec (リスト) に集める。
+        let players: Vec<PlayerData> = player_entities.iter()
+            .filter_map(|&entity| {
+                world.get_component::<Player>(entity).map(|player| {
+                    PlayerData {
+                        id: entity.0 as PlayerId, // Entity (usize) から PlayerId (u32) へキャスト
+                        name: player.name.clone(), // Player コンポーネントから名前をコピー
+                    }
+                })
+            })
+            .collect();
+        println!("    Found {} players.", players.len());
+
+        // --- 3. カード (`Card`) データの収集 ---
+        println!("  Collecting card data...");
+        // Player と同様に、Card コンポーネントを持つ全エンティティIDを取得。
+        let card_entities = world.get_all_entities_with_component::<Card>();
+        // `filter_map` を使って、必要なコンポーネント (Card, StackInfo, Position) が
+        // 全て揃っているエンティティだけを `CardData` に変換して集めるよ！
+        let cards: Vec<CardData> = card_entities.iter()
+            .filter_map(|&entity| {
+                // カードに必要なコンポーネントをまとめて取得しようとする
+                let card_opt = world.get_component::<Card>(entity);
+                let stack_info_opt = world.get_component::<StackInfo>(entity);
+                let position_opt = world.get_component::<Position>(entity);
+
+                // `if let` を使って、全てのコンポーネントが `Some` (取得成功) だったら中身を取り出す。
+                // 一つでも `None` (取得失敗) だったら、この `filter_map` のクロージャは `None` を返すので、
+                // そのエンティティのデータは無視されるよ。安全！ 👍
+                if let (Some(card), Some(stack_info), Some(position)) = (card_opt, stack_info_opt, position_opt) {
+                    // 全て取得成功！ `CardData` を構築する。
+                    Some(CardData {
+                        entity, // エンティティID そのもの
+                        suit: card.suit,
+                        rank: card.rank,
+                        is_face_up: card.is_face_up,
+                        stack_type: stack_info.stack_type, // StackInfo から取得
+                        position_in_stack: stack_info.position_in_stack, // StackInfo から取得
+                        position: PositionData { // PositionData を作る
+                            x: position.x, // Position から取得
+                            y: position.y, // Position から取得
+                        },
+                    })
+                } else {
+                    // 必要なコンポーネントが揃っていなかった場合 (普通はありえないはずだけど念のため)
+                    // エラーログを出力して、このエンティティはスキップ (`None` を返す)
+                    eprintln!("Warning: Could not retrieve all required components (Card, StackInfo, Position) for entity {:?}. Skipping.", entity);
+                    None
+                }
+            })
+            .collect(); // イテレータの結果を Vec<CardData> に集める。
+        println!("    Found {} cards with complete data.", cards.len());
+
+
+        // --- 4. GameStateData の構築 ---
+        println!("  Constructing GameStateData...");
+        // 集めたプレイヤーデータとカードデータを使って、`GameStateData` を作るよ！
+        let game_state_data = GameStateData {
+            players, // さっき集めた players リスト
+            cards,   // さっき集めた cards リスト
+            // TODO: 必要なら他のフィールド (例: current_turn, game_status) も World から取得して追加する
+        };
+
+        // --- 5. JSON 文字列へのシリアライズ ---
+        println!("  Serializing GameStateData to JSON string...");
+        // `serde_json::to_string` を使って `GameStateData` を JSON 文字列に変換！ ✨
+        // これも失敗する可能性があるので `Result` が返ってくる。
+        serde_json::to_string(&game_state_data)
+            // `map_err` で、もし `serde_json` がエラー (Err) を返したら...
+            .map_err(|e| {
+                // エラー内容をコンソールに出力 (eprintln! はエラー出力用)
+                eprintln!("Error serializing GameStateData to JSON: {}", e);
+                // JavaScript の Error オブジェクトを作って JsValue に変換して返す！
+                JsValue::from(Error::new(&format!("Failed to serialize game state: {}", e)))
+            })
+        // `map_err` が成功した場合は `Ok(json_string)` がそのまま返る。
+        // `map_err` が失敗した場合は `Err(js_value)` が返る。
+        // これで関数の戻り値の型 `Result<String, JsValue>` にピッタリ合うね！ 🎉
     }
 
     // 接続状態を文字列で返す (デバッグ用)
