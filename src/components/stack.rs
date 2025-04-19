@@ -1,25 +1,42 @@
 // src/components/stack.rs
 
+// serde を使うためにインポート！Serialize と Deserialize トレイトを使うよ。
+use serde::{Serialize, Deserialize};
+
 /// カードが存在する場所の種類を示す Enum だよ。
 /// これを使って、カードが山札にあるのか、場札の何列目にあるのか、などを区別するよ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Clone, Copy: 値を簡単に複製できるようにする。
+/// Debug: println! などで中身をデバッグ表示できるようにする。
+/// PartialEq, Eq: == 演算子で比較できるようにする。
+/// Serialize, Deserialize: この Enum を JSON 形式に変換したり、JSON から戻したりできるようにする！これが重要！✨
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StackType {
-    Stock,       // 山札 (まだ配られていないカード)
-    Waste,       // 山札からめくられたカード置き場 (クロンダイク固有)
-    Tableau(u8), // 場札 (列番号 0-6)
-    Foundation(u8), // 組札 (置き場番号 0-3, スートとは直接紐付けない方が柔軟かも？)
+    /// 場札 (Tableau) だよ。7つの列があるので、列番号 (0-6) を持つ。
+    Tableau(u8),
+    /// 組札 (Foundation) だよ。スートごとに4つある。
+    /// Suit 型を直接使うと依存関係が複雑になるかも？
+    /// とりあえず番号 (0-3) で管理してみようかな？
+    /// 0: Heart, 1: Diamond, 2: Club, 3: Spade みたいな感じで！
+    Foundation(u8),
+    /// 山札 (Stock) だよ。プレイヤーがカードを引く元の場所。
+    Stock,
+    /// 山札からめくったカードを置く場所 (Waste) だよ。
+    /// クロンダイクでは通常1つだけど、ゲームによっては複数あるかも？
+    Waste,
     // 将来的には： Hand(PlayerId), DiscardPile など他のゲーム用に拡張できる
 }
 
 /// カードのスタックに関する情報を持つコンポーネントだよ。
 /// カードエンティティにこれを持たせることで、そのカードがどこにあるか、
 /// そのスタックの中で何番目か、などを管理するよ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Component トレイトを実装して、ECS で使えるようにする。
+use crate::component::Component;
+
+#[derive(Debug, Clone)] // デバッグ表示とクローンができるように
 pub struct StackInfo {
-    /// カードが現在属しているスタックの種類。
+    /// カードが属しているスタックの種類。
     pub stack_type: StackType,
-    /// そのスタック内での位置 (一番下が 0)。
-    /// 例えば、場札の一番上のカードは position_in_stack が大きい値になる。
+    /// そのスタックの中で、カードが下から何番目に積まれているか (0 が一番下)。
     pub position_in_stack: u8,
 }
 
@@ -30,8 +47,8 @@ impl StackInfo {
     }
 }
 
-// StackInfo を Component トレイトに適合させる (no-op の実装でOK)
-use crate::component::Component;
+// StackInfo をコンポーネントとして使えるように、Component トレイトを実装！
+// 中身は空でOK！マーカーとして機能するよ。
 impl Component for StackInfo {} // これで World に登録できるようになる
 
 #[cfg(test)]
