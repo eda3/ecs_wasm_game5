@@ -160,6 +160,26 @@ impl MoveCardSystem {
     ) {
         println!("  カード {:?} を {:?} ({:?}) へ移動します！", moved_entity, target_entity, target_type);
 
+        // --- position_in_stack の計算を先にやる！ ---
+        // 移動先のスタックにあるカードの現在の position_in_stack の最大値を探す
+        let max_pos_in_target_stack = world // ここでは world は immutable borrow で OK
+            .get_all_entities_with_component::<StackInfo>()
+            .iter()
+            .filter_map(|&entity| {
+                // 移動しようとしているエンティティ自身は除外
+                if entity == moved_entity { return None; }
+                world.get_component::<StackInfo>(entity)
+                    .filter(|info| info.stack_type == target_type)
+                    .map(|info| info.position_in_stack)
+            })
+            .max();
+
+        // 新しい position_in_stack を計算
+        let new_position_in_stack = max_pos_in_target_stack.map_or(0, |max| max + 1);
+        println!("    移動先の最大 position_in_stack: {:?}, 新しい position: {}", max_pos_in_target_stack, new_position_in_stack);
+        // --- position_in_stack の計算 ここまで ---
+
+        // 1. 移動するカードの Position コンポーネントを更新
         if let Some(target_pos) = target_pos_opt {
             if let Some(moved_pos_mut) = world.get_component_mut::<Position>(moved_entity) {
                 let y_offset = 0.0;
@@ -179,16 +199,26 @@ impl MoveCardSystem {
             }
         }
 
-        if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) {
+        // 2. 移動するカードの StackInfo コンポーネントを更新
+        //    (計算済みの new_position_in_stack を使う！)
+        if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) { // ここで mutable borrow 開始
              let old_stack_type = stack_info.stack_type;
+
+             // 計算済みの値で更新！
              stack_info.stack_type = target_type;
-             let new_position_in_stack = 0;
-             stack_info.position_in_stack = new_position_in_stack;
-            println!("    {:?} の StackInfo を {:?} (元: {:?}) に更新しました。", moved_entity, stack_info, old_stack_type);
-        } else {
+             stack_info.position_in_stack = new_position_in_stack; // 計算済みの値を使う
+
+             // TODO: 移動元のスタックに残ったカードの position_in_stack も詰める必要があるかも？
+             println!("    {:?} の StackInfo を {:?} (元: {:?}) に更新しました。", moved_entity, stack_info, old_stack_type);
+        } else { // mutable borrow はここで終了
             eprintln!("MoveCardSystem: 移動元 {:?} の StackInfo が見つかりません！", moved_entity);
-            return;
+            return; // StackInfo がないと状態更新できない
         }
+
+        // 3. 必要ならカードの表裏状態 (is_face_up) を更新
+        // 例: 場札で下に隠れていたカードを表にする
+        // TODO: 移動元のスタックに残った一番上のカードが裏向きなら表にする処理が必要
+        //       そのためには、移動元スタックの情報をちゃんと取得・更新する必要がある。
 
         println!("  状態更新完了！");
     }
