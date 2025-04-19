@@ -255,7 +255,7 @@ pub fn find_automatic_foundation_move<'a>(
         if can_move_to_foundation(card_to_move, foundation_top_card, foundation_suit) {
             log(&format!("  Found valid foundation [{}] for {:?}. Top card: {:?}", i, card_to_move, foundation_top_card));
             // 移動可能な Foundation が見つかったので、StackType::Foundation を返す
-            return Some(target_stack_type);
+            return Some(StackType::Foundation(i));
         }
     }
 
@@ -409,8 +409,8 @@ mod tests {
         log("Scenario 1: All foundations empty");
         // assert 文では world を渡す (自作World)
         // 現在 get_foundation_top_card が None を返すため、Ace の移動だけ成功するはず
-        assert_eq!(find_automatic_foundation_move(&ace_hearts, &world), Some(StackType::Foundation), "Ace of Hearts should move to empty Heart foundation (idx 0)");
-        assert_eq!(find_automatic_foundation_move(&ace_spades, &world), Some(StackType::Foundation), "Ace of Spades should move to empty Spade foundation (idx 3)");
+        assert_eq!(find_automatic_foundation_move(&ace_hearts, &world), Some(StackType::Foundation(0)), "Ace of Hearts should move to empty Heart foundation (idx 0)");
+        assert_eq!(find_automatic_foundation_move(&ace_spades, &world), Some(StackType::Foundation(3)), "Ace of Spades should move to empty Spade foundation (idx 3)");
         assert_eq!(find_automatic_foundation_move(&two_hearts, &world), None, "Two of Hearts cannot move to any empty foundation");
 
 
@@ -422,7 +422,7 @@ mod tests {
         */
         // assert 文。get_foundation_top_card が未実装なので、これも空の場合と同じ結果になるはず。
         assert_eq!(find_automatic_foundation_move(&two_hearts, &world), None, "Two of Hearts cannot move yet (get_foundation_top_card not implemented)");
-        assert_eq!(find_automatic_foundation_move(&ace_spades, &world), Some(StackType::Foundation), "Ace of Spades should move to empty Spade foundation (idx 3)");
+        assert_eq!(find_automatic_foundation_move(&ace_spades, &world), Some(StackType::Foundation(3)), "Ace of Spades should move to empty Spade foundation (idx 3)");
         // world.despawn(card_entity_ace_h).unwrap(); // 自作World の despawn を使う (仮)
 
 

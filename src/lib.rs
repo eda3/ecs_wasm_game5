@@ -493,8 +493,8 @@ impl GameApp {
                 is_face_up: card.is_face_up,
                 // TODO: components::stack::StackType から protocol::StackType への変換が必要
                 stack_type: match stack_info.stack_type {
-                    StackType::Tableau(_) => protocol::StackType::Tableau,
-                    StackType::Foundation(_) => protocol::StackType::Foundation,
+                    StackType::Tableau(index) => protocol::StackType::Tableau(index),
+                    StackType::Foundation(index) => protocol::StackType::Foundation(index),
                     StackType::Stock => protocol::StackType::Stock,
                     StackType::Waste => protocol::StackType::Waste,
                     StackType::Hand => protocol::StackType::Hand,
@@ -542,12 +542,16 @@ impl GameApp {
              // ★ Position も取得！
             let position = world.get_component::<Position>(entity).expect("Position component not found");
 
+            // JSONに変換する際、StackTypeの各バリアントを文字列と対応するインデックス（またはNull）のタプルに変換する
             let (stack_type_str, stack_index_json) = match stack_info.stack_type {
-                StackType::Stock => ("Stock", serde_json::Value::Null),
-                StackType::Waste => ("Waste", serde_json::Value::Null),
-                StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
-                crate::component::StackType::Tableau => ("Tableau", serde_json::json!(stack_info.stack_index)),
-                crate::component::StackType::Hand => ("Hand", serde_json::Value::Null),
+                // Stock, Waste, Foundationはインデックスを持つタプルバリアントなので、(index)で値を取り出す
+                StackType::Stock => ("Stock", serde_json::Value::Null), // Stockにはインデックス不要
+                StackType::Waste => ("Waste", serde_json::Value::Null), // Wasteにもインデックス不要
+                StackType::Foundation(index) => ("Foundation", serde_json::json!(index)), // indexを使用
+                // Tableauもインデックスを持つタプルバリアント
+                StackType::Tableau(index) => ("Tableau", serde_json::json!(index)), // 誤: crate::component::StackType::Tableau, stack_info.stack_index -> 正: StackType::Tableau(index), index
+                // Handは単純なバリアント
+                StackType::Hand => ("Hand", serde_json::Value::Null), // 誤: crate::component::StackType::Hand
             };
             let card_json = serde_json::json!({
                 "entity_id": entity.0,
@@ -612,7 +616,7 @@ impl GameApp {
         };
 
         // ダブルクリックされたカードを取得
-        let card_to_move = match world_guard.get_component::<crate::component::Card>(entity) {
+        let card_to_move = match world_guard.get_component::<Card>(entity) {
             Some(card) => card.clone(), // Clone する!
             None => {
                 error(&format!("Card component not found for entity {:?} in handle_double_click_logic", entity));
