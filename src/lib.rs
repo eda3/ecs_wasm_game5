@@ -45,31 +45,28 @@ use crate::world::World; // <<< これを追加！
 use crate::component::{Component, ComponentStorage}; // ComponentStorage も追加しておく
 
 // components/ 以下の主要なコンポーネントを use 宣言！
-use crate::components::{ // Note the 's'
+// (ここで use したものは、このファイル内では直接型名で参照できる！)
+use crate::components::{ 
     card::{Card, Rank, Suit, create_standard_deck}, // Import specifics from card module
     position::Position,
     player::Player, // Import Player from components
     game_state::{GameState as GameLogicState, GameStatus}, // Import GameState/Status from components
     stack::{StackInfo, StackType}, // Import StackInfo/StackType from components
 };
-// DraggingInfo comes from crate::component
-use crate::component::DraggingInfo;
 
 // systems/ 以下のシステムを use 宣言！
-use crate::systems::{
+use crate::systems::{ 
     deal_system::DealInitialCardsSystem,
     // move_card_system::MoveCardSystem,
     // win_condition_system::WinConditionSystem,
 };
 
 // network と protocol 関連
-use crate::network::{NetworkManager, ConnectionStatus};
-// Import specifics from protocol instead of wildcard
 use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId, CardData, PositionData};
-// rules::* is likely not needed directly in lib.rs
 
 // Wasm specific types from crate::component
-use crate::component::{Suit as WasmSuit, Rank as WasmRank, StackType as WasmStackType, GameState as WasmGameState};
+// (DraggingInfo は component にしかないのでここで use する)
+use crate::component::{DraggingInfo, Suit as WasmSuit, Rank as WasmRank, StackType as WasmStackType, GameState as WasmGameState};
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -477,28 +474,48 @@ impl GameApp {
 
     /// 現在の World の状態から GameStateData を作成する
     fn get_initial_state_data(&self, world: &World) -> GameStateData {
-        log("GameApp: get_initial_state_data called.");
-        let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
-        let mut card_data_list = Vec::with_capacity(card_entities.len());
-        log(&format!("  Found {} card entities. Creating CardData list...", card_entities.len()));
+        log("GameApp: Generating initial game state data...");
+        let players = Vec::new(); // 初期状態ではプレイヤー情報は空？
+
+        // World から全ての Card エンティティと関連コンポーネントを取得
+        let card_entities = world.get_all_entities_with_component::<Card>();
+        let mut cards = Vec::with_capacity(card_entities.len());
+
         for &entity in &card_entities {
-            let card = world.get_component::<crate::component::Card>(entity).expect(&format!("Card component not found for entity {:?}", entity));
-            let stack_info = world.get_component::<crate::component::StackInfo>(entity).expect(&format!("StackInfo component not found for entity {:?}", entity));
-            let position = world.get_component::<crate::component::Position>(entity).expect(&format!("Position component not found for entity {:?}", entity));
-            let position_data = PositionData { x: position.x as f32, y: position.y as f32 };
-            let card_data = CardData {
-                entity, 
-                suit: card.suit.into(), // component::Suit -> card::Suit
-                rank: card.rank.into(), // component::Rank -> card::Rank
+            // 各エンティティから必要なコンポーネントを取得 (存在しない場合はエラー)
+            let card = world.get_component::<Card>(entity).expect(&format!("Card component not found for entity {:?}", entity));
+            let stack_info = world.get_component::<StackInfo>(entity).expect(&format!("StackInfo component not found for entity {:?}", entity));
+            let position = world.get_component::<Position>(entity).expect(&format!("Position component not found for entity {:?}", entity));
+
+            // CardData を作成して Vec に追加
+            cards.push(CardData {
+                entity,
+                suit: card.suit.into(), // components::card::Suit -> protocol::Suit
+                rank: card.rank.into(), // components::card::Rank -> protocol::Rank
                 is_face_up: card.is_face_up,
-                stack_type: stack_info.stack_type.into(), // component::StackType -> stack::StackType
-                position_in_stack: stack_info.position_in_stack, // u8
-                position: position_data, // f32 に変換済み
-            };
-            card_data_list.push(card_data);
+                // TODO: components::stack::StackType から protocol::StackType への変換が必要
+                stack_type: match stack_info.stack_type {
+                    StackType::Tableau(_) => protocol::StackType::Tableau,
+                    StackType::Foundation(_) => protocol::StackType::Foundation,
+                    StackType::Stock => protocol::StackType::Stock,
+                    StackType::Waste => protocol::StackType::Waste,
+                    StackType::Hand => protocol::StackType::Hand,
+                },
+                // TODO: StackInfo の position_in_stack は u8 なので String に変換？
+                //       protocol.rs の CardData.position_in_stack が String なら必要。
+                //       u8 のまま送るなら .to_string() は不要。
+                position_in_stack: stack_info.position_in_stack, //.to_string(),
+                position: PositionData {
+                    x: position.x as f64, // components::position::Position (f32) -> protocol::PositionData (f64?)
+                    y: position.y as f64,
+                },
+            });
         }
-        log("  CardData list created successfully.");
-        GameStateData { players: Vec::<PlayerData>::new(), cards: card_data_list, }
+
+        GameStateData {
+            players,
+            cards,
+        }
     }
 
     // 初期ゲーム状態をサーバーに送信するメソッド
