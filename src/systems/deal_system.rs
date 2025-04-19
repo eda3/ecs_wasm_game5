@@ -1,380 +1,319 @@
 // src/systems/deal_system.rs
 
-// === 使うものを宣言するよ！ ===
-// World: エンティティやコンポーネントを管理する世界の中心！🌍
-// components モジュール: カード(Card)とか場所(StackInfo)とか、色々なデータ部品(コンポーネント)が入ってるよ。🃏📍
-// card モジュール: 特にカードに関するもの (create_standard_deck 関数とか Suit, Rank 列挙型とか)
-// stack モジュール: カードを置く場所の種類 (StackType) とか、場所情報 (StackInfo)
-// system モジュール: システムの基本となるトレイト (今は使わないけど、将来的に使うかも！)
-// entity モジュール: エンティティ (ゲーム世界のモノを表すID)
-// rand クレート: カードをシャッフルするのに使うよ！🎲 (さっき追加したやつ！)
+// === 使うものたちを宣言！ (use 文) ===
+// これからコードの中で使う部品 (構造体、トレイト、関数とか) を他のファイルから持ってくるよ！
+// `crate::` は、このプロジェクト (クレート) の一番上の階層から見てるって意味だよ！
+
+// World: エンティティやコンポーネントを管理する、アタシたちのゲーム世界の"神様"みたいな存在！🌍
 use crate::world::World;
-use crate::components::{card::{self, Card}, position::Position, stack::{StackInfo, StackType}};
-// use crate::system::System; // 削除: 今は直接使わないのでコメントアウトまたは削除
+// components モジュールの中の card, position, stack サブモジュールにあるものをまとめて使う宣言！
+// Card: カードのスートやランク、表か裏かの情報を持つデータ部品。
+// Position: エンティティの画面上の座標 (x, y) を持つデータ部品。
+// StackInfo: カードがどの場所 (山札？場札？) の何番目にあるかの情報を持つデータ部品。
+// StackType: `StackInfo` の中で使う、場所の種類 (山札、場札、組札、捨て札) を表すマーカー。
+use crate::components::{card::{self, Card, Suit, Rank}, position::Position, stack::{StackInfo, StackType}};
+// Entity: ゲーム世界のモノ (カードとかプレイヤーとか) を識別するためのユニークなID。
 use crate::entity::Entity;
-use rand::seq::SliceRandom; // Vec (配列みたいなもの) の要素をシャッフルする機能 (shuffle) を使うために必要！
-use rand::thread_rng; // OS が提供する安全な乱数生成器を使うために必要！
-// ★追加: レイアウト定数を config::layout から使う！
+// rand クレート (外部ライブラリ) から、ランダム系の機能をもらうよ！
+// SliceRandom: 配列 (スライス) の要素をシャッフルする機能 (`shuffle` メソッド) を提供してくれる。
+use rand::seq::SliceRandom;
+// thread_rng: OSが提供する、暗号学的に安全な乱数生成器を使うための関数。
+use rand::thread_rng;
+// config::layout モジュールから、カード配置の座標とかオフセットの定数をもらうよ！レイアウト調整はこっちでやるのがスマート！✨
 use crate::config::layout::*;
-use crate::components::card::{Suit, Rank, ALL_SUITS, ALL_RANKS};
-// ↓↓↓ --- ここから不要な use 文をコメントアウト --- ↓↓↓
-// use crate::components::coordinates::Coordinates; // 古いコードの名残？今は使ってないからコメントアウト！🗑️
-// use crate::components::deck::Deck;             // 同上！🗑️
-// use crate::components::stock::Stock;           // 同上！🗑️
-// use crate::components::tableau::Tableau;         // 同上！🗑️
-// use crate::components::foundation::Foundation;     // 同上！🗑️
-// use crate::components::waste::Waste;           // 同上！🗑️
-// use bevy::prelude::*;                        // bevy クレートは使ってないからコメントアウト！🗑️
-// ↑↑↑ --- ここまで不要な use 文をコメントアウト --- ↑↑↑
-use crate::logic::deck::{create_standard_deck, shuffle_deck}; // デッキ操作関数を logic::deck からインポート
+// logic::deck モジュールから、デッキ作成とシャッフルのヘルパー関数をもらうよ！ロジックは別ファイルに分けるのがお作法！👍
+use crate::logic::deck::{create_standard_deck, shuffle_deck};
 
-// --- カード配置用の定数は config/layout.rs に移動したので削除！ ---
+// === 初期カード配置システム (DealInitialCardsSystem) ===
+// これが今回の主役！✨ ゲームが始まった時に、カードをシャッフルして場に配るっていう大事な役目を持ってる「システム」だよ！
+// ECSでいう「システム」は、特定のルールに基づいて World の中のコンポーネントを読み書きして、ゲームの状態を進める役割を持つんだ。
 
-// === 初期カード配置システム！ ===
-// ゲーム開始時に、山札と7つの場札にカードを配る役割を担うシステムだよ。
-// 構造体 (struct) は、関連するデータをまとめるためのもの。ここでは DealInitialCardsSystem という名前の空の構造体を作ってる。
-//メソッド (処理) を関連付けるために構造体を使ってる感じだね！
-#[derive(Default)] // `DealInitialCardsSystem::default()` で簡単にインスタンスを作れるようにするおまじない ✨
+// `#[derive(Default)]` は、`DealInitialCardsSystem::default()` って書くだけで、
+// この構造体のインスタンス (実体) を簡単に作れるようにしてくれる便利なおまじないだよ！🪄
+// 中にデータを持たない構造体だから、`Default` が自動で実装できるんだ。
+#[derive(Default)]
 pub struct DealInitialCardsSystem;
 
-// DealInitialCardsSystem にメソッド (関数みたいなもの) を実装していくよ！
+// `impl` ブロックを使って、`DealInitialCardsSystem` 構造体に関連するメソッド (関数みたいなもの) を定義していくよ！
 impl DealInitialCardsSystem {
-    /// ゲームの初期カード配置を実行する関数だよ！ 🎉
+    /// ゲームの初期カード配置を実行するメイン関数だよ！ 🎉 Let's deal! 🃏
+    /// この関数が呼ばれると、まっさらな World にソリティアの初期盤面が作られるんだ！
     ///
-    /// # 引数
-    /// - `world`: 可変参照 (&mut World)。World の中身 (エンティティやコンポーネント) を変更する必要があるから `&mut` が付いてるよ。
+    /// # 引数 (ひきすう)
+    /// - `world: &mut World`: ゲーム世界の管理人 `World` さんの **可変参照** (`&mut`) を受け取るよ。
+    ///   可変参照っていうのは、「`world` の中身を読み書きする権利をもらいますよ！」っていう意味。
+    ///   カードエンティティを作ったり、コンポーネントを追加したり、`world` の状態を変えるから `&mut` が必須なんだ！🔥
     ///
-    /// # 処理の流れ
-    /// 1. 新しいカードデッキ (52枚、全部裏向き) を作る。
-    /// 2. デッキをシャッフルする。
-    /// 3. 既存のカードエンティティがあれば削除する (念のためのお掃除🧹)。
-    /// 4. シャッフルされたデッキからカードを取り出して、クロンダイクのルールに従って配置していく。
-    ///    - 山札 (Stock): 24枚、全部裏向き。
-    ///    - 場札 (Tableau): 7列。1列目は1枚(表向き)、2列目は2枚(一番上だけ表向き)、... 7列目は7枚(一番上だけ表向き)。
-    /// 5. 各カードエンティティに `Card` コンポーネントと `StackInfo` コンポーネントを追加する。
+    /// # 処理の流れ (ざっくり！)
+    /// 1. **デッキ準備！**: まずは新品の52枚のカードデッキを用意して、よーくシャッフル！섞어섞어！🔀
+    /// 2. **お掃除タイム！**: もし前にプレイした時のカードが残ってたら大変だから、先に全部キレイにするよ！🧹
+    /// 3. **カード配置！**: シャッフルしたデッキからカードを一枚ずつ取り出して、ソリティア (クロンダイク) のルール通りに配置していくよ！
+    ///    - 場札 (Tableau): 7つの列に、1枚、2枚、...7枚って感じで配って、各列の一番上だけ表向きにする！👀
+    ///    - 山札 (Stock): 残ったカードは全部、山札に裏向きで積む！⛰️
+    /// 4. **情報付与！**: 配置したカード一枚一枚に、「私はスペードのエースだよ！」(`Card` コンポーネント)、「私は場札の3列目の2番目だよ！」(`StackInfo` コンポーネント)、「私の画面上の位置はここだよ！」(`Position` コンポーネント) っていう情報を `world` に登録していく！✍️
     pub fn execute(&self, world: &mut World) {
-        // --- 1. デッキの準備 ---
-        // card モジュールにある create_standard_deck 関数を呼び出して、52枚のカードデッキを作るよ。
-        // `mut` を付けてるから、後でシャッフル (中身の順番を変える) できる！
-        let mut deck_cards = create_standard_deck();
-        shuffle_deck(&mut deck_cards);
-        println!("🃏 デッキ作成完了！ ({}枚)", deck_cards.len()); // デバッグ用に枚数をログ出力！
+        println!("🚀 DealInitialCardsSystem: 実行開始！ 初期カード配置を始めます！");
 
-        // --- 2. 既存カードのクリア (念のため) ---
-        // ゲーム開始時に前のゲームのカードが残ってたら大変だから、先に掃除しておくよ！🧹
-        // `world.query_entities_with_component::<Card>()` で Card コンポーネントを持つ全てのエンティティIDを取得する。
-        // `collect::<Vec<_>>()` で取得したIDを一時的な Vec (配列みたいなの) に集める。
-        //   -> なぜ一時的な Vec に？: world の中身をループしながら world を変更しようとすると、Rust に怒られちゃう (借用規則違反)。
-        //      なので、先にIDだけ集めておいて、そのIDリストを使ってループするんだ。賢い！🧠
+        // --- 1. デッキの準備 --- ✨♠️♥️♦️♣️✨
+        // `logic/deck.rs` にある `create_standard_deck` 関数を呼び出して、52枚のカードデータ (Card 構造体のリスト) を作るよ。
+        // `let mut deck_cards` の `mut` は、「この変数 `deck_cards` の中身は後で変えるかもよ！」っていう印。
+        // シャッフルで順番を変えるから `mut` が必要！🔥
+        let mut deck_cards = create_standard_deck();
+        // 同じく `logic/deck.rs` の `shuffle_deck` 関数で、デッキをごちゃ混ぜにする！ランダム大事！🎲
+        // `&mut deck_cards` で、`deck_cards` の可変参照を渡してるよ。
+        shuffle_deck(&mut deck_cards); // <- こっちを使う！便利関数！
+        // もし `logic/deck.rs` に `shuffle_deck` がなかったら、こっちの rand クレートの直接的なやり方でもOK！👍
+        // let mut rng = thread_rng(); // 乱数生成器を用意して…
+        // deck_cards.shuffle(&mut rng); // shuffle メソッドで直接シャッフル！
+        println!("  🃏 デッキ作成 & シャッフル完了！ ({}枚)", deck_cards.len());
+
+        // --- 2. 既存カードのお掃除タイム！ --- 🧹💨
+        // もし前のゲームのカードが残ってたら、新しいゲームを始める前にお掃除しとかないとね！
+        // `world.get_all_entities_with_component::<Card>()` で、現在 `Card` コンポーネントを持ってるエンティティのIDを全部もらう。
+        // `.into_iter().collect::<Vec<_>>()` で、もらったIDのリストを一時的な `Vec<Entity>` (Entity の配列みたいなやつ) にコピーしてる。
+        // なんでコピーするの？🤔 -> ループ (`for entity in ...`) の中で `world` の中身を削除 (`world.remove_component` とか) しようとすると、
+        // Rustの所有権・借用ルールに引っかかってコンパイラに怒られちゃうことがあるんだ😭 (ループで `world` を借りてるのに、中で `world` を書き換えようとするのは危ない！って)。
+        // だから、先に削除対象のIDリストだけ安全な場所にコピーしておいて、そのコピーを使ってループすれば、`world` を安全に変更できるってわけ！頭いい！🧠✨
         let existing_card_entities: Vec<Entity> = world.get_all_entities_with_component::<Card>().into_iter().collect();
         if !existing_card_entities.is_empty() {
-            println!("🧹 既存のカードエンティティ {} 個を削除します...", existing_card_entities.len());
+            println!("  🧹 既存のカードエンティティ {} 個のコンポーネントを削除します...", existing_card_entities.len());
             for entity in existing_card_entities {
-                // world から Card コンポーネントを削除
+                // エンティティから Card コンポーネントを削除！ データ部品をポイッ！🚮
                 world.remove_component::<Card>(entity);
-                // Card に関連する他のコンポーネント (StackInfo や Position もあれば) も削除するのが親切かも。
-                // 今は StackInfo だけ削除しておくね。Position はまだ使ってないから大丈夫かな？🤔
+                // 同じように StackInfo コンポーネントも削除！
                 world.remove_component::<StackInfo>(entity);
-                // ★追加: Position コンポーネントも削除！
+                // Position コンポーネントも削除！
                 world.remove_component::<Position>(entity);
-                // 本当はエンティティ自体を削除 (world.delete_entity(entity)) したいけど、
-                // 他のコンポーネントがまだ付いてる可能性もあるから、一旦コンポーネント削除だけに留めておくね。
+                // TODO: もしカードエンティティが他のコンポーネントを持つ可能性があるなら、エンティティ自体を消す (`world.destroy_entity(entity)`) のは危ないかも？
+                //       でも、カードエンティティは基本的に Card, StackInfo, Position しか持たない想定なら、 destroy_entity の方がメモリ的にはキレイになるね！今回はコンポーネント削除でいくよ！👍
             }
-            println!("🧹 既存カードの削除完了。");
+            println!("  🧹 既存カードのコンポーネント削除完了。");
+        } else {
+            println!("  🧹 既存のカードエンティティはありませんでした。お掃除不要！✨");
         }
 
-
-        // --- 4. カードの配置 ---
-        // `deck_cards.into_iter()` でデッキのカードを1枚ずつ取り出せるようにするよ。
-        // `into_iter()` は元の `deck_cards` の所有権を奪うから、もう `deck_cards` は使えなくなる。注意！⚠️
+        // --- 3. カードを配るよ！ --- 🃏💨
+        // `deck_cards.into_iter()` で、シャッフル済みのデッキからカードを1枚ずつ順番に取り出せるようにする「イテレータ」を作るよ。
+        // `into_iter()` は元の `deck_cards` の所有権を完全に持っていくから、この後 `deck_cards` を直接使うことはできなくなる！注意！⚠️
+        // (データを効率よく移動させるためのRustの仕組みだよ！)
         let mut card_iterator = deck_cards.into_iter();
 
-        // 配置するカードのインデックス (何枚目のカードか) を追跡するカウンター
-        let mut card_index = 0;
-
-        // --- 4a. 場札 (Tableau) への配置 ---
-        println!("⏳ 場札 (Tableau) にカードを配置中...");
-        // 7つの場札の列を作るよ (0番目から6番目まで)。
-        for tableau_index in 0..7 { // 0 から 6 までの数字を順番に tableau_index に入れて繰り返す
-            // 各列に配置するカード枚数は (列番号 + 1) 枚。
-            // 各列のY座標オフセットを計算するためのカウンター
+        // --- 3a. 場札 (Tableau) に配る！ (7列あるやつね！) ---
+        println!("  ⏳ 場札 (Tableau) にカードを配置中...");
+        // `0..7` は、0から6までの連続した数字を表す「範囲 (Range)」だよ。`for` ループで使うと、0, 1, 2, 3, 4, 5, 6 って順番に処理できる！
+        let mut total_tableau_cards = 0;
+        for tableau_index in 0..7 { // 7つの列 (index 0 から 6) に対してループ
+            // 各列に配るカードの枚数は `tableau_index + 1` 枚 (1列目は1枚, 2列目は2枚...)
+            // 列ごとのカードのY座標を計算するために、その列でどれだけ下にずらすかのオフセット値を覚えておく変数。
             let mut current_y_offset = 0.0;
-            for card_in_tableau in 0..(tableau_index + 1) {
-                // デッキからカードを1枚取り出す。
-                // `next()` は Option<Card> を返す (カードがあれば Some(card), なければ None)。
-                // `expect()` は None の場合にプログラムをクラッシュさせる。ここではデッキが足りないことは無いはずだから使う！💥
-                let mut card = card_iterator.next().expect("デッキにカードが足りません！(場札配置中)");
+            for card_in_tableau_index in 0..(tableau_index + 1) { // 各列に必要な枚数だけループ
+                // デッキ (イテレータ) からカードを1枚取り出す！ `.next()` はカードがあれば `Some(Card)`、もう無ければ `None` を返す `Option` 型。
+                // `.expect()` は、もし `None` だったらカッコ内のメッセージを表示してプログラムを強制終了させる！💥
+                // ここでは、デッキの枚数は足りてるはずだから、もし None が来たらそれはプログラムのバグ！ってことで `expect` を使ってるよ。
+                let mut card: Card = card_iterator.next().expect("デッキにカードが足りません！(場札配置バグ！)");
 
-                // エンティティ (カードの実体) を World に作成する。
-                // `create_entity()` は新しいユニークなID (Entity) を返す。
-                let entity = world.create_entity();
+                // 新しいエンティティ (このカードの実体) を World に誕生させる！ ✨🐣✨
+                let entity: Entity = world.create_entity();
 
-                // その列の一番上のカードだけ表向きにするよ！👀
-                let is_face_up = card_in_tableau == tableau_index;
-                if is_face_up {
-                    card.is_face_up = true; // カードの is_face_up フラグを true に更新！
+                // --- カードの状態と位置を決める！ ---
+                // このカードが、その列の一番上 (手前) に置かれるカードかどうかをチェック。
+                let is_top_card_in_pile = card_in_tableau_index == tableau_index;
+                // 一番上のカードだけ表向き！👀 それ以外は裏向きのまま。
+                if is_top_card_in_pile {
+                    card.is_face_up = true; // Card 構造体の中身を書き換える！
                 }
 
-                // ★追加: Position を計算！
+                // カードの画面上の位置 (Position) を計算するよ！ 座標は `config/layout.rs` の定数を使う！
                 let pos_x = TABLEAU_START_X + tableau_index as f32 * TABLEAU_X_OFFSET;
-                // Y座標は、これまでのカードのオフセットの合計で決まる
+                // Y座標は、同じ列の前のカードのオフセットに基づいて決まる。
                 let pos_y = TABLEAU_START_Y + current_y_offset;
-
-                // 次のカードのためのYオフセットを更新
-                current_y_offset += if is_face_up {
-                    TABLEAU_Y_OFFSET_FACE_UP // 表向きならオフセット大
-                } else {
-                    TABLEAU_Y_OFFSET_FACE_DOWN // 裏向きならオフセット小
-                };
-
+                // 次のカードのために、Y座標のずれ (オフセット) を更新する。
+                // 表向きのカードは、下に積むときに大きくずらす (カードが見えるように)。裏向きは小さくずらす。
+                current_y_offset += if is_top_card_in_pile { TABLEAU_Y_OFFSET_FACE_UP } else { TABLEAU_Y_OFFSET_FACE_DOWN };
+                // 計算した座標で Position コンポーネントを作る！
                 let position_component = Position { x: pos_x, y: pos_y };
 
-
-                // Card コンポーネントをエンティティに追加！これで「このエンティティはこういうカードだ」とわかる。
-                world.add_component(entity, card);
-
-                // StackInfo コンポーネントも追加！これで「このカードはどこにあるか」がわかる。
+                // --- コンポーネントをエンティティに追加！ ---✍️
+                // これで、この `entity` がどんなカードで、どこにあって、どの位置に表示されるかが `World` に記録される！
+                world.add_component(entity, card); // Card コンポーネントを追加 (さっき is_face_up を更新したやつ！)
                 world.add_component(entity, StackInfo {
-                    // `StackType::Tableau(tableau_index)` で「場札の〇番目の列」という場所を指定。
-                    stack_type: StackType::Tableau(tableau_index),
-                    // `order` はその場札列の中での順番 (0が一番奥/下)。
-                    position_in_stack: card_in_tableau,
+                    stack_type: StackType::Tableau(tableau_index), // 「場札の tableau_index 列目だよ！」
+                    position_in_stack: card_in_tableau_index,      // 「その列の中で card_in_tableau_index 番目 (0が奥) だよ！」
                 });
-                // ★追加: Position コンポーネントも追加！
-                world.add_component(entity, position_component);
+                world.add_component(entity, position_component); // Position コンポーネントを追加！
 
-
-                // デバッグ用にログ出力
-                // println!("  配置: {:?} を 場札[{}] の {}番目 に (表向き: {})", world.get_component::<Card>(entity).unwrap(), tableau_index, card_in_tableau, is_face_up);
-
-                card_index += 1; // 配置したカード枚数をカウントアップ
+                // println!("    配置: {:?} を 場札[{}] の {}番目 に (表向き: {}, Pos: {:?})", world.get_component::<Card>(entity).unwrap(), tableau_index, card_in_tableau_index, is_top_card_in_pile, position_component);
+                total_tableau_cards += 1;
             }
         }
-        println!("✅ 場札への配置完了！ ({}枚配置)", card_index);
+        println!("  ✅ 場札への配置完了！ ({}枚配置)", total_tableau_cards);
 
-        // --- 4b. 山札 (Stock) への配置 ---
-        // 残りのカードを全部、山札に裏向きで置くよ。
-        println!("⏳ 山札 (Stock) にカードを配置中...");
-        let mut stock_order = 0; // 山札の中での順番カウンター
-        // `card_iterator` に残っているカードをすべてループで処理する。
-        for card in card_iterator { // `card` は最初から裏向き (`is_face_up: false`) のはず！
-            // 新しいエンティティを作成
+        // --- 3b. 残りのカードを山札 (Stock) へ！ --- ⛰️
+        println!("  ⏳ 山札 (Stock) にカードを配置中...");
+        let mut stock_card_count = 0; // 山札に何枚入れたかカウント
+        // `card_iterator` には、場札に配らなかった残りのカードが入ってるはず。
+        // `enumerate()` を使うと、(インデックス, カード) のペアでループできるから、山札内の順番 (position_in_stack) を付けるのに便利！✨
+        for (index_in_stock, card) in card_iterator.enumerate() {
+            // 新しいエンティティを作成！
             let entity = world.create_entity();
 
-            // ★追加: Position を計算！ (山札のカードは全部同じ位置にしてみる)
+            // 山札のカードは全部同じ位置に表示する想定。座標は `config/layout.rs` から。
             let position_component = Position { x: STOCK_POS_X, y: STOCK_POS_Y };
 
-            // Card コンポーネントを追加 (中身は card 変数そのもの)
+            // コンポーネントを追加！✍️
+            // カード情報はそのまま (全部裏向きのはず！)
             world.add_component(entity, card);
-            // StackInfo コンポーネントを追加
+            // 場所情報は「山札だよ！」って設定。
             world.add_component(entity, StackInfo {
-                // 場所は `StackType::Stock` (山札)
                 stack_type: StackType::Stock,
-                // 順番は `stock_order`
-                position_in_stack: stock_order,
+                position_in_stack: index_in_stock as u8, // enumerate のインデックスを順番として使う (u8に変換！)
             });
-            // ★追加: Position コンポーネントも追加！
+            // 位置情報も追加！
             world.add_component(entity, position_component);
 
-            // デバッグ用にログ出力
-            // println!("  配置: {:?} を 山札 の {}番目 に", world.get_component::<Card>(entity).unwrap(), stock_order);
-            stock_order += 1; // 順番カウンターを増やす
-            card_index += 1; // 全体の配置枚数カウンターも増やす
+            // println!("    配置: {:?} を 山札 の {}番目 に (Pos: {:?})", world.get_component::<Card>(entity).unwrap(), index_in_stock, position_component);
+            stock_card_count += 1;
         }
-        println!("✅ 山札への配置完了！ ({}枚配置)", stock_order);
-        println!("🎉 合計 {} 枚のカードを配置しました！", card_index);
+        println!("  ✅ 山札への配置完了！ ({}枚配置)", stock_card_count);
 
-        // --- 5. ファンデーションとウェスト用の空スタック情報も作る？ ---
-        // クロンダイクには、カードを最終的に移動させる4つの「上がり札置き場 (Foundation)」と、
-        // 山札からめくったカードを一時的に置く「捨て札置き場 (Waste)」があるよね。
-        // これらは最初は空だけど、「ここがFoundationだよ」「ここがWasteだよ」という情報だけは
-        // World に持たせておくと、後でカード移動のルールを実装する時に便利かも？🤔
-        // 例えば、特定のエンティティを作って、それに StackInfo だけ付けておくとか？
-        // 今回はカード配置がメインだから、一旦省略するね！後で必要になったら追加しよう！👍
+        let total_cards_placed = total_tableau_cards + stock_card_count;
+        if total_cards_placed == 52 {
+            println!("🎉 合計 {} 枚のカードを正しく配置しました！ゲーム開始準備OK！", total_cards_placed);
+        } else {
+            // もし52枚じゃなかったら、何かロジックがおかしい！😱
+            eprintln!("🚨 エラー！配置されたカードの合計が52枚ではありません！({})", total_cards_placed);
+        }
+
+        // --- 4. 空の組札 (Foundation) や捨て札 (Waste) の場所について --- 🤔
+        // これらは最初はカードが無い「空っぽの場所」だよね。
+        // ECSでは、こういう「場所」自体を表すエンティティを作ることもあるんだけど、
+        // 今回はシンプルに、カードが無い場所はエンティティも無い、っていう状態にしておくね！
+        // カード移動のルール (System) を作る時に、「移動先が Foundation で、そこにカードが無い場合は…」みたいに条件分岐すればOK！👍
+
+        println!("✅ DealInitialCardsSystem: 実行完了！");
     }
 }
 
-
-// --- テストコード ---
-// `#[cfg(test)]` アトリビュートは、`cargo test` コマンドを実行した時だけコンパイルされるコードブロックを示すよ。
+// === ユニットテスト === ✨🧪✨
+// このシステムがちゃんと動くかチェックするコードだよ！
+// `cargo test` ってコマンドを打つと、この中の `#[test]` が付いた関数が実行されるんだ。
 #[cfg(test)]
 mod tests {
-    // `use super::*;` で、この test モジュールが属している親モジュール (このファイルの上部) で定義されているもの
-    // (DealInitialCardsSystem, World, Card, StackInfo, StackType など) を全部使えるようにするよ！便利！🌟
+    // 親モジュール (このファイルの上部) のアイテム (`*`) と、テストで使う他のモジュールをインポート！
     use super::*;
-    // ★追加: テストで Position を使うためにインポート！
     use crate::components::position::Position;
-    use crate::components::card::{Rank, Suit}; // テストで具体的なカードを確認するために Rank と Suit も使うよ
-    use std::collections::HashMap; // ★追加: テストで HashMap を使うためにインポート！
-    // ★ use crate::config::layout::*; // テスト内でも必要！
+    use crate::components::card::{Rank, Suit};
+    use std::collections::HashMap; // テスト結果の集計とかに使うかも？
 
-
-    // `#[test]` アトリビュートが付いた関数が、個別のテストケースになるよ。
+    // `#[test]` アトリビュートが付いた関数が、個別のテストケースになるよ！
     #[test]
-    fn test_initial_deal() {
-        // --- 準備 ---
-        // 1. テスト用の World インスタンスを作成
+    fn test_initial_deal_creates_correct_setup() {
+        println!("--- test_initial_deal_creates_correct_setup 開始 ---🧪");
+        // --- 準備 (Arrange) ---
+        // 1. テスト用のまっさらな World を作成！
         let mut world = World::new();
-        // 2. 必要なコンポーネントを World に登録 (実際の GameApp::new でもやってるはず！)
-        //    これがないと add_component とか get_component が失敗しちゃう！😱
-        // ★追加: Position コンポーネントを登録！
-        world.register_component::<Position>();
+
+        // 2. このシステムが必要とするコンポーネントを World に登録！これを忘れるとパニックする！😱
         world.register_component::<Card>();
         world.register_component::<StackInfo>();
-        // Position とか Player とかは、このテストでは直接使わないけど、登録しておいても害はないかな。
-        // world.register_component::<Position>();
-        // world.register_component::<Player>();
+        world.register_component::<Position>();
 
-        // 3. テスト対象のシステム (DealInitialCardsSystem) のインスタンスを作成
-        let deal_system = DealInitialCardsSystem::default(); // #[derive(Default)] のおかげで簡単！
+        // 3. テスト対象のシステム (DealInitialCardsSystem) のインスタンスを作成！
+        let deal_system = DealInitialCardsSystem::default();
 
-        // --- 実行 ---
-        // 4. システムの execute メソッドを実行して、カードを配置してもらう！
-        println!("--- test_initial_deal 開始 ---");
+        // --- 実行 (Act) ---
+        // 4. システムを実行して、カードを配ってもらう！
         deal_system.execute(&mut world);
-        println!("--- deal_system.execute() 完了 ---");
+        println!("--- deal_system.execute() 完了、検証開始！---🔬");
 
-        // --- 検証 ---
-        // 5. 配置されたカードの枚数を確認！ 合計52枚のはず！
+        // --- 検証 (Assert) ---
+        // 5. カードエンティティがちゃんと52個作られたか？
         let all_card_entities: Vec<Entity> = world.get_all_entities_with_component::<Card>().collect();
-        assert_eq!(all_card_entities.len(), 52, "配置されたカードの総数が52枚ではありません！");
-        println!("✔️ カード総数チェックOK ({}枚)", all_card_entities.len());
+        assert_eq!(all_card_entities.len(), 52, "カードエンティティの総数が52個であるべきですが、{}個でした", all_card_entities.len());
+        println!("✔️ カード総数 (52): OK");
 
-        // ★追加: Position コンポーネントが全カードに追加されているかチェック
-        let position_count = world.get_all_entities_with_component::<Position>().len();
-        assert_eq!(position_count, 52, "Positionコンポーネントの数が52ではありません！ ({})", position_count);
-        println!("✔️ Position コンポーネント数チェックOK ({})", position_count);
-
-
-        // 6. 各スタックタイプごとの枚数と状態を確認！
-        let mut stock_count = 0;
-        let mut tableau_counts = [0; 7]; // 7つの場札列の枚数をカウントする配列
-        let mut foundation_count = 0; // 上がり札 (今回は配置されないはず)
-        let mut waste_count = 0;      // 捨て札 (今回は配置されないはず)
-
-        let mut tableau_face_up_counts = [0; 7]; // 各場札列の表向きカード枚数
-
-        // ★追加: 各カードの位置も軽くチェックしてみる（代表的なものだけ）
-        let mut stock_pos: Option<Position> = None;
-        let mut tableau_pos: HashMap<(u8, u8), Position> = HashMap::new(); // (tableau_index, pos_in_stack) -> Position
+        // 6. 全てのカードエンティティが StackInfo と Position も持っているか？
+        let stack_info_count = all_card_entities.iter().filter(|&&e| world.get_component::<StackInfo>(e).is_some()).count();
+        assert_eq!(stack_info_count, 52, "StackInfoを持つカードエンティティが52個であるべきですが、{}個でした", stack_info_count);
+        println!("✔️ StackInfo保有数 (52): OK");
+        let position_count = all_card_entities.iter().filter(|&&e| world.get_component::<Position>(e).is_some()).count();
+        assert_eq!(position_count, 52, "Positionを持つカードエンティティが52個であるべきですが、{}個でした", position_count);
+        println!("✔️ Position保有数 (52): OK");
 
 
-        // 配置された全カードエンティティをループして、StackInfo を確認するよ
-        for &entity in &all_card_entities { // & を追加して借用する
-            // Card コンポーネントを取得 (これは存在するはず！)
-            let card = world.get_component::<Card>(entity)
-                .expect("Card コンポーネントが見つかりません！");
-            // StackInfo コンポーネントを取得 (これも存在するはず！)
-            let stack_info = world.get_component::<StackInfo>(entity)
-                .expect("StackInfo コンポーネントが見つかりません！");
-            // ★追加: Position も取得！
-            let position = world.get_component::<Position>(entity).expect("Position component not found!");
+        // 7. 各スタックタイプのカード枚数を数える！
+        let mut counts: HashMap<StackType, usize> = HashMap::new();
+        let mut face_up_counts: HashMap<StackType, usize> = HashMap::new();
+        let mut cards_data: HashMap<StackType, Vec<(u8, Card)>> = HashMap::new(); // (position_in_stack, Card)
 
+        for entity in all_card_entities {
+            // StackInfo と Card を取得 (存在することは上で確認済みなので unwrap しちゃう！)
+            let stack_info = world.get_component::<StackInfo>(entity).unwrap();
+            let card = world.get_component::<Card>(entity).unwrap();
 
-            // StackType によってカウントを振り分ける
-            match stack_info.stack_type {
-                StackType::Stock => {
-                    stock_count += 1;
-                    // 山札のカードは全部裏向きのはず！
-                    assert!(!card.is_face_up, "山札に表向きのカードがあります！{:?}", card);
-                    // ★追加: 山札の位置を確認 (最初の1枚だけ記憶)
-                    if stock_pos.is_none() {
-                        stock_pos = Some(position.clone());
-                    }
-                }
-                StackType::Tableau(index) => {
-                    // index が 0..7 の範囲内かチェック (念のため)
-                    let idx_usize = index as usize; // usize に変換して配列アクセスに使う
-                    assert!(index < 7, "無効な Tableau インデックスです: {}", index);
-                    tableau_counts[idx_usize] += 1; // その列のカウントを増やす
-                    // ★追加: 場札の位置を記録
-                    tableau_pos.insert((index, stack_info.position_in_stack), position.clone());
+            // StackType ごとの枚数をカウントアップ
+            *counts.entry(stack_info.stack_type).or_insert(0) += 1;
 
-                    // 場札の一番上のカード (position_in_stack == index) だけが表向きのはず！
-                    if stack_info.position_in_stack == index {
-                        assert!(card.is_face_up, "場札の[{}]番目({}) が裏向きです！{:?}", index, stack_info.position_in_stack, card);
-                        tableau_face_up_counts[idx_usize] += 1;
-                    } else {
-                        assert!(!card.is_face_up, "場札の[{}]番目({}) が表向きです！{:?}", index, stack_info.position_in_stack, card);
-                    }
-                    // position_in_stack が正しい範囲 (0 <= position_in_stack <= index) かチェック
-                    assert!(stack_info.position_in_stack <= index, "Tableau[{}] の position_in_stack が不正です: {}", index, stack_info.position_in_stack);
-                }
-                StackType::Foundation(_) => foundation_count += 1,
-                StackType::Waste => waste_count += 1,
+            // 表向きのカード枚数もカウントアップ
+            if card.is_face_up {
+                *face_up_counts.entry(stack_info.stack_type).or_insert(0) += 1;
             }
+
+            // デバッグ用にカード情報も保存 (stack_type -> Vec<(順番, カード情報)>)
+            cards_data.entry(stack_info.stack_type).or_default().push((stack_info.position_in_stack, card.clone()));
         }
 
-        // --- 結果の確認 ---
-        // 山札 (Stock) の枚数チェック (52 - (1+2+3+4+5+6+7)) = 52 - 28 = 24 枚
-        assert_eq!(stock_count, 24, "山札のカード枚数が24枚ではありません！ ({})", stock_count);
-        println!("✔️ 山札の枚数チェックOK ({})", stock_count);
-        // ★追加: 山札の位置チェック (定数と比較)
-        if let Some(pos) = stock_pos {
-            assert_eq!(pos.x, STOCK_POS_X, "山札のX座標が違います");
-            assert_eq!(pos.y, STOCK_POS_Y, "山札のY座標が違います");
-            println!("✔️ 山札の位置チェックOK ({:?})", pos);
+        // 8. 山札 (Stock) の枚数と状態を確認！
+        let stock_count = counts.get(&StackType::Stock).copied().unwrap_or(0);
+        assert_eq!(stock_count, 24, "山札 (Stock) のカード枚数が24枚であるべきですが、{}枚でした", stock_count);
+        let stock_face_up_count = face_up_counts.get(&StackType::Stock).copied().unwrap_or(0);
+        assert_eq!(stock_face_up_count, 0, "山札 (Stock) に表向きのカードがあってはいけませんが、{}枚ありました", stock_face_up_count);
+        println!("✔️ 山札 (Stock) 枚数 (24) と向き (全部裏): OK");
+        // 山札カードの順番 (position_in_stack) が 0 から 23 まで連続しているかチェック
+        if let Some(stock_cards) = cards_data.get_mut(&StackType::Stock) {
+            stock_cards.sort_by_key(|(pos, _)| *pos); // 順番でソート
+            for (i, (pos, _)) in stock_cards.iter().enumerate() {
+                assert_eq!(*pos as usize, i, "山札カードの position_in_stack が連続していません (期待: {}, 実際: {})", i, *pos);
+            }
         } else {
-             panic!("山札のカードが見つかりませんでした！");
+            panic!("山札のカードデータが収集できませんでした！");
         }
+        println!("✔️ 山札 (Stock) カード順序: OK");
 
-
-        // 場札 (Tableau) の枚数チェック
+        // 9. 場札 (Tableau) の枚数と状態を確認！
+        let mut total_tableau_cards = 0;
         for i in 0..7 {
-            assert_eq!(tableau_counts[i], i + 1, "場札[{}]の枚数が{}枚ではありません！ ({})", i, i + 1, tableau_counts[i]);
-            assert_eq!(tableau_face_up_counts[i], 1, "場札[{}]の表向きカードが1枚ではありません！ ({})", i, tableau_face_up_counts[i]);
-            // ★追加: 場札の先頭カードの位置チェック (例: 0列目0番, 1列目0番)
-            let expected_x = TABLEAU_START_X + i as f32 * TABLEAU_X_OFFSET;
-            if let Some(pos) = tableau_pos.get(&(i as u8, 0)) {
-                assert_eq!(pos.x, expected_x, "場札[{}]先頭のX座標が違います", i);
-                assert_eq!(pos.y, TABLEAU_START_Y, "場札[{}]先頭のY座標が違います", i);
-                 println!("✔️ 場札[{}]先頭の位置チェックOK ({:?})", i, pos);
+            let stack_type = StackType::Tableau(i);
+            let pile_count = counts.get(&stack_type).copied().unwrap_or(0);
+            let expected_pile_count = (i + 1) as usize;
+            assert_eq!(pile_count, expected_pile_count, "場札{} のカード枚数が{}枚であるべきですが、{}枚でした", i, expected_pile_count, pile_count);
+
+            let pile_face_up_count = face_up_counts.get(&stack_type).copied().unwrap_or(0);
+            assert_eq!(pile_face_up_count, 1, "場札{} の表向きカードが1枚であるべきですが、{}枚でした", i, pile_face_up_count);
+
+            // 場札カードの順番と向きを確認
+            if let Some(pile_cards) = cards_data.get_mut(&stack_type) {
+                pile_cards.sort_by_key(|(pos, _)| *pos); // 順番でソート
+                for (j, (pos, card)) in pile_cards.iter().enumerate() {
+                    assert_eq!(*pos as usize, j, "場札{} のカード順序が不正です (期待: {}, 実際: {})", i, j, *pos);
+                    let should_be_face_up = j == expected_pile_count - 1; // 一番上(最後)のカードか？
+                    assert_eq!(card.is_face_up, should_be_face_up, "場札{}[{}] の向きが不正です (期待: {}, 実際: {})", i, j, should_be_face_up, card.is_face_up);
+                }
             } else {
-                 panic!("場札[{}]の先頭カードが見つかりませんでした！", i);
+                panic!("場札{} のカードデータが収集できませんでした！", i);
             }
-             // ★追加: 場札の末尾カード(表向き)の位置チェック (例: 2列目2番)
-            let last_card_index = i as u8; // 列番号と同じ
-             if let Some(pos) = tableau_pos.get(&(i as u8, last_card_index)) {
-                assert_eq!(pos.x, expected_x, "場札[{}]末尾のX座標が違います", i);
-                 // Y座標はオフセットの合計なので、計算が必要（ちょっと複雑なので簡易的にチェック）
-                 // 計算を修正：裏向きカードは (i) 枚、表向きカードは 1 枚 (最後のカード)
-                 let expected_y_approx = TABLEAU_START_Y + (i as f32) * TABLEAU_Y_OFFSET_FACE_DOWN; // 最後の表向きカードの *開始* 位置
-                 assert!(pos.y >= expected_y_approx - 1.0 && pos.y <= expected_y_approx + 1.0, // 誤差を許容
-                         "場札[{}]末尾のY座標 ({}) が期待値 ({}) から離れています", i, pos.y, expected_y_approx);
-                 println!("✔️ 場札[{}]末尾の位置チェックOK ({:?})", i, pos);
-            } else {
-                 panic!("場札[{}]の末尾カードが見つかりませんでした！", i);
-            }
-
+            total_tableau_cards += pile_count;
         }
-        println!("✔️ 場札の枚数チェックOK (合計 {}枚)", tableau_counts.iter().sum::<usize>());
-        println!("✔️ 場札の表向きカードチェックOK");
+        assert_eq!(total_tableau_cards, 28, "場札の合計枚数が28枚であるべきですが、{}枚でした", total_tableau_cards);
+        println!("✔️ 場札 (Tableau) 枚数 (計28) と各列の状態 (枚数/向き/順序): OK");
 
+        // 10. Foundation と Waste のカードが存在しないことを確認
+        assert!(counts.get(&StackType::Foundation(0)).is_none(), "Foundation(0) にカードがあってはいけません");
+        assert!(counts.get(&StackType::Waste).is_none(), "Waste にカードがあってはいけません");
+        println!("✔️ 組札 (Foundation) と捨て札 (Waste) が空: OK");
 
-        // Foundation と Waste にはカードがないはず
-        assert_eq!(foundation_count, 0, "Foundation にカードが配置されています！ ({})", foundation_count);
-        assert_eq!(waste_count, 0, "Waste にカードが配置されています！ ({})", waste_count);
-        println!("✔️ Foundation/Waste が空であることのチェックOK");
-
-        // 7. カードの重複がないかチェック (念のため)
-        //    配置された全カードの (Suit, Rank) の組み合わせを HashSet に入れて、重複がないか確認する。
-        use std::collections::HashSet;
-        let mut unique_cards = HashSet::new();
-        // World から Card コンポーネントを直接取得する方法に変更
-        let all_cards: Vec<Card> = world.storage::<Card>()
-                                       .map(|s| s.iter().map(|(_, c)| c.clone()).collect())
-                                       .unwrap_or_default();
-        let mut duplicate_found = false;
-        for card in all_cards {
-            if !unique_cards.insert((card.suit, card.rank)) {
-                println!("重複カード発見！ Suit: {:?}, Rank: {:?}", card.suit, card.rank);
-                duplicate_found = true;
-            }
-        }
-        assert!(!duplicate_found, "配置されたカードに重複が見つかりました！");
-        println!("✔️ カードの重複チェックOK");
-
-
-        println!("✅✅✅ test_initial_deal 成功！ 🎉🎉🎉");
+        println!("--- test_initial_deal_creates_correct_setup 完了 ---✅✨");
     }
+
+    // TODO: エッジケースのテスト (World に既に変なデータがある場合とか？) も追加すると、もっと頑丈になるかも！
 } 
