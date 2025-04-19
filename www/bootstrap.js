@@ -347,26 +347,51 @@ function handleMouseMove(event) {
     draggedCardElement.style.top = `${newY}px`;
 }
 
-// --- ★ 新しい関数: カードドラッグ終了処理 (mouseup) ★ --- (本格実装版！)
+// --- ★ 新しい関数: カードドラッグ終了処理 (mouseup) ★ --- (send_make_move 呼び出し追加版！)
 function handleMouseUp(event) {
     // ドラッグ中でなければ何もしない
     if (!isDragging || !draggedCardElement) return;
 
-    console.log(`🖱️ Drag end detected on card Entity ID: ${draggedEntityId} at (${event.clientX}, ${event.clientY})`);
+    const currentDraggedEntityId = draggedEntityId; // リスナー削除前にIDを保持
+
+    console.log(`🖱️ Drag end detected on card Entity ID: ${currentDraggedEntityId} at (${event.clientX}, ${event.clientY})`);
 
     // ドラッグ中の見た目を元に戻す
     draggedCardElement.classList.remove('dragging');
-    draggedCardElement.style.cursor = 'grab'; // または 'default'
+    draggedCardElement.style.cursor = 'grab';
 
     // ★超重要: document に追加したリスナーを削除！★
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
     console.log("  Removed mousemove and mouseup listeners from document.");
 
-    // TODO: ここでドロップ位置 (event.clientX, event.clientY) を判定して、
-    //       適切な移動先スタックを見つけ、 gameApp.send_make_move を呼び出す処理を追加する (次のステップ！)
-    //       例: const targetStack = findDropTarget(event.clientX, event.clientY);
-    //           if (targetStack) { ... send_make_move ... }
+    // --- ドロップ位置から移動先スタックを判定 --- ★ 修正箇所
+    const targetStack = findDropTargetStack(event.clientX, event.clientY);
+    if (targetStack) {
+        console.log("  Drop target identified:", targetStack);
+
+        // --- ★ここから追加: MakeMove メッセージを送信！★ ---
+        if (gameApp && currentDraggedEntityId !== null) {
+            try {
+                // targetStack オブジェクトを JSON 文字列に変換する必要がある！
+                const targetStackJson = JSON.stringify(targetStack);
+                console.log(`  Calling gameApp.send_make_move with entity ID: ${currentDraggedEntityId}, target: ${targetStackJson}`);
+                gameApp.send_make_move(currentDraggedEntityId, targetStackJson);
+                console.log("  gameApp.send_make_move called successfully.");
+            } catch (error) {
+                console.error("Error calling gameApp.send_make_move:", error);
+            }
+        } else {
+            console.error("Cannot send move: gameApp not ready or draggedEntityId is null.");
+        }
+        // --- ★追加ここまで★ ---
+
+    } else {
+        console.log("  Dropped outside any valid target area.");
+        // TODO: カードを元の位置に戻すアニメーションとか？ (今回は renderGame を呼べば状態更新で戻るはず)
+        //       即座に見た目を戻したい場合は、元の位置を保存しておいてスタイルを戻す必要あり
+        //       今はサーバーからの状態更新を待つ形にする
+    }
 
     // ドラッグ状態をリセット
     isDragging = false;
@@ -375,6 +400,48 @@ function handleMouseUp(event) {
     offsetX = 0;
     offsetY = 0;
     console.log("  Dragging state reset.");
+}
+
+// --- ★ 新しい関数: ドロップ位置から移動先スタックを判定するロジック ★ ---
+function findDropTargetStack(dropX, dropY) {
+    const cardWidth = 72;
+    const cardHeight = 96;
+    const horizontalSpacing = 10;
+    const verticalSpacing = 15;
+
+    // ゲームエリアの座標を取得 (ドロップ座標をエリア内座標に変換するため)
+    const gameAreaRect = gameAreaDiv.getBoundingClientRect();
+    const dropAreaX = dropX - gameAreaRect.left;
+    const dropAreaY = dropY - gameAreaRect.top;
+
+    // Check Foundations (0-3)
+    for (let i = 0; i < 4; i++) {
+        const foundationX = 10 + (cardWidth + horizontalSpacing) * (3 + i);
+        const foundationY = 10;
+        if (dropAreaX >= foundationX && dropAreaX <= foundationX + cardWidth &&
+            dropAreaY >= foundationY && dropAreaY <= foundationY + cardHeight) {
+            console.log(`Drop potentially over Foundation area ${i}`);
+            // StackType オブジェクトを返す (Rust 側の形式に合わせる)
+            return { Foundation: i };
+        }
+    }
+
+    // Check Tableau drop zones (0-6) - Checking the top slot area
+    for (let i = 0; i < 7; i++) {
+        const tableauX = 10 + (cardWidth + horizontalSpacing) * i;
+        const tableauY = 10 + cardHeight + verticalSpacing; // 列の開始Y座標
+        // 判定エリア: とりあえず列の開始位置のカード1枚分の高さにする
+        if (dropAreaX >= tableauX && dropAreaX <= tableauX + cardWidth &&
+            dropAreaY >= tableauY && dropAreaY <= tableauY + cardHeight) {
+            console.log(`Drop potentially over Tableau area ${i}`);
+            // StackType オブジェクトを返す
+            return { Tableau: i };
+        }
+        // TODO: 将来的には、タブローの列にカードがあれば、一番下のカードのエリアも判定対象に加えるべき
+    }
+
+    // console.log("Drop outside any defined stack area.");
+    return null; // どのエリアにもドロップされなかった
 }
 
 // --- ヘルパー関数: カードの表示位置を計算 --- (修正版！)
