@@ -47,7 +47,7 @@ use crate::component::{Component, ComponentStorage}; // ComponentStorage も追�
 // components/ 以下の主要なコンポーネントを use 宣言！
 // (ここで use したものは、このファイル内では直接型名で参照できる！)
 use crate::components::{ 
-    card::{Card, Rank, Suit, create_standard_deck}, // Import specifics from card module
+    card::{Card, Rank, create_standard_deck}, // Import specifics from card module
     position::Position,
     player::Player, // Import Player from components
     game_state::{GameState as GameLogicState, GameStatus}, // Import GameState/Status from components
