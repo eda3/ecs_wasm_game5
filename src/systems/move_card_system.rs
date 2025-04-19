@@ -1,6 +1,6 @@
 use crate::{ // 必要なモジュールや型をインポート
     component::Component,
-    components::{card::{Card, Suit, Rank}, position::Position, player::Player, game_state::{GameState, GameStatus}},
+    components::{card::{Card, Suit, Rank}, position::Position, player::Player, game_state::{GameState, GameStatus}, stack::{StackInfo, StackType}},
     entity::Entity,
     system::System,
     world::World,
@@ -9,13 +9,19 @@ use crate::{ // 必要なモジュールや型をインポート
 // --- StackType Enum (移動元・移動先の種類を示す) ---
 // TODO: この enum をどこか適切な場所 (e.g., components/mod.rs や components/stack.rs?) に定義する
 //       必要に応じて、場札の列番号や組札のスートなどの情報も持たせる
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StackType {
-    Tableau(u8), // 場札 (列番号 0-6)
-    Foundation(Suit), // 組札 (スート別)
-    Stock,       // 山札
-    Waste,       // (クロンダイクの場合) 山札からめくったカード置き場
-}
+// ↓↓↓ この enum 定義はもう components/stack.rs にあるから不要！削除！
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// enum StackType {
+//     Tableau(u8), // 場札 (列番号 0-6)
+//     Foundation(Suit), // 組札 (スート別)
+//     Stock,       // 山札
+//     Waste,       // (クロンダイクの場合) 山札からめくったカード置き場
+// }
+// ↑↑↑ ここまで削除！
+
+// --- CardColor enum はここに移動済み --- 
+#[derive(PartialEq, Eq)]
+enum CardColor { Red, Black }
 
 /// カード移動のロジックを実行するシステムだよ！🖱️💨
 ///
@@ -209,8 +215,6 @@ impl MoveCardSystem {
     }
 
     // スートの色を取得するヘルパー関数
-    #[derive(PartialEq, Eq)]
-    enum CardColor { Red, Black }
     fn get_suit_color(suit: Suit) -> CardColor {
         match suit {
             Suit::Heart | Suit::Diamond => CardColor::Red,

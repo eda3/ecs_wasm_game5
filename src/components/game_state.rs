@@ -22,6 +22,8 @@ pub enum GameStatus {
         /// 勝者のプレイヤーID (もし引き分けとかなら None になるかも？)
         winner_id: Option<u32>, // PlayerコンポーネントのIDに対応させる想定
     },
+    /// 勝利！🏆
+    Won,
     // TODO: 必要なら、ゲーム開始前の待機状態 (WaitingForPlayers) とか、
     //       ポーズ中 (Paused) とか、他の状態も追加できるね！
 }
