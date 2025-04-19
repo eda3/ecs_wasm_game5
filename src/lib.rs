@@ -37,8 +37,6 @@ use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 us
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
 use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
 use crate::component::DraggingInfo; // Position を追加 (自作Componentを使う)
-use crate::rules::find_automatic_foundation_move;
-use crate::component::{Rank, Suit}; // Add this line
 use crate::world::World; // <<< これを追加！
 use crate::systems::deal_system::DealInitialCardsSystem;
 
@@ -52,10 +50,7 @@ use crate::components::{
 };
 
 // systems/ 以下のシステムを use 宣言！
-use crate::systems::{ 
-    // move_card_system::MoveCardSystem,
-    // win_condition_system::WinConditionSystem,
-};
+// ★ 空の use ブロックは削除 ★
 
 // network と protocol 関連
 
