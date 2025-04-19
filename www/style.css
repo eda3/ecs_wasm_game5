@@ -202,3 +202,15 @@ h1 {
 .card.suit-spade {
     color: black;
 }
+
+/* --- ★ 追加: 選択されたカードのスタイル ★ --- */
+.card.selected {
+    border-color: #fbc02d;
+    /* 目立つ黄色い枠線とか？ */
+    border-width: 2px;
+    /* 枠線を少し太く */
+    box-shadow: 0 0 8px rgba(251, 192, 45, 0.8);
+    /* 黄色い光彩を追加 */
+    transform: scale(1.03);
+    /* 少しだけ大きく表示 */
+}

@@ -189,7 +189,7 @@ function renderGame() {
                 // カード要素 (div) を作成
                 const cardElement = document.createElement('div');
                 cardElement.classList.add('card'); // 基本クラス
-                cardElement.dataset.entityId = cardData.entity_id; // data-* 属性でエンティティIDを保持 (デバッグ用)
+                cardElement.dataset.entityId = cardData.entity_id; // data-* 属性でエンティティIDを保持
 
                 // カードの位置を計算 (CSS で position: absolute が前提！)
                 const position = calculateCardPosition(cardData);
@@ -201,9 +201,8 @@ function renderGame() {
                 // カードの内容 (スートとランク or 裏面)
                 if (cardData.is_face_up) {
                     cardElement.classList.add('face-up');
-                    cardElement.classList.add(`suit-${cardData.suit.toLowerCase()}`); // 例: suit-heart
-                    cardElement.classList.add(`rank-${cardData.rank.toLowerCase()}`); // 例: rank-ace
-                    // Suit記号とランク文字を設定 (CSSで色分けできるようにspanも使う)
+                    cardElement.classList.add(`suit-${cardData.suit.toLowerCase()}`);
+                    cardElement.classList.add(`rank-${cardData.rank.toLowerCase()}`);
                     const suitSymbol = getSuitSymbol(cardData.suit);
                     const rankText = getRankText(cardData.rank);
                     cardElement.innerHTML = `
@@ -212,8 +211,14 @@ function renderGame() {
                     `;
                 } else {
                     cardElement.classList.add('face-down');
-                    cardElement.innerHTML = ''; // 裏面はCSSで描画する想定
+                    cardElement.innerHTML = '';
                 }
+
+                // --- ★ ここから追加: クリックイベントリスナーを設定 ★ ---
+                cardElement.addEventListener('click', () => {
+                    handleCardClick(cardData, cardElement);
+                });
+                // --- ★ 追加ここまで ★ ---
 
                 // 作成したカード要素をゲームエリアに追加
                 gameAreaDiv.appendChild(cardElement);
@@ -228,6 +233,23 @@ function renderGame() {
         console.error("ゲーム状態の描画中にエラーが発生しました:", e);
         gameAreaDiv.innerHTML = '<p style="color: red;">ゲーム画面の描画中にエラーが発生しました。</p>';
     }
+}
+
+// --- ★ 新しい関数: カードクリック処理 ★ ---
+function handleCardClick(cardData, cardElement) {
+    console.log(`🖱️ Card clicked! Entity ID: ${cardData.entity_id}`, cardData);
+
+    // TODO: クリックされたカードに応じたゲームロジックを呼び出す
+    // 例: gameApp.card_clicked(cardData.entity_id);
+
+    // --- 見た目の選択状態を切り替える (簡易版) ---
+    // 他のカードから selected クラスを削除
+    document.querySelectorAll('#game-area .card.selected').forEach(el => {
+        el.classList.remove('selected');
+    });
+    // クリックされたカードに selected クラスを追加
+    cardElement.classList.add('selected');
+    console.log('  Added .selected class to clicked card.');
 }
 
 // --- ヘルパー関数: カードの表示位置を計算 --- (超簡易版！)
