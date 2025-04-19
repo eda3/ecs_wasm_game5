@@ -52,20 +52,6 @@ impl StackInfo {
 // 中身は空でOK！マーカーとして機能するよ。
 impl Component for StackInfo {} // これで World に登録できるようになる
 
-// ↓↓↓ 逆方向の StackType の From トレイト実装を追加！ ↓↓↓
-impl From<crate::component::StackType> for StackType {
-    fn from(component_stack_type: crate::component::StackType) -> Self {
-        match component_stack_type {
-            crate::component::StackType::Tableau => StackType::Tableau(0), // デフォルトインデックス 0
-            crate::component::StackType::Foundation => StackType::Foundation(0), // デフォルトインデックス 0
-            crate::component::StackType::Stock => StackType::Stock,
-            crate::component::StackType::Waste => StackType::Waste,
-            crate::component::StackType::Hand => StackType::Hand,
-        }
-    }
-}
-// ↑↑↑ 逆方向の StackType の From トレイト実装を追加！ ↑↑↑
-
 #[cfg(test)]
 mod tests {
     use super::*;

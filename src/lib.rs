@@ -36,7 +36,7 @@ use serde_json; // serde_json を使う
 use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
 use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
-use crate::component::DraggingInfo; // Position を追加 (自作Componentを使う)
+use crate::components::dragging_info::DraggingInfo; // ★変更: 新しいパスからインポート！
 use crate::world::World; // <<< これを追加！
 use crate::systems::deal_system::DealInitialCardsSystem;
 

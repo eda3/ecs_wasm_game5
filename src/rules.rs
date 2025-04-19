@@ -4,8 +4,8 @@
 //! といったルールをチェックできるようにするんだ。
 
 // 必要な型をインポートしておくよ！
-use crate::components::card::{Card, Suit, Rank}; // components の Card, Suit, Rank を使う！
-use crate::components::stack::{StackType}; // components の StackInfo, StackType を使う！
+use crate::components::card::{Card, Suit, Rank, Color}; // components の Card, Suit, Rank, Color を使う！
+use crate::components::stack::{StackType, StackInfo}; // components の StackInfo, StackType を使う！
 // use crate::world::World;                        // ゲーム世界の全体像 <-- これは使わない！
 use crate::entity::Entity;                      // エンティティID (これは crate::entity のもの)
 use crate::log;
@@ -198,8 +198,8 @@ fn get_foundation_suit(foundation_index: u8) -> Option<Suit> {
 /// 指定された組札 (Foundation) の一番上にあるカードを取得するヘルパー関数。
 /// World の状態を調べて、StackInfo を持つエンティティから見つける。
 fn get_foundation_top_card<'a>(world: &'a crate::world::World, foundation_index: u8) -> Option<&'a Card> { // 引数を自作Worldに！(仮)
-    let mut top_entity: Option<Entity> = None; // Entity に戻す！
-    let mut max_pos_in_stack: i16 = -1;
+    let _top_entity: Option<Entity> = None; // Entity に戻す！
+    let _max_pos_in_stack: i16 = -1;
 
     // --- 自作Worldからデータを取得するロジックに書き換える必要あり！ ---
     // 例 (これは hecs の書き方なので、自作ECSに合わせて変更！)

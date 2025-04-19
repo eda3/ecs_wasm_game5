@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 // Component トレイトを使う宣言！このファイルで作る構造体がコンポーネントであることを示すため！
 use crate::component::Component; // `crate::` はプロジェクトのルートから、って意味ね！
 use wasm_bindgen::prelude::*;
+use rand::{seq::SliceRandom, thread_rng};
 
 /// カードのスート（マーク）を表す列挙型だよ！❤️♦️♣️♠️
 ///
@@ -22,19 +23,6 @@ pub enum Suit {
     Club,    // ♣️
     Spade,   // ♠️
 }
-
-// ↓↓↓ 逆方向の From トレイト実装を追加！ ↓↓↓
-impl From<crate::component::Suit> for Suit {
-    fn from(component_suit: crate::component::Suit) -> Self {
-        match component_suit {
-            crate::component::Suit::Heart => Suit::Heart,
-            crate::component::Suit::Diamond => Suit::Diamond,
-            crate::component::Suit::Club => Suit::Club,
-            crate::component::Suit::Spade => Suit::Spade,
-        }
-    }
-}
-// ↑↑↑ 逆方向の From トレイト実装を追加！ ↑↑↑
 
 /// カードのランク（数字）を表す列挙型だよ！ A, 2, 3, ..., K
 ///
@@ -57,28 +45,6 @@ pub enum Rank {
     Queen,   // Q (12 扱い)
     King,    // K (13 扱い)
 }
-
-// ↓↓↓ 逆方向の Rank の From トレイト実装を追加！ ↓↓↓
-impl From<crate::component::Rank> for Rank {
-    fn from(component_rank: crate::component::Rank) -> Self {
-        match component_rank {
-            crate::component::Rank::Ace => Rank::Ace,
-            crate::component::Rank::Two => Rank::Two,
-            crate::component::Rank::Three => Rank::Three,
-            crate::component::Rank::Four => Rank::Four,
-            crate::component::Rank::Five => Rank::Five,
-            crate::component::Rank::Six => Rank::Six,
-            crate::component::Rank::Seven => Rank::Seven,
-            crate::component::Rank::Eight => Rank::Eight,
-            crate::component::Rank::Nine => Rank::Nine,
-            crate::component::Rank::Ten => Rank::Ten,
-            crate::component::Rank::Jack => Rank::Jack,
-            crate::component::Rank::Queen => Rank::Queen,
-            crate::component::Rank::King => Rank::King,
-        }
-    }
-}
-// ↑↑↑ 逆方向の Rank の From トレイト実装を追加！ ↑↑↑
 
 /// カードそのものを表すコンポーネントだよ！🃏
 ///
@@ -129,6 +95,15 @@ pub fn create_standard_deck() -> Vec<Card> {
         }
     }
     deck // 完成したデッキを返す！
+}
+
+/// カードデッキをシャッフルする関数だよ。
+///
+/// # 引数
+/// * `deck` - シャッフルしたいカードデッキ (`Vec<Card>`) への可変参照。
+pub fn shuffle_deck(deck: &mut Vec<Card>) {
+    let mut rng = thread_rng(); // 乱数生成器を取得
+    deck.shuffle(&mut rng); // デッキをシャッフル！
 }
 
 // --- テスト ---
@@ -198,5 +173,39 @@ mod tests {
         assert!(all_face_down, "デッキに表向きのカードが含まれています！");
 
         println!("create_standard_deck 関数のテスト、成功！🎉 デッキは正しく生成されました！");
+    }
+
+    #[test]
+    fn test_create_deck_size() {
+        let deck = create_standard_deck();
+        assert_eq!(deck.len(), 52, "デッキのカード数が52枚じゃない！");
+    }
+
+    #[test]
+    fn test_create_deck_uniqueness() {
+        let deck = create_standard_deck();
+        let mut seen_cards = std::collections::HashSet::new();
+        let mut duplicates = Vec::new();
+
+        for card in deck {
+            if !seen_cards.insert(card.clone()) {
+                duplicates.push(card);
+            }
+        }
+
+        assert!(duplicates.is_empty(), "デッキに重複カードあり！: {:?}", duplicates);
+    }
+
+    #[test]
+    fn test_shuffle_deck_changes_order() {
+        let initial_deck = create_standard_deck();
+        let mut shuffled_deck = initial_deck.clone(); // コピーしてシャッフルする
+        shuffle_deck(&mut shuffled_deck);
+
+        // シャッフルしたら元の順番とは (ほぼ確実に) 変わるはず
+        // ただし、ごく稀に同じ順番になる可能性もあるので、完全なテストではない
+        assert_ne!(initial_deck, shuffled_deck, "シャッフルしても順番が変わってない (稀に起こりうる)");
+        // サイズは変わらないはず
+        assert_eq!(initial_deck.len(), shuffled_deck.len(), "シャッフルでカード数が変わった！");
     }
 } 

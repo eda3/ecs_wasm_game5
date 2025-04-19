@@ -13,8 +13,9 @@ use std::collections::HashSet;
 // Entity: エンティティを表す単純な構造体 (通常はIDをラップしたもの)。
 use crate::entity::Entity;
 // Component: 全てのコンポーネントが実装すべきマーカートレイト (中身は空でもOK)。ジェネリクスでコンポーネント型を制約するのに使う。
+use crate::component::Component;
 // ComponentStorage: 特定の型のコンポーネントを Entity をキーとして格納するトレイト (今回は使わないかも？ HashMap<Entity, T> を直接使う方針)
-use crate::component::{Component, ComponentStorage}; // ComponentStorage は使わない可能性あり
+// use crate::component::{Component, ComponentStorage}; // ★削除: ComponentStorage はもう使わない！
 
 /// ゲーム世界の全てのエンティティとコンポーネントを管理する中心的な構造体 (自作ECSのコア！)。
 /// エンティティの生存管理、コンポーネントの型ごとの保存とアクセス機能を提供するよ。
@@ -88,7 +89,7 @@ impl World {
     }
 
     /// 指定されたエンティティを削除 (破棄) する。
-    /// このエンティティに紐づけられている全てのコンポーネントも削除される。
+    /// このエンティティに紐づけられている全てのコンポーネントも削除される **(TODO: 現状未実装！)**。
     ///
     /// # 引数
     /// * `entity` - 削除したいエンティティ。
@@ -105,7 +106,7 @@ impl World {
             // `component_stores` の値 (Box<dyn Any>) に対して操作を行う必要がある。
             // ここで `Any` トレイトのメソッド (`downcast_mut` など) を使うことになる。
             // 各ストレージは `HashMap<Entity, _>` である想定。
-            for (_type_id, storage_any) in self.component_stores.iter_mut() {
+            for (_type_id, _storage_any) in self.component_stores.iter_mut() { // ★警告修正: storage_any を _storage_any に
                 // Box<dyn Any> から中のデータへの可変参照を取得しようとする。
                 // ただし、具体的な型がわからないと HashMap の remove は呼べない。
                 // ここでちょっと困る。どうやって型ごとに remove を呼ぶか？
