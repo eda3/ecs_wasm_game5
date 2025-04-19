@@ -215,108 +215,12 @@ impl GameApp {
     // JSから初期カード配置を実行するためのメソッド
     #[wasm_bindgen]
     pub fn deal_initial_cards(&self) {
-        log("GameApp: deal_initial_cards() called.");
-
-        // ステップ1: 書き込み可能ロックを取得して DealSystem を実行
-        { // スコープを区切ってロックの生存期間を明確にする
-            log("  Acquiring mutable lock for DealInitialCardsSystem...");
-            let mut mutable_world_guard = match self.world.lock() {
-                 Ok(guard) => guard,
-                 Err(poisoned) => {
-                     log(&format!("GameApp: World mutex was poisoned! Attempting recovery. Error: {:?}", poisoned));
-                     // poison エラーからデータを復旧（あるいはデフォルト値を使うなど）
-                     // ここでは単純に復旧を試みる
-                     poisoned.into_inner()
-                 }
-            };
-            // let mut mutable_world_guard = self.world.lock().expect("Failed mutable lock 1");
-            log("  Executing DealInitialCardsSystem...");
-            self.deal_system.execute(&mut mutable_world_guard);
-            log("  DealInitialCardsSystem executed successfully.");
-            // スコープの終わりで mutable_world_guard が drop され、ロックが解放される！
-            log("  Released mutable lock.");
-        } // <-- ここで書き込みロック解放！🔓
-
-        // ステップ2: 読み取り専用ロックを取得して初期状態データを取得
-        let initial_state_data = { // スコープを区切る
-            log("  Acquiring immutable lock for get_initial_state_data...");
-            let immutable_world_guard = match self.world.lock() {
-                 Ok(guard) => guard,
-                 Err(poisoned) => {
-                     log(&format!("GameApp: World mutex was poisoned (read lock)! Attempting recovery. Error: {:?}", poisoned));
-                     poisoned.into_inner()
-                 }
-            };
-            // let immutable_world_guard = self.world.lock().expect("Failed immutable lock");
-            log("  Getting initial state data...");
-            let data = self.get_initial_state_data(&immutable_world_guard);
-            log("  Initial state data prepared.");
-            // スコープの終わりで immutable_world_guard が drop され、ロックが解放される！
-            log("  Released immutable lock.");
-            data // スコープの結果としてデータを返す
-        }; // <-- ここで読み取りロック解放！🔓
-
-        // ステップ3: 状態データを送信 (ロックは不要)
-        self.send_initial_state(initial_state_data);
-    }
-
-    /// 現在の World の状態から GameStateData を作成する
-    fn get_initial_state_data(&self, world: &World) -> GameStateData {
-        log("GameApp: Generating initial game state data...");
-        let players = Vec::new(); // 初期状態ではプレイヤー情報は空？
-
-        // World から全ての Card エンティティと関連コンポーネントを取得
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        let mut cards = Vec::with_capacity(card_entities.len());
-
-        for &entity in &card_entities {
-            // 各エンティティから必要なコンポーネントを取得 (存在しない場合はエラー)
-            let card = world.get_component::<Card>(entity).expect(&format!("Card component not found for entity {:?}", entity));
-            let stack_info = world.get_component::<StackInfo>(entity).expect(&format!("StackInfo component not found for entity {:?}", entity));
-            let position = world.get_component::<Position>(entity).expect(&format!("Position component not found for entity {:?}", entity));
-
-            // CardData を作成して Vec に追加
-            cards.push(CardData {
-                entity,
-                suit: card.suit.into(), // components::card::Suit -> protocol::Suit
-                rank: card.rank.into(), // components::card::Rank -> protocol::Rank
-                is_face_up: card.is_face_up,
-                // TODO: components::stack::StackType から protocol::StackType への変換が必要
-                stack_type: match stack_info.stack_type {
-                    StackType::Tableau(index) => protocol::StackType::Tableau(index),
-                    StackType::Foundation(index) => protocol::StackType::Foundation(index),
-                    StackType::Stock => protocol::StackType::Stock,
-                    StackType::Waste => protocol::StackType::Waste,
-                    StackType::Hand => protocol::StackType::Hand,
-                },
-                // TODO: StackInfo の position_in_stack は u8 なので String に変換？
-                //       protocol.rs の CardData.position_in_stack が String なら必要。
-                //       u8 のまま送るなら .to_string() は不要。
-                position_in_stack: stack_info.position_in_stack,
-                position: PositionData {
-                    x: position.x,
-                    y: position.y,
-                },
-            });
-        }
-
-        GameStateData {
-            players,
-            cards,
-        }
-    }
-
-    // 初期ゲーム状態をサーバーに送信するメソッド
-    fn send_initial_state(&self, initial_state_data: GameStateData) {
-        log("GameApp: send_initial_state called.");
-        let message = ClientMessage::ProvideInitialState { initial_state: initial_state_data };
-        log(&format!("  Sending ProvideInitialState message..."));
-        // ★修正: app::network_handler::send_serialized_message を使う！★
-        if let Err(e) = app::network_handler::send_serialized_message(&self.network_manager, message) {
-            error(&format!("GameApp: Failed to send ProvideInitialState message: {}", e)); // error マクロを使うのが適切かも
-        } else {
-            log("  ProvideInitialState message sent successfully.");
-        }
+        // ★修正: app::init_handler の関数を呼び出す！★
+        app::init_handler::deal_initial_cards(
+            &self.world,
+            &self.network_manager,
+            &self.deal_system
+        );
     }
 
     // WASM から World の状態を取得して JSON 文字列で返す (デバッグ・描画用)
@@ -398,78 +302,13 @@ impl GameApp {
 
     /// Rust側で Canvas にゲーム画面を描画する関数
     #[wasm_bindgen]
-    pub fn render_game_rust(&self) -> Result<(), JsValue> { // Result を返すように変更
-        log("GameApp: render_game_rust() called!");
-
-        // --- ステップ1: コンテキストと Canvas 寸法を取得 --- ★変更！★
-        let context = &self.context;
-        let canvas = &self.canvas;
-        let canvas_width = canvas.width() as f64; // u32 から f64 へキャスト
-        let canvas_height = canvas.height() as f64;
-
-        // --- ステップ2: Canvas をクリア --- ★変更！★
-        context.clear_rect(0.0, 0.0, canvas_width, canvas_height);
-        // log(&format!("  Canvas cleared ({}x{})."), canvas_width, canvas_height);
-
-        // --- ステップ3: World からカード情報を取得 & ★ソート！★ ---
-        let world = self.world.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
-
-        // --- カード要素の取得とソート ---
-        // ↓↓↓ E0599 修正: world.iter() ではなく get_all_entities_with_component を使う！
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        let mut cards_to_render: Vec<(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>)> = Vec::with_capacity(card_entities.len());
-
-        for &entity in &card_entities {
-            // ループ内で各コンポーネントを取得
-            if let (Some(pos), Some(card)) = (
-                world.get_component::<Position>(entity),
-                world.get_component::<Card>(entity)
-            ) {
-                // DraggingInfo と StackInfo は Option で取得
-                let dragging_info = world.get_component::<DraggingInfo>(entity).cloned(); // cloned() で Option<DraggingInfo> に
-                let stack_info = world.get_component::<StackInfo>(entity); // &StackInfo の Option
-
-                cards_to_render.push((entity, pos, card, dragging_info, stack_info));
-            } else {
-                // Card または Position が見つからない場合はスキップ (またはエラーログ)
-                log(&format!("Warning: Skipping entity {:?} in render_game_rust because Card or Position component is missing.", entity));
-            }
-        }
-        // ↑↑↑ E0599 修正ここまで
-
-        // Sort cards by stack and position within the stack, or original position if dragging
-        cards_to_render.sort_by(|a, b| {
-            // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
-            let (_, _, _, dragging_info_a, stack_info_a_opt): &(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>) = a;
-            // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
-            let (_, _, _, dragging_info_b, stack_info_b_opt): &(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>) = b;
-
-            // Use original stack order if dragging, otherwise current stack order
-            let order_a = dragging_info_a
-                .as_ref()
-                // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
-                .map(|di: &DraggingInfo| di.original_position_in_stack)
-                // ★ 修正: `crate::component::` を削除 ★
-                .or_else(|| stack_info_a_opt.map(|si: &StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
-                .unwrap_or(0); // Default order if no stack info
-
-            let order_b = dragging_info_b
-                .as_ref()
-                // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
-                .map(|di: &DraggingInfo| di.original_position_in_stack)
-                // ★ 修正: `crate::component::` を削除 ★
-                .or_else(|| stack_info_b_opt.map(|si: &StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
-                .unwrap_or(0); // Default order if no stack info
-
-            order_a.cmp(&order_b)
-        });
-
-        // --- DOM操作 (未実装) ---
-        // ... DOM操作のコード ...
-
-        log(&format!("Sorted card render data ({} entities): {:?}", cards_to_render.len(), cards_to_render));
-
-        Ok(())
+    pub fn render_game_rust(&self) -> Result<(), JsValue> {
+        // ★修正: app::renderer の関数を呼び出す！★
+        app::renderer::render_game_rust(
+            &self.world,
+            &self.canvas,
+            &self.context
+        )
     }
 }
 
