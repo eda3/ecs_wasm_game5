@@ -412,8 +412,8 @@ impl GameApp {
 
             // Position コンポーネントを作成 (components::position::Position を使う)
             let position_component = Position {
-                x: card_data.position.x as f32, // protocol::PositionData (f64?) -> components::position::Position (f32)
-                y: card_data.position.y as f32,
+                x: card_data.position.x,
+                y: card_data.position.y,
             };
             world.add_component(entity, position_component);
         }
@@ -502,10 +502,10 @@ impl GameApp {
                 // TODO: StackInfo の position_in_stack は u8 なので String に変換？
                 //       protocol.rs の CardData.position_in_stack が String なら必要。
                 //       u8 のまま送るなら .to_string() は不要。
-                position_in_stack: stack_info.position_in_stack, //.to_string(),
+                position_in_stack: stack_info.position_in_stack,
                 position: PositionData {
-                    x: position.x as f64, // components::position::Position (f32) -> protocol::PositionData (f64?)
-                    y: position.y as f64,
+                    x: position.x,
+                    y: position.y,
                 },
             });
         }
