@@ -20,7 +20,7 @@
 - [x] 基本コンポーネント定義: `StackInfo` (どの場のカードか、場の中での位置)
 - [x] 基本コンポーネント定義: `GameState` (ゲーム全体の状態管理用？)
 
-## フェーズ 2: 基本ゲームロジック & 画面表示 (クライアント単体) 🃏🖼️ (完了)
+## フェーズ 2: 基本ゲームロジック & 画面表示 (クライアント単体) 🃏🖼️ (進行中)
 
 - [x] ゲーム初期化: カードデッキ生成ロジック // create_standard_deck in card.rs
 - [x] ゲーム初期化: 初期カード配置 (ディール) システムの実装 // deal_system.rs & lib.rs に deal_initial_cards() を実装！✨ & Position追加済！
@@ -29,7 +29,7 @@
 - [x] レンダリング準備: JS側でWASMをロードし、`GameApp` インスタンスを作成 // www/bootstrap.js で実装！🚀
 - [x] レンダリング準備: 基本的なHTML/CSS構造の作成 (`index.html`, `style.css`) // www/ に作成！🎨
 - [x] レンダリング準備: JSから定期的にWASMのゲーム状態を取得し、コンソール等に表示 (デバッグ用) // bootstrap.js のボタンと定期更新で部分的に実装！⚙️
-- [x] レンダリング準備: Canvas や DOM を使った基本的なカード描画 (JS側) // bootstrap.js と style.css で実装！🃏
+- [ ] レンダリング実装(Rust/Wasm): web-sys を使った基本的なカード描画 (DOM操作) // ← JSからRustに変更！
 
 ## フェーズ 3: ネットワーク実装 🌐🤝 (完了！ 🎉)
 
@@ -58,7 +58,7 @@
 - [x] サーバー側(JS): カード移動を `gameState.cards` に反映させるロジック // server/ws_server.js で基本ロジック実装！✅
 - [x] サーバー側(JS): ゲーム状態の変更を全クライアントに通知する `GameStateUpdate` メッセージのブロードキャスト実装 // server/ws_server.js で `broadcastGameStateUpdate()` を呼び出すように実装！✅
 
-## フェーズ 4: ソリティアのルールとインタラクション実装 🎮👆 (Rustルール実装完了！)
+## フェーズ 4: ソリティアのルールとインタラクション実装 🎮👆 (Rustルール実装完了！UI連携中)
 
 - [x] ルール実装(Rust): `StackType` ごとのカード移動可否判定ヘルパー関数を作成 (`src/rules.rs`？) // 基本ヘルパー (`can_move_to_foundation`, `can_move_to_tableau`) と `CardColor` を実装！✅
 - [x] ルール実装(Rust): タブローからタブローへの移動ルール実装 (色違い、ランク連続) // `can_move_to_tableau` で実装済！✅
@@ -76,7 +76,12 @@
 - [x] UIインタラクション(JS): ドロップ位置から移動先スタックを判定するロジック
 - [x] UIインタラクション(JS): クリック/ダブルクリック/ドロップ操作を `gameApp.send_make_move()` 呼び出しに変換
 - [x] 状態更新と表示(JS): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (今は `GameJoined` でのみ実行)
-- [ ] 状態更新と表示(JS): `apply_game_state` 内で、受け取ったカード情報を元に `renderGame` を呼び出して画面を更新
+- [ ] 状態更新と表示(JS): `apply_game_state` (Rust) 後、`render_game_rust` (Rust) を呼び出して画面を更新 // ← JSの renderGame から Rust の render_game_rust に変更！
+- [x] レンダリング実装(Rust/Wasm): #game-area 要素取得とクリア // render_game_rust で実装済！✅
+- [x] レンダリング実装(Rust/Wasm): カード情報に基づき div 要素を作成 (クラス、属性設定) // render_game_rust で実装済！✅
+- [x] レンダリング実装(Rust/Wasm): カード要素にスタイル (位置、表裏、スート/ランク) を設定 // render_game_rust で実装済！✅
+- [x] レンダリング実装(Rust/Wasm): 作成したカード要素を #game-area に追加 // render_game_rust で実装済！✅
+- [ ] レンダリング実装(Rust/Wasm): クリック/ダブルクリック等のイベントリスナー設定 (最難関！)
 - [ ] 状態更新と表示(JS): サーバーから `MoveRejected` を受け取った場合に、ユーザーにフィードバックを表示 (例: アラート、メッセージ表示)
 
 ## フェーズ 5: マルチプレイヤー同期と仕上げ ✨💅

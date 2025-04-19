@@ -505,7 +505,7 @@ impl GameApp {
         game_area.set_inner_html("");
         log("  Cleared #game-area content.");
 
-        // --- ★ステップ3: World からカード情報を取得 --- ★
+        // --- ステップ3: World からカード情報を取得 --- 
         log("  Acquiring world lock to get card data...");
         let world = match self.world.lock() {
             Ok(guard) => guard,
@@ -523,64 +523,69 @@ impl GameApp {
         let card_entities = world.get_all_entities_with_component::<Card>();
         log(&format!("  Found {} entities with Card component. Iterating...", card_entities.len()));
 
-        // --- ★ステップ4: カード要素を作成・設定 (まだ追加はしない) --- ★
+        // --- ステップ4: カード要素を作成・設定・追加 --- ★ここから追加・修正！★
         for &entity in &card_entities {
-            // Position と StackInfo も持っているか確認 (なければ描画しない)
             if let (Some(card), Some(position), Some(stack_info)) = (
                 world.get_component::<Card>(entity),
                 world.get_component::<Position>(entity),
                 world.get_component::<StackInfo>(entity)
             ) {
-                // --- 要素作成 ---
-                let card_element_div = match document.create_element("div") { // 変数名を区別
-                    Ok(el) => el,
-                    Err(e) => {
-                        error(&format!("Failed to create div element for card {:?}: {:?}", entity, e));
-                        continue; // 作成失敗したら次のカードへ
-                    }
-                };
-
-                // ★ Element を HtmlElement にキャスト！ (最初の修正に戻す！) ★
-                let card_element = match card_element_div.dyn_into::<HtmlElement>() {
-                    Ok(html_el) => html_el,
-                    Err(_) => {
-                        error(&format!("Failed to cast Element to HtmlElement for card {:?}", entity));
-                        continue; // キャスト失敗したら次のカードへ
-                    }
-                };
+                // --- 要素作成 & キャスト ---
+                let card_element_div = document.create_element("div").expect("Failed to create div");
+                let card_element = card_element_div.dyn_into::<HtmlElement>().expect("Failed to cast to HtmlElement");
 
                 // --- 基本クラスとID属性を設定 ---
-                // ★ キャストした HtmlElement を使う！ ★
-                if let Err(e) = card_element.class_list().add_1("card") {
-                     error(&format!("Failed to add 'card' class to element for {:?}: {:?}", entity, e));
+                card_element.class_list().add_1("card").expect("Failed to add class 'card'");
+                card_element.set_attribute("data-entity-id", &entity.0.to_string()).expect("Failed to set data-entity-id");
+
+                // --- ★スタイルと見た目に関するクラスを設定 --- ★
+                // 表裏クラス
+                let face_class = if card.is_face_up { "face-up" } else { "face-down" };
+                card_element.class_list().add_1(face_class).expect("Failed to add face class");
+
+                // スートとランククラス (表向きの場合のみ)
+                if card.is_face_up {
+                    let suit_class = format!("suit-{}", format!("{:?}", card.suit).to_lowercase());
+                    let rank_class = format!("rank-{}", format!("{:?}", card.rank).to_lowercase());
+                    card_element.class_list().add_1(&suit_class).expect("Failed to add suit class");
+                    card_element.class_list().add_1(&rank_class).expect("Failed to add rank class");
+                } else {
+                    // 裏向きの場合、スートとランクのクラスがあれば削除 (念のため)
+                    // ※ もっと効率的な方法があるかも (クラスを一度リセットするなど)
+                    let suits = ["hearts", "diamonds", "clubs", "spades"];
+                    let ranks = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
+                    for s in suits {
+                         let class_name = format!("suit-{}", s);
+                         if card_element.class_list().contains(&class_name) {
+                             card_element.class_list().remove_1(&class_name).ok(); // エラーは無視
+                         }
+                    }
+                    for r in ranks {
+                         let class_name = format!("rank-{}", r);
+                         if card_element.class_list().contains(&class_name) {
+                             card_element.class_list().remove_1(&class_name).ok(); // エラーは無視
+                         }
+                    }
                 }
-                if let Err(e) = card_element.set_attribute("data-entity-id", &entity.0.to_string()) {
-                     error(&format!("Failed to set data-entity-id for {:?}: {:?}", entity, e));
+
+                // ★ 位置スタイルを設定 (left, top) ★
+                let style = card_element.style();
+                style.set_property("left", &format!("{}px", position.x)).expect("Failed to set left style");
+                style.set_property("top", &format!("{}px", position.y)).expect("Failed to set top style");
+
+                // ★ 作成した要素を game_area に追加 ★
+                match game_area.append_child(&card_element) {
+                    Ok(_) => { /* log(&format!("    Appended card element for entity {:?}", entity)); */ }, // 成功ログはコメントアウト (多くなりすぎるため)
+                    Err(e) => {
+                        error(&format!("Failed to append card element {:?} to game_area: {:?}", entity, e));
+                    }
                 }
-
-                // --- 見た目や位置に関するクラス・スタイルを設定 (次のステップで実装) ---
-                // 例: 表向きか裏向きか、スート、ランク、位置 (top/left)
-                // card_element.class_list().add_1(if card.is_face_up { "face-up" } else { "face-down" }).ok();
-                // card_element.class_list().add_1(&format!("suit-{}", format!("{:?}", card.suit).to_lowercase())).ok();
-                // card_element.class_list().add_1(&format!("rank-{}", format!("{:?}", card.rank).to_lowercase())).ok();
-                // card_element.style().set_property("left", &format!("{}px", position.x)).ok();
-                // card_element.style().set_property("top", &format!("{}px", position.y)).ok();
-
-
-                // --- 要素を game_area に追加 (次のステップで実装) ---
-                // if let Err(e) = game_area.append_child(&card_element) {
-                //     error(&format!("Failed to append card element {:?} to game_area: {:?}", entity, e));
-                // }
-
-                log(&format!("    Created card element for entity {:?} (Position: {}, {}, Stack: {:?}, FaceUp: {})",
-                    entity, position.x, position.y, stack_info.stack_type, card.is_face_up));
 
             } else {
                  log(&format!("    Skipping entity {:?} because it's missing Card, Position, or StackInfo component.", entity));
             }
         }
-        log("  Finished iterating and creating card elements (not yet appended).");
-        // World のロックはスコープを抜ける時に自動で解除される！
+        log("  Finished iterating and appending card elements.");
     }
 }
 
