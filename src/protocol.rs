@@ -13,6 +13,9 @@ use serde::{Serialize, Deserialize};
 use crate::entity::Entity; // エンティティID (どのカードかを示すためとか)
 use crate::components::card::{Suit, Rank}; // カードのスートやランク
 use crate::components::stack::StackType; // スタックの種類 (場札、組札、山札など)
+// ↓↓↓ Position もメッセージで使う可能性があるのでインポートしておく
+// (ただし、Position 自体に Serialize/Deserialize が必要になるので注意！)
+// use crate::components::position::Position;
 
 // --- クライアントからサーバーへ送るメッセージ (Client-to-Server: C2S) ---
 
@@ -144,18 +147,17 @@ pub struct CardData {
     pub stack_type: StackType,
     /// そのスタックの中で何番目に積まれているか (0が一番下)。
     pub position_in_stack: u8,
-    // TODO: カードの位置 (Position) 情報も必要？描画するならいるよね！
-    // pub position: PositionData, 
+    // ↓↓↓ カードの位置情報を追加！
+    pub position: PositionData,
 }
 
-/*
-// TODO: 必要になったら Position コンポーネント用のデータ構造も定義
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// 位置情報 (x, y 座標) を表すデータ構造。
+/// サーバーとクライアント間で位置情報をやり取りするために使う。
+#[derive(Serialize, Deserialize, Debug, Clone)] // serde と Debug/Clone を derive！
 pub struct PositionData {
     pub x: f32,
     pub y: f32,
 }
-*/
 
 /*
 // TODO: 必要になったら GameStatus 用のデータ構造も定義
