@@ -4,11 +4,12 @@
 //! といったルールをチェックできるようにするんだ。
 
 // 必要な型をインポートしておくよ！
-use crate::components::card::{Card, Suit, Rank, Color}; // components の Card, Suit, Rank, Color を使う！
+use crate::components::card::{Card, Suit, Rank}; // ★修正: Color を削除！ (このファイル内で CardColor を定義してるから)
 use crate::components::stack::{StackType, StackInfo}; // components の StackInfo, StackType を使う！
 // use crate::world::World;                        // ゲーム世界の全体像 <-- これは使わない！
 use crate::entity::Entity;                      // エンティティID (これは crate::entity のもの)
 use crate::log;
+use crate::world::World; // 自作 World を使うため
 // use hecs::{World as HecsWorld, Entity as HecsEntity}; // <-- これを削除！
 
 // TODO: 必要に応じて他のコンポーネントや型もインポートする！
@@ -185,83 +186,65 @@ pub fn check_win_condition(foundation_card_count: usize) -> bool {
 /// 組札 (Foundation) のインデックス (0-3) から対応するスートを取得する。
 /// 約束事: 0: Heart, 1: Diamond, 2: Club, 3: Spade
 /// 戻り値も component::Suit にする！
-fn get_foundation_suit(foundation_index: u8) -> Option<Suit> {
-    match foundation_index {
-        0 => Some(Suit::Heart),
-        1 => Some(Suit::Diamond),
-        2 => Some(Suit::Club),
-        3 => Some(Suit::Spade),
-        _ => None, // 0-3 以外は無効なインデックス
-    }
-}
+// pub(crate) fn get_foundation_suit(foundation_index: u8) -> Option<Suit> {
+//     match foundation_index {
+//         0 => Some(Suit::Heart),
+//         1 => Some(Suit::Diamond),
+//         2 => Some(Suit::Club),
+//         3 => Some(Suit::Spade),
+//         _ => None, // 0-3 以外は無効なインデックス
+//     }
+// }
 
 /// 指定された組札 (Foundation) の一番上にあるカードを取得するヘルパー関数。
 /// World の状態を調べて、StackInfo を持つエンティティから見つける。
-fn get_foundation_top_card<'a>(world: &'a crate::world::World, foundation_index: u8) -> Option<&'a Card> { // 引数を自作Worldに！(仮)
-    let _top_entity: Option<Entity> = None; // Entity に戻す！
-    let _max_pos_in_stack: i16 = -1;
+/// TODO: 自作Worldからデータを取得するロジックを実装する必要あり！
+// pub(crate) fn get_foundation_top_card<'a>(world: &'a World, foundation_index: u8) -> Option<&'a Card> {
+//     // 1. StackType::Foundation(foundation_index) の StackInfo を持つ Entity を探す。
+//     // 2. その Entity に関連付けられた StackItem コンポーネントのうち、pos_in_stack が最大のものを探す。
+//     // 3. 見つかった StackItem の Card コンポーネントへの参照を返す。
 
-    // --- 自作Worldからデータを取得するロジックに書き換える必要あり！ ---
-    // 例 (これは hecs の書き方なので、自作ECSに合わせて変更！)
-    /*
-    for (entity, stack_info) in world.query::<&StackInfo>().iter() {
-        if stack_info.stack_type == StackType::Foundation && stack_info.stack_index == foundation_index {
-            if (stack_info.position_in_stack as i16) > max_pos_in_stack {
-                max_pos_in_stack = stack_info.position_in_stack as i16;
-                top_entity = Some(entity); // entity は Entity
-            }
-        }
-    }
-    */
-    // 仮実装: とりあえず None を返す
-    None 
-
-    // --- 自作Worldからデータを取得するロジックに書き換える必要あり！ ---
-    // 例 (hecs の書き方)
-    /*
-    top_entity.and_then(|entity| world.query_one::<&Card>(entity).ok().map(|mut query| query.get().expect("Top entity should have Card")))
-    */
-    // 仮実装: 上で None を返してるので、ここは通らない
-}
+//     // 仮実装: とりあえず None を返す
+//     None
+// }
 
 /// 特定のカードが、現在のワールドの状態において、自動的に移動できる組札（Foundation）があるかどうかを探す関数。
 /// 見つかった場合は、移動先の StackType (Foundation のインデックス付き) を返す。
 ///
 /// # 引数
 /// - `card_to_move`: 移動させたいカードのコンポーネントへの参照 (`component::Card`)。
-/// - `world`: 現在の World の状態への参照 (自作World)。 
+/// - `world`: 現在の World の状態への参照 (自作World)。
 ///
 /// # 戻り値
 /// - `Some(StackType)`: 移動可能な組札が見つかった場合、その組札の StackType (`component::StackType`)。
-///                     注意: 現在の StackType::Foundation はインデックスを持たないため、どの Foundation かは別途判断が必要。
+///                     注意: StackType::Foundation(index) の形で返すよ！
 /// - `None`: 移動可能な組札が見つからなかった場合。
-pub fn find_automatic_foundation_move<'a>(
-    card_to_move: &Card, // component::Card
-    world: &'a crate::world::World // 引数を自作Worldに！(仮) 
-) -> Option<StackType> { // component::StackType
-    log(&format!("[Rules] Finding automatic foundation move for {:?}...", card_to_move));
+// pub fn find_automatic_foundation_move<'a>(
+//     card_to_move: &Card,
+//     world: &'a World
+// ) -> Option<StackType> {
+//     log(&format!("[Rules] Finding automatic foundation move for {:?}...", card_to_move));
 
-    for i in 0..4u8 { // 4つの Foundation をチェック
-        let target_stack_type = StackType::Foundation; // StackType::Foundation を直接使う
-        let foundation_suit = get_foundation_suit(i);
+//     for i in 0..4u8 { // 4つの Foundation をチェック
+//         let foundation_suit = get_foundation_suit(i);
 
-        if foundation_suit.is_none() { continue; } // 無効なインデックスはスキップ
-        let foundation_suit = foundation_suit.unwrap(); // component::Suit
+//         if foundation_suit.is_none() { continue; } // 無効なインデックスはスキップ
+//         let foundation_suit = foundation_suit.unwrap();
 
-        // Foundation の一番上のカードを取得 (自作Worldを使うように修正が必要！) 
-        let foundation_top_card: Option<&Card> = get_foundation_top_card(world, i);
+//         // Foundation の一番上のカードを取得
+//         let foundation_top_card: Option<&Card> = get_foundation_top_card(world, i);
 
-        // 移動可能かチェック (can_move_to_foundation は component の型を期待するように修正済み)
-        if can_move_to_foundation(card_to_move, foundation_top_card, foundation_suit) {
-            log(&format!("  Found valid foundation [{}] for {:?}. Top card: {:?}", i, card_to_move, foundation_top_card));
-            // 移動可能な Foundation が見つかったので、StackType::Foundation を返す
-            return Some(StackType::Foundation(i));
-        }
-    }
+//         // 移動可能かチェック
+//         if can_move_to_foundation(card_to_move, foundation_top_card, foundation_suit) {
+//             log(&format!("  Found valid foundation [{}] for {:?}. Top card: {:?}", i, card_to_move, foundation_top_card));
+//             // 移動可能な Foundation が見つかったので、StackType::Foundation(i) を返す
+//             return Some(StackType::Foundation(i));
+//         }
+//     }
 
-    log(&format!("  No suitable foundation found for {:?}.", card_to_move));
-    None // 適切な移動先が見つからなかった
-}
+//     log(&format!("  No suitable foundation found for {:?}.", card_to_move));
+//     None // 適切な移動先が見つからなかった
+// }
 
 // TODO: 他の移動パターン (Stock -> Waste, Waste -> Tableau/Foundation など) の
 //       ルールチェック関数も必要に応じて追加していく！💪
@@ -271,10 +254,10 @@ pub fn find_automatic_foundation_move<'a>(
 mod tests {
     use super::*; // 親モジュールの要素を使う
     use crate::component::Rank; // Rank も使う
-    // ▼▼▼ HecsWorld を使っている部分を修正する必要がある ▼▼▼
-    // use hecs::{World as HecsWorld, Entity as HecsEntity}; // <-- 削除！
     use crate::world::World; // 自作Worldを使う (仮)
     use crate::entity::Entity; // 自作Entityを使う (仮)
+    use crate::components::card::{Card, Suit}; // Card, Suit 追加
+    use crate::components::stack::StackType; // StackType 追加
 
     // --- 既存のテスト ... ---
     #[test]
@@ -386,58 +369,15 @@ mod tests {
         println!("ゲームクリア判定テスト、成功！🎉");
     }
 
-    // --- find_automatic_foundation_move のテストを追加 --- 
+    // --- find_automatic_foundation_move のテストは src/logic/auto_move.rs に移動しました ---
+
     #[test]
-    fn test_find_automatic_foundation_move() {
-        let mut world = World::new(); // 自作World::new() を使う！ (仮)
+    fn test_can_deal_from_stock() {
+        let mut world = World::new(); // 自作World
+        // TODO: テストデータ作成
 
-        // --- 自作Worldにデータを追加するロジックに書き換える必要あり！ ---
-        /*
-        let _foundation0_entity: Entity = world.spawn((StackInfo { stack_type: StackType::Foundation, stack_index: 0, position_in_stack: 0 },));
-        let _foundation1_entity: Entity = world.spawn((StackInfo { stack_type: StackType::Foundation, stack_index: 1, position_in_stack: 0 },));
-        let _foundation2_entity: Entity = world.spawn((StackInfo { stack_type: StackType::Foundation, stack_index: 2, position_in_stack: 0 },));
-        let _foundation3_entity: Entity = world.spawn((StackInfo { stack_type: StackType::Foundation, stack_index: 3, position_in_stack: 0 },));
-        */
-
-        // カードの準備 (component::Card)
-        let ace_hearts = Card { suit: Suit::Heart, rank: Rank::Ace, is_face_up: true };
-        let two_hearts = Card { suit: Suit::Heart, rank: Rank::Two, is_face_up: true };
-        let ace_spades = Card { suit: Suit::Spade, rank: Rank::Ace, is_face_up: true };
-        let three_hearts = Card { suit: Suit::Heart, rank: Rank::Three, is_face_up: true }; // シナリオ3で使用
-
-        // --- シナリオ 1: 全 Foundation が空 --- 
-        log("Scenario 1: All foundations empty");
-        // assert 文では world を渡す (自作World)
-        // 現在 get_foundation_top_card が None を返すため、Ace の移動だけ成功するはず
-        assert_eq!(find_automatic_foundation_move(&ace_hearts, &world), Some(StackType::Foundation(0)), "Ace of Hearts should move to empty Heart foundation (idx 0)");
-        assert_eq!(find_automatic_foundation_move(&ace_spades, &world), Some(StackType::Foundation(3)), "Ace of Spades should move to empty Spade foundation (idx 3)");
-        assert_eq!(find_automatic_foundation_move(&two_hearts, &world), None, "Two of Hearts cannot move to any empty foundation");
-
-
-        // --- シナリオ 2: Heart Foundation に Ace of Hearts がある --- 
-        log("Scenario 2: Ace of Hearts on Foundation 0");
-        // --- 自作Worldにデータを追加するロジックに書き換える必要あり！ ---
-        /*
-        let card_entity_ace_h: Entity = world.spawn((ace_hearts.clone(), StackInfo { stack_type: StackType::Foundation, stack_index: 0, position_in_stack: 1 }));
-        */
-        // assert 文。get_foundation_top_card が未実装なので、これも空の場合と同じ結果になるはず。
-        assert_eq!(find_automatic_foundation_move(&two_hearts, &world), None, "Two of Hearts cannot move yet (get_foundation_top_card not implemented)");
-        assert_eq!(find_automatic_foundation_move(&ace_spades, &world), Some(StackType::Foundation(3)), "Ace of Spades should move to empty Spade foundation (idx 3)");
-        // world.despawn(card_entity_ace_h).unwrap(); // 自作World の despawn を使う (仮)
-
-
-        // --- シナリオ 3: Heart Foundation に Two of Hearts がある (Ace の上に) --- 
-        log("Scenario 3: Two of Hearts on Foundation 0");
-        // --- 自作Worldにデータを追加するロジックに書き換える必要あり！ ---
-        /*
-        let _card_entity_ace_h: Entity = world.spawn((ace_hearts.clone(), StackInfo { stack_type: StackType::Foundation, stack_index: 0, position_in_stack: 1 }));
-        let _card_entity_two_h: Entity = world.spawn((two_hearts.clone(), StackInfo { stack_type: StackType::Foundation, stack_index: 0, position_in_stack: 2 }));
-        */
-        // assert 文。これも未実装のため None になるはず。
-        assert_eq!(find_automatic_foundation_move(&three_hearts, &world), None, "Three of Hearts cannot move yet (get_foundation_top_card not implemented)");
-
-        println!("Automatic Foundation Move テスト (仮実装)、成功！🎉");
-
+        // --- シナリオ 1: 山札が空 ---
+        // assert!(!can_deal_from_stock(&world)); // World を引数にとるように変更？
     }
 }
 

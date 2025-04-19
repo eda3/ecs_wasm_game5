@@ -24,6 +24,7 @@ pub mod systems;
 pub mod network; // network モジュールを宣言
 pub mod protocol; // protocol モジュールを宣言
 pub mod rules; // ★追加: 新しい rules モジュールを宣言！
+pub mod logic; // ← これを追加！
 
 // 各モジュールから必要な型をインポート！
 // use crate::world::World; // <-- これも不要 (自作Worldを使う想定)
@@ -48,6 +49,8 @@ use crate::components::{
     player::Player, // Import Player from components
     stack::{StackInfo}, // Import StackInfo/StackType from components
 };
+
+use crate::logic::auto_move::find_automatic_foundation_move;
 
 // systems/ 以下のシステムを use 宣言！
 // ★ 空の use ブロックは削除 ★
@@ -585,7 +588,7 @@ impl GameApp {
         };
 
         // 自動移動先を探す！🔍 (World の参照を渡す)
-        let target_stack_opt = rules::find_automatic_foundation_move(&card_to_move, &*world_guard);
+        let target_stack_opt = find_automatic_foundation_move(&card_to_move, &*world_guard);
         // World のロックを早めに解除！
         drop(world_guard);
 
