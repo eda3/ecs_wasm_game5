@@ -29,7 +29,6 @@ pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 use crate::world::World;
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
 use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId};
-use crate::components::{card::{Card, Rank, Suit}, position::Position, stack::StackInfo, player::Player};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
 use serde_json; // serde_json を使う
@@ -37,6 +36,10 @@ use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 us
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
 use crate::systems::deal_system::DealInitialCardsSystem;
 use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
+use crate::component::{Card, Position, StackInfo, DraggingInfo}; // Position を追加
+use crate::protocol::*;
+use crate::rules::*;
+use crate::consts::*;
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -87,15 +90,6 @@ fn get_suit_symbol(suit: &Suit) -> String {
         Suit::Club => "♣".to_string(),
         Suit::Spade => "♠".to_string(),
     }
-}
-
-// --- ★追加: ドラッグ情報保持用構造体 --- ★
-// (Wasm外部には公開しないので #[wasm_bindgen] は不要)
-#[derive(Clone, Debug)] // Clone できるようにしておく
-struct DraggingInfo {
-    entity_id: Entity,
-    offset_x: i32,
-    offset_y: i32,
 }
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
@@ -595,8 +589,8 @@ impl GameApp {
 
     /// Rust側で Canvas にゲーム画面を描画する関数
     #[wasm_bindgen]
-    pub fn render_game_rust(&self) {
-        log("GameApp: render_game_rust (Canvas) called!");
+    pub fn render_game_rust(&self) -> Result<(), JsValue> { // Result を返すように変更
+        log("GameApp: render_game_rust() called!");
 
         // --- ステップ1: コンテキストと Canvas 寸法を取得 --- ★変更！★
         let context = &self.context;
@@ -608,75 +602,46 @@ impl GameApp {
         context.clear_rect(0.0, 0.0, canvas_width, canvas_height);
         // log(&format!("  Canvas cleared ({}x{})."), canvas_width, canvas_height);
 
-        // --- ステップ3: World からカード情報を取得 --- (変更なし)
-        let world = self.world.lock().expect("Failed to lock world for rendering");
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        log(&format!("  Found {} entities with Card component. Drawing cards...", card_entities.len()));
+        // --- ステップ3: World からカード情報を取得 & ★ソート！★ --- 
+        let world = self.world.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
 
-        // --- ステップ4: カードを描画 --- ★ここから大幅に変更！★
-        let card_width = 72.0;
-        let card_height = 96.0;
+        // --- カード要素の取得とソート ---
+        let mut cards_to_render: Vec<(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>)> = world
+            .iter::<(Entity, &Position, &Card)>()
+            .filter_map(|(entity, pos, card)| {
+                let dragging_info = world.get_component::<DraggingInfo>(entity).cloned(); // Remove .ok()
+                let stack_info = world.get_component::<StackInfo>(entity); // Just get Option<&StackInfo>
+                Some((entity, pos, card, dragging_info, stack_info))
+            })
+            .collect();
 
-        for &entity in &card_entities {
-            if let (Some(card), Some(position)) = (
-                world.get_component::<Card>(entity),
-                world.get_component::<Position>(entity)
-            ) {
-                let x = position.x as f64;
-                let y = position.y as f64;
+        // Sort cards by stack and position within the stack, or original position if dragging
+        cards_to_render.sort_by(|a, b| {
+            let (_, _, _, dragging_info_a, stack_info_a_opt) = a;
+            let (_, _, _, dragging_info_b, stack_info_b_opt) = b;
 
-                // --- 四角形と枠線を描画 --- 
-                let fill_color = if card.is_face_up { "#ffffff" } else { "#4a90e2" };
-                // ★修正: メソッド名を _str に！★
-                context.set_fill_style_str(fill_color); 
-                context.fill_rect(x, y, card_width, card_height);
-                // ★修正: メソッド名を _str に！★
-                context.set_stroke_style_str("#aaaaaa"); 
-                context.set_line_width(1.0);
-                context.stroke_rect(x, y, card_width, card_height);
+            // Use original stack order if dragging, otherwise current stack order
+            let order_a = dragging_info_a
+                .as_ref()
+                .map(|di| di.original_position_in_stack)
+                .or_else(|| stack_info_a_opt.map(|si| si.position_in_stack))
+                .unwrap_or(0); // Default order if no stack info
 
-                // --- ★追加: 表向きならランクとスートを描画★ ---
-                if card.is_face_up {
-                    let rank_text = get_rank_text(&card.rank);
-                    let suit_symbol = get_suit_symbol(&card.suit);
-                    let text_color = match card.suit {
-                        Suit::Heart | Suit::Diamond => "red",
-                        Suit::Club | Suit::Spade => "black",
-                    };
+            let order_b = dragging_info_b
+                .as_ref()
+                .map(|di| di.original_position_in_stack)
+                .or_else(|| stack_info_b_opt.map(|si| si.position_in_stack))
+                .unwrap_or(0); // Default order if no stack info
 
-                    // --- テキストスタイル設定 --- 
-                    context.set_font("bold 16px sans-serif"); // フォント設定
-                    // ★修正: メソッド名を _str に！★
-                    context.set_fill_style_str(text_color); // テキストの色を設定
-                    context.set_text_align("center");       // 横方向中央揃え
-                    context.set_text_baseline("middle");      // 縦方向中央揃え
+            order_a.cmp(&order_b)
+        });
 
-                    // --- ランクを描画 (左上と右下っぽく) --- 
-                    let rank_margin_x = 10.0;
-                    let rank_margin_y = 10.0;
-                    context.set_text_align("left"); // 左揃えに戻す
-                    context.set_text_baseline("top"); // 上揃えに戻す
-                    context.fill_text(&rank_text, x + rank_margin_x, y + rank_margin_y)
-                           .expect("Failed to draw top rank");
-                    // 右下はちょっと難しいので、一旦左上だけ！
-                    // context.save(); // 回転とかするなら状態保存
-                    // context.translate(x + card_width - rank_margin_x, y + card_height - rank_margin_y);
-                    // context.rotate(std::f64::consts::PI).unwrap(); // 180度回転
-                    // context.fill_text(&rank_text, 0.0, 0.0).expect("Failed to draw bottom rank");
-                    // context.restore(); // 状態復元
+        // --- DOM操作 (未実装) ---
+        // ... DOM操作のコード ...
 
-                    // --- スートを描画 (中央に大きく) --- 
-                    context.set_font("bold 28px sans-serif"); // スートは大きく
-                    context.set_text_align("center");
-                    context.set_text_baseline("middle");
-                    context.fill_text(&suit_symbol, x + card_width / 2.0, y + card_height / 2.0)
-                           .expect("Failed to draw suit");
-                }
-            } else {
-                 log(&format!("    Skipping entity {:?} because it's missing Card or Position component.", entity));
-            }
-        }
-        log("  Finished drawing card rectangles and face-up details."); // ログ更新
+        log(&format!("Sorted card render data ({} entities): {:?}", cards_to_render.len(), cards_to_render));
+
+        Ok(())
     }
 }
 

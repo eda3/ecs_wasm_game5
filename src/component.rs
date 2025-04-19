@@ -1,5 +1,7 @@
 // src/component.rs
 
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 // Rust の Any 型を使うためにインポートするよ。
 // これを使うと、具体的な型が分からなくても、型情報を扱えるようになるんだ！
 // コンポーネントストレージを管理する時にちょっと役立つテクニックだよ。(後で使うかも？🤔)
@@ -10,6 +12,10 @@ use std::collections::HashMap;
 
 // さっき作った Entity 型をこのファイルでも使うからインポートするよ。
 use crate::entity::Entity; // `crate::` は、このプロジェクト（クレート）のルートから見たパスって意味だよ。
+// Component トレイトを使うためにインポート！
+// Note: Component is likely defined in world.rs, adjust if needed.
+// use crate::world::Component;
+// If Component trait is in this file, no need to import. Let's assume it's defined below for now.
 
 /// Component（コンポーネント）トレイトだよ！
 ///
@@ -24,7 +30,7 @@ use crate::entity::Entity; // `crate::` は、このプロジェクト（クレ�
 /// マルチスレッド（複数の処理を同時に動かす）環境でも安全に使えるようにするための制約だよ。
 /// `'static` は、コンポーネントがプログラムの実行中ずっと存在する可能性があることを示すよ。
 /// これらを付けておくと、後で困ることが少なくなるんだ！😌
-pub trait Component: Send + Sync + 'static {
+pub trait Component: std::fmt::Debug + Send + Sync + 'static {
     // 将来、全てのコンポーネントに共通するメソッドが必要になったら、ここに追加できるよ！
     // 例えば、コンポーネントをリセットする機能とか？🤔
     // fn reset(&mut self);
@@ -155,52 +161,162 @@ impl<T: Component> Default for ComponentStorage<T> {
     }
 }
 
+// --- Concrete Component Definitions ---
+// ここから具体的なコンポーネントを定義していくよ！
+
+/// 位置情報を表すコンポーネントだよ。エンティティがどこにいるかを示す！📍
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct Position {
+    pub x: f64, // X座標。f64 は倍精度浮動小数点数。JS の Number 型と互換性があるよ。
+    pub y: f64, // Y座標。
+}
+// Position はコンポーネントだよ、ということを示すために Component トレイトを実装！
+impl Component for Position {}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Suit {
+    Heart,   // ❤️
+    Diamond, // ♦️
+    Club,    // ♣️
+    Spade,   // ♠️
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)] // Ord/PartialOrd で順序付けできるように
+pub enum Rank {
+    Ace = 1, // エースは 1
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
+    Eight,
+    Nine,
+    Ten,
+    Jack,  // ジャック
+    Queen, // クイーン
+    King,  // キング
+}
+
+/// カード情報を表すコンポーネントだよ。どんなカードかを示す！🃏
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct Card {
+    pub suit: Suit, // カードのスート（マーク）
+    pub rank: Rank, // カードのランク（数字）
+    pub is_face_up: bool, // カードが表向きか裏向きか
+    // 必要なら他の情報（例：どのスタックに属しているか）も追加できる
+}
+// Card もコンポーネントだよ！
+impl Component for Card {}
+
+/// スタック（カードの山）の種類を示すよ！
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum StackType {
+    Tableau,   // 場札 (7列のやつ)
+    Foundation,// 組札 (AからKまで積むところ)
+    Stock,     // 山札 (まだ配られてないカード)
+    Waste,     // 捨札 (山札からめくったカード)
+    Hand,      // 手札 (ドラッグ中のカード)
+}
+
+/// スタック情報を表すコンポーネントだよ。カードの山に関する情報！⛰️
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct StackInfo {
+    pub stack_type: StackType, // スタックの種類
+    pub stack_index: u8,      // スタックのインデックス（例：Tableau の何列目か）
+    pub position_in_stack: u8, // スタックの中での順番（0が一番下）
+}
+// StackInfo もコンポーネントだよ！
+impl Component for StackInfo {}
+
+/// プレイヤー情報を表すコンポーネントだよ。接続してきたクライアントの情報！👤
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct Player {
+    pub id: String, // WebSocket などから割り当てられる一意な ID
+    // 必要ならプレイヤー名なども追加できる
+}
+// Player もコンポーネントだよ！
+impl Component for Player {}
+
+/// ドラッグ中のカードに関する情報を表すコンポーネントだよ！🖱️➡️🃏
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DraggingInfo {
+    pub original_position_in_stack: usize,
+    pub original_stack_entity: u32, // Changed from Entity to u32 for simplicity
+    pub original_x: f64,
+    pub original_y: f64,
+}
+
+impl Component for DraggingInfo {}
+
+/// ゲーム全体の状態を表すコンポーネントだよ！🎮
+/// 通常、こういう「全体の状態」はエンティティは持たないことが多いけど、
+/// 特定のエンティティ（例：シングルトンエンティティ）に持たせる設計もあるよ。
+/// 今回はサーバーの状態管理のために使うかもしれないので定義しておく。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[wasm_bindgen]
+pub enum GameState {
+    WaitingForPlayers, // プレイヤー待ち
+    Dealing,           // カード配布中
+    Playing,           // プレイ中
+    GameOver,          // ゲーム終了
+}
+// GameState もコンポーネントだよ！
+impl Component for GameState {}
+
 // --- ComponentStorage のテスト ---
+// (Tests should ideally be in their own module or file)
 #[cfg(test)]
 mod tests {
     use super::*; // 親モジュールの要素を使う宣言
     use crate::entity::EntityManager; // Entity を作るために EntityManager も使う
 
     // テストで使うためのダミーコンポーネントを定義するよ！
-    // 位置情報を表す Position コンポーネント
+    // 位置情報を表す Position コンポーネント (Local to tests)
     #[derive(Debug, PartialEq, Clone)] // テストで比較したりクローンしたりできるようにする
-    struct Position {
+    struct TestPosition { // Renamed to avoid conflict if Position struct is also used in tests directly
         x: f32,
         y: f32,
     }
-    // Component トレイトを実装！ これで Position はコンポーネントとして認められる！🎉
-    impl Component for Position {}
+    // Component トレイトを実装！
+    impl Component for TestPosition {}
 
     // テストで使うためのダミーコンポーネント その２！
-    // 速度情報を表す Velocity コンポーネント
+    // 速度情報を表す Velocity コンポーネント (Local to tests)
     #[derive(Debug, PartialEq, Clone)]
-    struct Velocity {
+    struct TestVelocity { // Renamed
         dx: f32,
         dy: f32,
     }
     // Component トレイトを実装！
-    impl Component for Velocity {}
+    impl Component for TestVelocity {}
 
     #[test]
     fn insert_and_get_component() {
         // EntityManager と Position 用のストレージを作る
         let manager = EntityManager::default();
-        let mut storage = ComponentStorage::<Position>::default(); // 型を指定するのを忘れずに！
+        let mut storage = ComponentStorage::<TestPosition>::default(); // Use TestPosition
 
         // エンティティをいくつか作る
         let entity1 = manager.create_entity();
         let entity2 = manager.create_entity();
 
         // コンポーネントのデータを作る
-        let pos1 = Position { x: 10.0, y: 20.0 };
-        let pos2 = Position { x: 30.0, y: 40.0 };
+        let pos1 = TestPosition { x: 10.0, y: 20.0 };
+        let pos2 = TestPosition { x: 30.0, y: 40.0 };
 
         // ストレージにコンポーネントを追加！
         storage.insert(entity1, pos1.clone()); // clone() でコピーして渡す
         storage.insert(entity2, pos2.clone());
 
         // ちゃんと取得できるか確認！
-        // assert_eq! で中身が期待通りか比較するよ
         assert_eq!(storage.get(entity1), Some(&pos1), "エンティティ1のPositionが違う！😱");
         assert_eq!(storage.get(entity2), Some(&pos2), "エンティティ2のPositionが違う！😱");
 
@@ -214,21 +330,20 @@ mod tests {
     #[test]
     fn get_mut_component() {
         let manager = EntityManager::default();
-        let mut storage = ComponentStorage::<Position>::default();
+        let mut storage = ComponentStorage::<TestPosition>::default(); // Use TestPosition
         let entity1 = manager.create_entity();
-        let pos1 = Position { x: 10.0, y: 20.0 };
+        let pos1 = TestPosition { x: 10.0, y: 20.0 };
         storage.insert(entity1, pos1);
 
         // get_mut で可変参照を取得して、中身を変更してみる！✏️
         if let Some(pos_mut) = storage.get_mut(entity1) {
             pos_mut.x = 15.0; // x 座標を変更！
         } else {
-            // ここに来たらテスト失敗！
             panic!("get_mut でコンポーネントを取得できなかった！😭");
         }
 
         // 変更が反映されてるか確認！
-        assert_eq!(storage.get(entity1), Some(&Position { x: 15.0, y: 20.0 }), "コンポーネントの変更が反映されてない！🤔");
+        assert_eq!(storage.get(entity1), Some(&TestPosition { x: 15.0, y: 20.0 }), "コンポーネントの変更が反映されてない！🤔");
 
         println!("コンポーネントの変更テスト、成功！🎉");
     }
@@ -236,9 +351,9 @@ mod tests {
     #[test]
     fn remove_component() {
         let manager = EntityManager::default();
-        let mut storage = ComponentStorage::<Position>::default();
+        let mut storage = ComponentStorage::<TestPosition>::default(); // Use TestPosition
         let entity1 = manager.create_entity();
-        let pos1 = Position { x: 10.0, y: 20.0 };
+        let pos1 = TestPosition { x: 10.0, y: 20.0 };
         storage.insert(entity1, pos1.clone());
 
         // ちゃんと入ってることを確認
@@ -250,70 +365,92 @@ mod tests {
         // 削除されたコンポーネントが正しいか確認
         assert_eq!(removed_component, Some(pos1), "削除されたコンポーネントが違う！🤔");
 
-        // 削除後に get したら None になるか確認
-        assert!(storage.get(entity1).is_none(), "削除したはずのコンポーネントがまだ残ってる！😱");
+        // 削除されたか確認
+        assert!(storage.get(entity1).is_none(), "コンポーネントが削除されていない！😨");
 
         println!("コンポーネントの削除テスト、成功！🎉");
     }
 
-     #[test]
+    #[test]
     fn iter_components() {
         let manager = EntityManager::default();
-        let mut storage = ComponentStorage::<Position>::default();
-
+        let mut storage = ComponentStorage::<TestPosition>::default(); // Use TestPosition
         let entity1 = manager.create_entity();
-        let pos1 = Position { x: 1.0, y: 2.0 };
-        storage.insert(entity1, pos1.clone());
-
         let entity2 = manager.create_entity();
-        let pos2 = Position { x: 3.0, y: 4.0 };
+        let pos1 = TestPosition { x: 10.0, y: 20.0 };
+        let pos2 = TestPosition { x: 30.0, y: 40.0 };
+        storage.insert(entity1, pos1.clone());
         storage.insert(entity2, pos2.clone());
 
-        // iter() を使ってループ処理！
         let mut count = 0;
+        // iter() でイテレーターを取得してループ！
         for (entity, pos) in storage.iter() {
-            // ちゃんとエンティティとコンポーネントのペアが取れるか確認
+            // 正しい組み合わせが見つかるかチェック
             if *entity == entity1 {
-                assert_eq!(pos, &pos1);
+                assert_eq!(pos, &pos1, "エンティティ1のイテレーター結果が違う！");
             } else if *entity == entity2 {
-                assert_eq!(pos, &pos2);
+                assert_eq!(pos, &pos2, "エンティティ2のイテレーター結果が違う！");
             } else {
-                panic!("知らないエンティティが出てきた！🤯");
+                panic!("想定外のエンティティが見つかった！");
             }
             count += 1;
         }
-        // ちゃんと2つの要素が処理されたか確認
-        assert_eq!(count, 2, "イテレーターの要素数が違う！🤔");
+        assert_eq!(count, 2, "イテレーターで見つかったコンポーネント数が違う！");
 
-        println!("コンポーネントのイテレーターテスト、成功！🎉");
+        println!("コンポーネントのイテレーションテスト、成功！🎉");
+    }
+
+    #[test]
+    fn iter_mut_components() {
+        let manager = EntityManager::default();
+        let mut storage = ComponentStorage::<TestPosition>::default(); // Use TestPosition
+        let entity1 = manager.create_entity();
+        let pos1 = TestPosition { x: 10.0, y: 20.0 };
+        storage.insert(entity1, pos1);
+
+        // iter_mut() で可変参照を取得して変更！
+        for (_entity, pos) in storage.iter_mut() {
+            pos.x += 1.0;
+        }
+
+        // 変更が反映されているか確認
+        assert_eq!(storage.get(entity1), Some(&TestPosition { x: 11.0, y: 20.0 }), "iter_mut による変更が反映されていない！");
+
+        println!("コンポーネントの可変イテレーションテスト、成功！🎉");
     }
 
     #[test]
     fn different_component_types() {
-        // 違う種類のコンポーネントストレージもちゃんと動くか確認！
         let manager = EntityManager::default();
-        let mut pos_storage = ComponentStorage::<Position>::default();
-        let mut vel_storage = ComponentStorage::<Velocity>::default(); // Velocity 用のストレージ！
+        // Position 用と Velocity 用のストレージをそれぞれ作る
+        let mut pos_storage = ComponentStorage::<TestPosition>::default(); // Use TestPosition
+        let mut vel_storage = ComponentStorage::<TestVelocity>::default(); // Use TestVelocity
 
         let entity1 = manager.create_entity();
-        let pos1 = Position { x: 1.0, y: 1.0 };
-        let vel1 = Velocity { dx: 0.1, dy: 0.0 };
+        let entity2 = manager.create_entity();
 
+        let pos1 = TestPosition { x: 1.0, y: 2.0 };
+        let vel1 = TestVelocity { dx: 3.0, dy: 4.0 };
+        let pos2 = TestPosition { x: 5.0, y: 6.0 };
+
+        // エンティティ1 には Position と Velocity の両方を追加
         pos_storage.insert(entity1, pos1.clone());
         vel_storage.insert(entity1, vel1.clone());
-
-        let entity2 = manager.create_entity();
-        let pos2 = Position { x: 5.0, y: 5.0 };
-        // entity2 には Velocity は追加しない
-
+        // エンティティ2 には Position のみ追加
         pos_storage.insert(entity2, pos2.clone());
 
-        // それぞれのストレージから正しく取得できるか？
+        // ちゃんと取得できるか確認
         assert_eq!(pos_storage.get(entity1), Some(&pos1));
         assert_eq!(vel_storage.get(entity1), Some(&vel1));
         assert_eq!(pos_storage.get(entity2), Some(&pos2));
-        assert_eq!(vel_storage.get(entity2), None); // entity2 に Velocity はないはず！
+        // エンティティ2 は Velocity を持っていないはず
+        assert_eq!(vel_storage.get(entity2), None);
 
         println!("複数コンポーネントタイプのテスト、成功！🎉");
     }
-} 
+}
+// --- ここから下は削除 ---
+
+// Component トレイトと ComponentStorage の定義は src/world.rs や src/storage.rs に
+// 移動したほうが構造的に綺麗かもしれない。
+// このファイルは純粋にコンポーネントの型定義に専念させるとかね！ 
