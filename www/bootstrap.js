@@ -17,7 +17,7 @@ const dealButton = document.getElementById('deal-button');
 const getStateButton = document.getElementById('get-state-button');
 const connectionStatusSpan = document.getElementById('connection-status');
 const playerIdSpan = document.getElementById('player-id');
-// const gameAreaDiv = document.getElementById('game-area'); // ゲーム描画用 (まだ使わないけど)
+const gameAreaDiv = document.getElementById('game-area'); // ゲーム描画用の div を取得！
 
 // --- メインの非同期処理 --- (WASM のロードは非同期だから async/await を使うよ)
 async function main() {
@@ -88,12 +88,16 @@ function setupEventListeners() {
     // 「カードを配る」ボタン
     dealButton.addEventListener('click', () => {
         console.log("🖱️ Deal button clicked");
-        gameApp.deal_initial_cards(); // Rust 側の deal_initial_cards() を呼び出す！
-        // TODO: 配った後に状態を取得して描画するとか？
-        // dealButton.disabled = true; // 一回配ったら無効にする？
+        try {
+            gameApp.deal_initial_cards(); // Rust 側の deal_initial_cards() を呼び出す！
+            console.log("🃏 Cards dealt on Rust side.");
+            renderGame(); // カードを配った後に画面を再描画！✨
+        } catch (e) {
+            console.error("カード配布または描画中にエラー:", e);
+        }
     });
 
-    // 「状態取得(Console)」ボタン
+    // 「状態取得(Console)」ボタン (描画も行うように変更！)
     getStateButton.addEventListener('click', () => {
         console.log("🖱️ Get State button clicked");
         try {
@@ -101,8 +105,9 @@ function setupEventListeners() {
             console.log("--- World State (JSON) ---");
             console.log(JSON.parse(stateJson)); // JSON 文字列をパースしてオブジェクトとして表示
             console.log("-------------------------");
+            renderGame(); // 状態取得後にも画面を描画！✨
         } catch (e) {
-            console.error("状態の取得またはJSONパースに失敗: ", e);
+            console.error("状態の取得、JSONパース、または描画中にエラー: ", e);
         }
     });
 }
@@ -153,6 +158,149 @@ function updateStatusDisplay() {
     }
 }
 
+// --- ★ 新しい関数: ゲーム状態を描画する！ --- ★
+function renderGame() {
+    console.log("🎨 Rendering game state...");
+    if (!gameApp) {
+        console.error("描画失敗: gameApp が初期化されていません。");
+        return;
+    }
+
+    try {
+        // 1. Rust から最新のゲーム状態 (JSON) を取得
+        const stateJson = gameApp.get_world_state_json();
+        const gameState = JSON.parse(stateJson);
+
+        // エラーがないかチェック (Rust側でエラーJSONを返す場合)
+        if (gameState.error) {
+            console.error("サーバーからエラーが返されました: ", gameState.error, gameState.details);
+            // TODO: ユーザーにエラー表示
+            gameAreaDiv.innerHTML = `<p style="color: red;">ゲーム状態の取得に失敗しました: ${gameState.error}</p>`;
+            return;
+        }
+
+        // 2. game-area の中身を一旦空にする
+        gameAreaDiv.innerHTML = ''; // 古いカード要素を削除！
+
+        // 3. 状態データ (gameState.cards) を元にカード要素を作成して配置
+        if (gameState.cards && Array.isArray(gameState.cards)) {
+            console.log(`  Rendering ${gameState.cards.length} cards...`);
+            gameState.cards.forEach(cardData => {
+                // カード要素 (div) を作成
+                const cardElement = document.createElement('div');
+                cardElement.classList.add('card'); // 基本クラス
+                cardElement.dataset.entityId = cardData.entity_id; // data-* 属性でエンティティIDを保持 (デバッグ用)
+
+                // カードの位置を計算 (CSS で position: absolute が前提！)
+                const position = calculateCardPosition(cardData);
+                cardElement.style.left = `${position.x}px`;
+                cardElement.style.top = `${position.y}px`;
+                // z-index も設定して重なり順を制御！ order が大きいほど手前
+                cardElement.style.zIndex = cardData.order;
+
+                // カードの内容 (スートとランク or 裏面)
+                if (cardData.is_face_up) {
+                    cardElement.classList.add('face-up');
+                    cardElement.classList.add(`suit-${cardData.suit.toLowerCase()}`); // 例: suit-heart
+                    cardElement.classList.add(`rank-${cardData.rank.toLowerCase()}`); // 例: rank-ace
+                    // Suit記号とランク文字を設定 (CSSで色分けできるようにspanも使う)
+                    const suitSymbol = getSuitSymbol(cardData.suit);
+                    const rankText = getRankText(cardData.rank);
+                    cardElement.innerHTML = `
+                        <span class="rank">${rankText}</span>
+                        <span class="suit">${suitSymbol}</span>
+                    `;
+                } else {
+                    cardElement.classList.add('face-down');
+                    cardElement.innerHTML = ''; // 裏面はCSSで描画する想定
+                }
+
+                // 作成したカード要素をゲームエリアに追加
+                gameAreaDiv.appendChild(cardElement);
+            });
+            console.log("  Card elements added to game area.");
+        } else {
+            console.warn("gameState に cards 配列が含まれていません。");
+            gameAreaDiv.innerHTML = '<p>カード情報がありません。</p>';
+        }
+
+    } catch (e) {
+        console.error("ゲーム状態の描画中にエラーが発生しました:", e);
+        gameAreaDiv.innerHTML = '<p style="color: red;">ゲーム画面の描画中にエラーが発生しました。</p>';
+    }
+}
+
+// --- ヘルパー関数: カードの表示位置を計算 --- (超簡易版！)
+function calculateCardPosition(cardData) {
+    const cardWidth = 72; // カードの幅 (CSSと合わせる必要あり)
+    const cardHeight = 96; // カードの高さ
+    const horizontalSpacing = 10; // 横の間隔
+    const verticalSpacing = 15;   // 縦の間隔 (重ねる場合)
+    const tableauVerticalOffset = 25; // 場札の重なり具合
+
+    let baseX = 10;
+    let baseY = 10;
+
+    switch (cardData.stack_type) {
+        case 'Stock':
+            // 山札は左上に固めておく (雑)
+            baseX = 10;
+            baseY = 10; // order で少しずらす？今回は固定
+            break;
+        case 'Waste':
+            // 捨て札は山札の右隣 (雑)
+            baseX = 10 + cardWidth + horizontalSpacing;
+            baseY = 10; // order で少しずらす？今回は固定
+            break;
+        case 'Foundation':
+            // 上がり札は右上に4つ並べる (雑)
+            baseX = 10 + (cardWidth + horizontalSpacing) * (3 + (cardData.stack_index || 0)); // 3番目以降に配置
+            baseY = 10;
+            break;
+        case 'Tableau':
+            // 場札は7列、下に重ねていく (雑)
+            baseX = 10 + (cardWidth + horizontalSpacing) * (cardData.stack_index || 0);
+            baseY = 10 + cardHeight + verticalSpacing + (cardData.order * tableauVerticalOffset);
+            break;
+        default:
+            console.warn(`未知の stack_type: ${cardData.stack_type}`);
+            break;
+    }
+
+    return { x: baseX, y: baseY };
+}
+
+// --- ヘルパー関数: スート記号を取得 ---
+function getSuitSymbol(suitName) {
+    switch (suitName) {
+        case 'Heart': return '♥';
+        case 'Diamond': return '♦';
+        case 'Club': return '♣';
+        case 'Spade': return '♠';
+        default: return '?';
+    }
+}
+
+// --- ヘルパー関数: ランク文字列を取得 ---
+function getRankText(rankName) {
+    // 基本はそのままだけど、Ace, King, Queen, Jack は A, K, Q, J にしたい
+    switch (rankName) {
+        case 'Ace': return 'A';
+        case 'King': return 'K';
+        case 'Queen': return 'Q';
+        case 'Jack': return 'J';
+        case 'Ten': return '10';
+        case 'Nine': return '9';
+        case 'Eight': return '8';
+        case 'Seven': return '7';
+        case 'Six': return '6';
+        case 'Five': return '5';
+        case 'Four': return '4';
+        case 'Three': return '3';
+        case 'Two': return '2';
+        default: return rankName.charAt(0); // 不明な場合は最初の文字？
+    }
+}
 
 // --- 実行開始！ ---
 main(); 
