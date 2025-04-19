@@ -20,16 +20,16 @@
 - [x] 基本コンポーネント定義: `StackInfo` (どの場のカードか、場の中での位置)
 - [x] 基本コンポーネント定義: `GameState` (ゲーム全体の状態管理用？)
 
-## フェーズ 2: 基本ゲームロジック & 画面表示 (クライアント単体) 🃏🖼️ (進行中)
+## フェーズ 2: 基本ゲームロジック & 画面表示 (クライアント単体) 🃏🖼️ (方針転換！Canvasへ)
 
-- [x] ゲーム初期化: カードデッキ生成ロジック // create_standard_deck in card.rs
-- [x] ゲーム初期化: 初期カード配置 (ディール) システムの実装 // deal_system.rs & lib.rs に deal_initial_cards() を実装！✨ & Position追加済！
-- [x] レンダリング準備: `GameApp` (WASM側メイン構造体) の実装 (`src/lib.rs`)
-- [x] レンダリング準備: `GameApp` から World の状態を取得するメソッド実装 // get_world_state_json() を実装！🦴→✅ & Position追加済！
-- [x] レンダリング準備: JS側でWASMをロードし、`GameApp` インスタンスを作成 // www/bootstrap.js で実装！🚀
-- [x] レンダリング準備: 基本的なHTML/CSS構造の作成 (`index.html`, `style.css`) // www/ に作成！🎨
-- [x] レンダリング準備: JSから定期的にWASMのゲーム状態を取得し、コンソール等に表示 (デバッグ用) // bootstrap.js のボタンと定期更新で部分的に実装！⚙️
-- [ ] レンダリング実装(Rust/Wasm): web-sys を使った基本的なカード描画 (DOM操作) // ← JSからRustに変更！
+- [x] ゲーム初期化: カードデッキ生成ロジック
+- [x] ゲーム初期化: 初期カード配置 (ディール) システムの実装
+- [x] レンダリング準備: `GameApp` (WASM側メイン構造体) の実装
+- [x] レンダリング準備: `GameApp` から World の状態を取得するメソッド実装
+- [x] レンダリング準備: JS側でWASMをロードし、`GameApp` インスタンスを作成
+- [x] レンダリング準備: 基本的なHTML/CSS構造の作成 (`index.html` に `<canvas>` を設置！✅)
+- [x] レンダリング準備: JSから定期的にWASMのゲーム状態を取得し、コンソール等に表示
+- [ ] レンダリング実装(Rust/Wasm): **Canvas** を使った基本的なカード描画 // ← DOMからCanvasに変更！
 
 ## フェーズ 3: ネットワーク実装 🌐🤝 (完了！ 🎉)
 
@@ -58,7 +58,7 @@
 - [x] サーバー側(JS): カード移動を `gameState.cards` に反映させるロジック // server/ws_server.js で基本ロジック実装！✅
 - [x] サーバー側(JS): ゲーム状態の変更を全クライアントに通知する `GameStateUpdate` メッセージのブロードキャスト実装 // server/ws_server.js で `broadcastGameStateUpdate()` を呼び出すように実装！✅
 
-## フェーズ 4: ソリティアのルールとインタラクション実装 🎮👆 (Rustルール実装完了！UI連携中)
+## フェーズ 4: ソリティアのルールとインタラクション実装 ��👆 (方針転換！Canvasへ)
 
 - [x] ルール実装(Rust): `StackType` ごとのカード移動可否判定ヘルパー関数を作成 (`src/rules.rs`？) // 基本ヘルパー (`can_move_to_foundation`, `can_move_to_tableau`) と `CardColor` を実装！✅
 - [x] ルール実装(Rust): タブローからタブローへの移動ルール実装 (色違い、ランク連続) // `can_move_to_tableau` で実装済！✅
@@ -67,22 +67,37 @@
 - [x] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 // `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation` を実装！✅
 - [x] ルール実装(Rust): (任意) カード自動移動ロジック (ダブルクリック時、ファンデーションへ移動できるか判定して `MakeMove` を生成？) // `find_automatic_foundation_move` を実装！✅
 - [x] ルール実装(Rust): ゲームクリア判定ロジック (全カードがファンデーションにあるか？) // `check_win_condition` を実装！✅
-- [x] UIインタラクション(JS): カードクリックによる選択状態表示 (`.selected` クラス) // bootstrap.js と style.css で実装！🖱️
-- [x] UIインタラクション(JS): カードダブルクリックイベントの検知とログ出力 // bootstrap.js で実装！🖱️🖱️
-- [x] UIインタラクション(JS): カードダブルクリック時にRust側の自動移動ロジックを呼び出す (`GameApp` にメソッド追加) // `handle_double_click` を実装し JS から呼び出し！✅
-- [x] UIインタラクション(JS): カードのドラッグ開始 (`mousedown` or `dragstart`)
-- [x] UIインタラクション(JS): カードのドラッグ中 (`mousemove` or `drag`) のカード追従表示
-- [x] UIインタラクション(JS): カードのドロップ (`mouseup` or `drop`)
-- [x] UIインタラクション(JS): ドロップ位置から移動先スタックを判定するロジック
-- [x] UIインタラクション(JS): クリック/ダブルクリック/ドロップ操作を `gameApp.send_make_move()` 呼び出しに変換
-- [x] 状態更新と表示(JS): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (今は `GameJoined` でのみ実行)
-- [ ] 状態更新と表示(JS): `apply_game_state` (Rust) 後、`render_game_rust` (Rust) を呼び出して画面を更新 // ← JSの renderGame から Rust の render_game_rust に変更！
-- [x] レンダリング実装(Rust/Wasm): #game-area 要素取得とクリア // render_game_rust で実装済！✅
-- [x] レンダリング実装(Rust/Wasm): カード情報に基づき div 要素を作成 (クラス、属性設定) // render_game_rust で実装済！✅
-- [x] レンダリング実装(Rust/Wasm): カード要素にスタイル (位置、表裏、スート/ランク) を設定 // render_game_rust で実装済！✅
-- [x] レンダリング実装(Rust/Wasm): 作成したカード要素を #game-area に追加 // render_game_rust で実装済！✅
-- [x] レンダリング実装(Rust/Wasm): クリック/ダブルクリック等のイベントリスナー設定 (最難関！) // render_game_rust で実装済！✅
-- [ ] 状態更新と表示(JS): サーバーから `MoveRejected` を受け取った場合に、ユーザーにフィードバックを表示 (例: アラート、メッセージ表示)
+
+// --- UIインタラクション(JS) は Canvas ベースに変更 --- 
+- [x] UIインタラクション(JS): カードクリックによる選択状態表示 (`.selected` クラス) // ← Canvas では別実装
+- [ ] UIインタラクション(JS): Canvas クリックイベントの検知とログ出力
+- [ ] UIインタラクション(JS): クリック座標からカード/スタックを特定するロジック (Rust側でも可)
+- [ ] UIインタラクション(JS): ダブルクリックイベントの検知 (Canvas 上で)
+- [ ] UIインタラクション(JS): ダブルクリック時にRust側の自動移動ロジックを呼び出す
+- [ ] UIインタラクション(JS): Canvas 上でのドラッグ開始 (`mousedown`)
+- [ ] UIインタラクション(JS): ドラッグ中のカード追従表示 (Canvas 上で描画)
+- [ ] UIインタラクション(JS): ドラッグ終了 (`mouseup`)
+- [ ] UIインタラクション(JS): ドロップ位置から移動先スタックを判定するロジック
+- [ ] UIインタラクション(JS): Canvas 上の操作を `gameApp.send_make_move()` 呼び出しに変換
+
+// --- 状態更新と表示 (Canvas) --- 
+- [x] 状態更新と表示(JS): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す
+- [ ] 状態更新と表示(JS): `apply_game_state` (Rust) 後、**Canvas描画関数** (Rust) を呼び出して画面を更新 // ← `render_game_rust` の役割変更！
+
+// --- レンダリング実装 (Rust/Wasm - Canvas版！) --- 
+- [ ] レンダリング実装(Rust/Wasm): Canvas要素と2Dコンテキストを取得
+- [ ] レンダリング実装(Rust/Wasm): Canvas をクリアする処理
+- [ ] レンダリング実装(Rust/Wasm): カードデータに基づき Canvas に図形やテキストを描画 (カード描画関数)
+- [ ] レンダリング実装(Rust/Wasm): (任意) カード画像をロードして描画する機能
+
+// --- DOMレンダリング関連タスクは削除 --- 
+// - [x] レンダリング実装(Rust/Wasm): #game-area 要素取得とクリア
+// - [x] レンダリング実装(Rust/Wasm): カード情報に基づき div 要素を作成 (クラス、属性設定)
+// - [x] レンダリング実装(Rust/Wasm): カード要素にスタイル (位置、表裏、スート/ランク) を設定
+// - [x] レンダリング実装(Rust/Wasm): 作成したカード要素を #game-area に追加
+// - [x] レンダリング実装(Rust/Wasm): クリック/ダブルクリック等のイベントリスナー設定 (DOM版)
+
+- [ ] 状態更新と表示(JS): サーバーから `MoveRejected` を受け取った場合に、ユーザーにフィードバックを表示
 
 ## フェーズ 5: マルチプレイヤー同期と仕上げ ✨💅
 

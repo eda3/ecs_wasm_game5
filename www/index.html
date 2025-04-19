@@ -23,16 +23,14 @@
             color: #555;
         }
 
-        #game-area {
-            /* ここにゲーム画面 (Canvasとかカードとか) が入るよ */
-            width: 800px;
-            /* とりあえず仮のサイズ */
-            height: 600px;
+        #game-canvas {
+            /* ★ ID を変更！ ★ */
+            /* width: 800px; height: 600px; */
+            /* canvas タグの属性で指定するので削除 */
             border: 1px solid #ccc;
             background-color: #e0ffe0;
-            /* 緑っぽい背景にしてみる？ */
-            position: relative;
-            /* カードを絶対位置で配置する時のために */
+            /* position: relative; */
+            /* Canvas 自体は relative 不要かも */
         }
 
         #controls button {
@@ -57,10 +55,9 @@
             <button id="deal-button">カードを配る</button>
             <button id="get-state-button">状態取得(Console)</button>
         </div>
-        <div id="game-area">
-            <!-- ゲームの描画は JavaScript で行うよ！ -->
-            <p style="text-align: center; margin-top: 50px;">(ここにゲーム画面が表示される予定だよ！)</p>
-        </div>
+        <canvas id="game-canvas" width="800" height="600">
+            お使いのブラウザは Canvas をサポートしていません。
+        </canvas>
     </div>
 
     <!-- WASM をロードして実行する JavaScript ファイルを読み込むよ -->
