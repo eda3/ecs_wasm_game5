@@ -22,7 +22,8 @@ pub mod protocol; // protocol モジュールを宣言
 // 各モジュールから必要な型をインポート！
 use crate::world::World;
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId}; // protocol から主要な型をインポート
+use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId, PositionData}; // protocol から主要な型をインポート
+use crate::components::{card::Card, position::Position, stack::StackInfo, player::Player};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
 use serde_json; // serde_json を使う
@@ -194,29 +195,88 @@ impl GameApp {
         // TODO: ループの外で apply_game_state を呼ぶなど、E0502 エラーの根本対応が必要。
     }
 
-    // ゲーム状態適用 (未実装)
+    /// サーバーから受け取った GameStateData を World に反映させる内部関数。
+    /// 方針: 既存のカードとプレイヤー情報をクリアし、受け取ったデータで再構築する！
     fn apply_game_state(&mut self, game_state: GameStateData) {
         log("GameApp: Applying game state update...");
         let mut world = self.world.lock().expect("Failed to lock world for game state update");
 
-        log(&format!("  Players: {:?}", game_state.players));
+        // --- 1. 既存のプレイヤーとカード情報をクリア --- 
+        log("  Clearing existing player and card entities...");
+        let player_entities: Vec<Entity> = world
+            .get_all_entities_with_component::<Player>()
+            .into_iter()
+            .collect();
+        for entity in player_entities {
+            world.remove_component::<Player>(entity);
+            log(&format!("    Removed Player component from {:?}", entity));
+        }
 
+        let card_entities: Vec<Entity> = world
+            .get_all_entities_with_component::<Card>()
+            .into_iter()
+            .collect();
+        for entity in card_entities {
+            world.remove_component::<Card>(entity);
+            world.remove_component::<Position>(entity);
+            world.remove_component::<StackInfo>(entity);
+            log(&format!("    Removed Card related components from {:?}", entity));
+        }
+        // 注意: GameState エンティティ (Entity(0)) は削除しないように！
+
+        // --- 2. 新しいプレイヤー情報を反映 --- 
+        log(&format!("  Applying {} players...", game_state.players.len()));
+        for player_data in game_state.players {
+            // TODO: プレイヤーエンティティをどう管理するか？
+            //       - プレイヤーごとにエンティティを作成？ (例: world.create_entity()?)
+            //       - PlayerId をキーにしたリソースとして管理？
+            //       - とりあえずログ出力のみ。
+            log(&format!("    Player ID: {}, Name: {}", player_data.id, player_data.name));
+            // 仮: Player コンポーネントを追加してみる (PlayerId を Entity ID として使う？危険かも)
+            // let player_entity = Entity(player_data.id as usize); // ID を usize にキャスト
+            // world.add_component(player_entity, Player { name: player_data.name });
+        }
+
+        // --- 3. 新しいカード情報を反映 --- 
+        log(&format!("  Applying {} cards...", game_state.cards.len()));
         for card_data in game_state.cards {
-            let entity = card_data.entity;
-            let card_component = components::card::Card {
+            let entity = card_data.entity; // サーバー指定のエンティティID
+
+            // TODO: World にこのエンティティIDが存在しない場合の処理。
+            //       world.create_entity_with_id(entity) のような機能が必要。
+            //       一旦、存在するものとして進める (DealSystemで事前に作られている想定？)
+            //       あるいは、create_entity() で新しいIDを割り当てて、
+            //       サーバーのIDとクライアントのIDのマッピングを持つ？複雑になる…。
+            //       ここでは、world.add_component が存在しない Entity に
+            //       対しても内部でよしなにしてくれる…という期待で進める (実際は要確認！)
+
+            // Card コンポーネントを追加 (or 更新)
+            let card_component = Card {
                 suit: card_data.suit,
                 rank: card_data.rank,
                 is_face_up: card_data.is_face_up,
             };
             world.add_component(entity, card_component);
 
-            let stack_info_component = components::stack::StackInfo {
+            // StackInfo コンポーネントを追加 (or 更新)
+            let stack_info_component = StackInfo {
                 stack_type: card_data.stack_type,
                 position_in_stack: card_data.position_in_stack,
             };
             world.add_component(entity, stack_info_component);
+
+            // Position コンポーネントを追加 (or 更新)！
+            let position_component = Position {
+                x: card_data.position.x,
+                y: card_data.position.y,
+            };
+            world.add_component(entity, position_component);
+
+            // log(&format!("    Added/Updated components for card entity {:?}", entity));
         }
-        log("GameApp: Game state update applied (implementation is preliminary!).");
+
+        log("GameApp: Game state update applied.");
+        // World のロックはこの関数のスコープを抜ける時に自動的に解放される。
     }
 
     // デバッグ用: 接続状態取得
