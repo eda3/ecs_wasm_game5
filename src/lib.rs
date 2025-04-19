@@ -476,6 +476,19 @@ impl GameApp {
         }
         // World のロックはスコープを抜ける時に自動で解除されるよ
     }
+
+    /// Rust側でゲーム画面を描画する関数 (今はログ出力のみ)
+    #[wasm_bindgen]
+    pub fn render_game_rust(&self) {
+        // TODO: ここに web-sys を使ってDOMを操作し、ゲーム画面を描画するコードを書く！
+        //       - #game-area 要素を取得
+        //       - 古いカード要素をクリア
+        //       - self.world からカード情報を取得
+        //       - カード情報に基づいて新しい div 要素を作成・設定
+        //       - イベントリスナーを追加 (ここが最難関！)
+        //       - 作成した要素を #game-area に追加
+        log("GameApp: render_game_rust() called! (Implementation Pending)");
+    }
 }
 
 // GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)

@@ -157,25 +157,24 @@ function updateStatusDisplay() {
         dealButton.disabled = true;
     }
 
-    // 受信メッセージを処理し、状態が変わった場合のみ画面を再描画する
+    // 受信メッセージを処理し、状態が変わった場合のみ Rust側のレンダリング関数を呼ぶ
     try {
-        // ★修正: process_received_messages の戻り値を受け取る！
-        const stateDidChange = gameApp.process_received_messages(); // Rust側のメッセージ処理を呼び出す
-
-        // --- ★ここを修正: 状態が変わった場合のみ renderGame を呼ぶ！★ ---
+        const stateDidChange = gameApp.process_received_messages();
         if (stateDidChange) {
-            console.log("State changed according to Rust, rendering game..."); // デバッグ用
-            renderGame(); // 状態が変わったので再描画！✨
+            console.log("State changed according to Rust, calling Rust render function...");
+            // ★修正: renderGame() の代わりに render_game_rust() を呼び出す！★
+            gameApp.render_game_rust();
         }
-        // --- ★修正ここまで★ ---
     } catch (e) {
-        console.error("メッセージ処理または描画中にエラー:", e);
+        console.error("メッセージ処理またはRustレンダリング呼び出し中にエラー:", e);
     }
 }
 
 // --- ★ 新しい関数: ゲーム状態を描画する！ --- ★
+// 不要になったのでコメントアウト (または後で完全に削除！)
+/*
 function renderGame() {
-    console.log("🎨 Rendering game state...");
+    console.log("🎨 Rendering game state... (JS version - DEPRECATED)");
     if (!gameApp) {
         console.error("描画失敗: gameApp が初期化されていません。");
         return;
@@ -259,6 +258,7 @@ function renderGame() {
         gameAreaDiv.innerHTML = '<p style="color: red;">ゲーム画面の描画中にエラーが発生しました。</p>';
     }
 }
+*/
 
 // --- ★ 新しい関数: カードクリック処理 ★ ---
 function handleCardClick(cardData, cardElement) {
@@ -453,6 +453,8 @@ function findDropTargetStack(dropX, dropY) {
 }
 
 // --- ヘルパー関数: カードの表示位置を計算 --- (修正版！)
+// 不要になったのでコメントアウト (または後で完全に削除！)
+/*
 function calculateCardPosition(cardData) {
     const cardWidth = 72; // カードの幅 (CSSと合わせる必要あり)
     const cardHeight = 96; // カードの高さ
@@ -489,8 +491,11 @@ function calculateCardPosition(cardData) {
 
     return { x: baseX, y: baseY };
 }
+*/
 
 // --- ヘルパー関数: スート記号を取得 ---
+// 不要になったのでコメントアウト (または後で完全に削除！)
+/*
 function getSuitSymbol(suitName) {
     switch (suitName) {
         case 'Heart': return '♥';
@@ -500,8 +505,11 @@ function getSuitSymbol(suitName) {
         default: return '?';
     }
 }
+*/
 
 // --- ヘルパー関数: ランク文字列を取得 ---
+// 不要になったのでコメントアウト (または後で完全に削除！)
+/*
 function getRankText(rankName) {
     // 基本はそのままだけど、Ace, King, Queen, Jack は A, K, Q, J にしたい
     switch (rankName) {
@@ -521,6 +529,7 @@ function getRankText(rankName) {
         default: return rankName.charAt(0); // 不明な場合は最初の文字？
     }
 }
+*/
 
 // --- 実行開始！ ---
 main(); 
