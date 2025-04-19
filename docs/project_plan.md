@@ -75,8 +75,9 @@
 - [x] UIインタラクション(JS): カードのドロップ (`mouseup` or `drop`)
 - [x] UIインタラクション(JS): ドロップ位置から移動先スタックを判定するロジック
 - [x] UIインタラクション(JS): クリック/ダブルクリック/ドロップ操作を `gameApp.send_make_move()` 呼び出しに変換
-- [ ] 状態更新と表示(JS): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (今は `GameJoined` でのみ実行)
+- [x] 状態更新と表示(JS): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (今は `GameJoined` でのみ実行)
 - [ ] 状態更新と表示(JS): `apply_game_state` 内で、受け取ったカード情報を元に `renderGame` を呼び出して画面を更新
+- [ ] 状態更新と表示(JS): サーバーから `MoveRejected` を受け取った場合に、ユーザーにフィードバックを表示 (例: アラート、メッセージ表示)
 
 ## フェーズ 5: マルチプレイヤー同期と仕上げ ✨💅
 

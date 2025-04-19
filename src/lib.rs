@@ -162,15 +162,15 @@ impl GameApp {
         }
     }
 
-    // 受信メッセージ処理 (借用エラー E0502 修正！)
+    // 受信メッセージ処理 (状態変更フラグを返すように変更！)
     #[wasm_bindgen]
-    pub fn process_received_messages(&mut self) {
+    pub fn process_received_messages(&mut self) -> bool { // ★戻り値を bool に変更！
+        let mut state_changed = false; // ★状態変更フラグを追加！
+
         // 1. メッセージキューをロックして、中身を一時的な Vec に移す
         let messages_to_process: Vec<ServerMessage> = { // 新しいスコープを作る
             let mut queue = self.message_queue.lock().expect("Failed to lock message queue");
-            // queue.drain(..) を使って、キューの中身をすべて取り出して Vec にする
             queue.drain(..).collect()
-            // このスコープの終わりで `queue` (MutexGuard) が破棄され、ロックが解除される！
         }; // ← ここでロック解除！🔓
 
         // 2. ロックが解除された状態で、一時的な Vec を処理する
@@ -184,26 +184,28 @@ impl GameApp {
                 ServerMessage::GameJoined { your_player_id, initial_game_state } => {
                     *self.my_player_id.lock().expect("Failed to lock my_player_id") = Some(your_player_id);
                     log(&format!("GameApp: Game joined! My Player ID: {}", your_player_id));
-                    // 借用エラーが解決したのでコメントアウト解除！🎉
-                    self.apply_game_state(initial_game_state);
-                    // log("Error E0502: Temporarily commented out apply_game_state call inside loop."); // コメント削除
+                    if self.apply_game_state(initial_game_state) { // ★apply_game_state の戻り値を見る
+                        state_changed = true; // ★状態が変わったことを記録！
+                    }
                 }
                 ServerMessage::GameStateUpdate { current_game_state } => {
                     log("GameApp: Received GameStateUpdate.");
-                    // 借用エラーが解決したのでコメントアウト解除！🎉
-                    self.apply_game_state(current_game_state);
-                    // log("Error E0502: Temporarily commented out apply_game_state call inside loop."); // コメント削除
+                    if self.apply_game_state(current_game_state) { // ★apply_game_state の戻り値を見る
+                        state_changed = true; // ★状態が変わったことを記録！
+                    }
                 }
                 ServerMessage::MoveRejected { reason } => {
                     log(&format!("GameApp: Move rejected by server: {}", reason));
+                    // TODO: MoveRejected をJSに伝える仕組み？
                 }
                 ServerMessage::PlayerJoined { player_id, player_name } => {
                     log(&format!("GameApp: Player {} ({}) joined.", player_name, player_id));
-                    // TODO: World にプレイヤー情報を追加/更新する処理 (apply_game_state でやるかも？)
+                    // TODO: プレイヤーリスト更新のために state_changed = true; すべき？
+                    //       apply_game_state でプレイヤーも更新するなら不要
                 }
                 ServerMessage::PlayerLeft { player_id } => {
                     log(&format!("GameApp: Player {} left.", player_id));
-                    // TODO: World からプレイヤー情報を削除/更新する処理 (apply_game_state でやるかも？)
+                    // TODO: プレイヤーリスト更新のために state_changed = true; すべき？
                 }
                 ServerMessage::Pong => {
                     log("GameApp: Received Pong from server.");
@@ -213,16 +215,26 @@ impl GameApp {
                 }
             }
         }
-        // ループの外で apply_game_state を呼ぶ必要はなくなった！
+        state_changed // ★最後にフラグの値を返す！
     }
 
     /// サーバーから受け取った GameStateData を World に反映させる内部関数。
-    /// 方針: 既存のカードとプレイヤー情報をクリアし、受け取ったデータで再構築する！
-    fn apply_game_state(&mut self, game_state: GameStateData) {
+    /// 状態が更新された場合は true を返すように変更！
+    fn apply_game_state(&mut self, game_state: GameStateData) -> bool { // ★戻り値を bool に変更！
         log("GameApp: Applying game state update...");
-        let mut world = self.world.lock().expect("Failed to lock world for game state update");
+        let mut world = match self.world.lock() { // poison 対応
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                log(&format!("World mutex poisoned in apply_game_state: {:?}. Recovering...", poisoned));
+                poisoned.into_inner()
+            }
+        };
+
+        // ★状態変更があったかどうかのフラグ (今は単純に常に true を返す)
+        let mut did_change = false;
 
         // --- 1. 既存のプレイヤーとカード情報をクリア --- 
+        did_change = true; // クリアしたら変更ありとみなす
         log("  Clearing existing player and card entities...");
         let player_entities: Vec<Entity> = world
             .get_all_entities_with_component::<Player>()
@@ -230,9 +242,8 @@ impl GameApp {
             .collect();
         for entity in player_entities {
             world.remove_component::<Player>(entity);
-            log(&format!("    Removed Player component from {:?}", entity));
+            // log(&format!("    Removed Player component from {:?}", entity));
         }
-
         let card_entities: Vec<Entity> = world
             .get_all_entities_with_component::<Card>()
             .into_iter()
@@ -241,60 +252,43 @@ impl GameApp {
             world.remove_component::<Card>(entity);
             world.remove_component::<Position>(entity);
             world.remove_component::<StackInfo>(entity);
-            log(&format!("    Removed Card related components from {:?}", entity));
+            // log(&format!("    Removed Card related components from {:?}", entity));
         }
-        // 注意: GameState エンティティ (Entity(0)) は削除しないように！
 
         // --- 2. 新しいプレイヤー情報を反映 --- 
+        if !game_state.players.is_empty() { did_change = true; }
         log(&format!("  Applying {} players...", game_state.players.len()));
         for player_data in game_state.players {
-            // TODO: プレイヤーエンティティをどう管理するか？
-            //       - プレイヤーごとにエンティティを作成？ (例: world.create_entity()?)
-            //       - PlayerId をキーにしたリソースとして管理？
-            //       - とりあえずログ出力のみ。
             log(&format!("    Player ID: {}, Name: {}", player_data.id, player_data.name));
-            // 仮: Player コンポーネントを追加してみる (PlayerId を Entity ID として使う？危険かも)
-            // let player_entity = Entity(player_data.id as usize); // ID を usize にキャスト
-            // world.add_component(player_entity, Player { name: player_data.name });
+            // TODO: 実際にプレイヤーコンポーネントを追加/更新する
         }
 
         // --- 3. 新しいカード情報を反映 --- 
+        if !game_state.cards.is_empty() { did_change = true; }
         log(&format!("  Applying {} cards...", game_state.cards.len()));
         for card_data in game_state.cards {
-            let entity = card_data.entity; // サーバー指定のエンティティID
-
-            // ★追加: Worldにエンティティが存在しない可能性があるので、IDを指定して作成(or 予約)
-            // これで、以降の add_component が安全に実行できるはず！
-            world.create_entity_with_id(entity);
-            // log(&format!("    Ensured entity {:?} exists.", entity)); // 必要ならログ出力
-
-            // Card コンポーネントを追加 (or 更新)
+            let entity = card_data.entity;
+            world.create_entity_with_id(entity); // 存在保証
             let card_component = Card {
                 suit: card_data.suit,
                 rank: card_data.rank,
                 is_face_up: card_data.is_face_up,
             };
             world.add_component(entity, card_component);
-
-            // StackInfo コンポーネントを追加 (or 更新)
             let stack_info_component = StackInfo {
                 stack_type: card_data.stack_type,
                 position_in_stack: card_data.position_in_stack,
             };
             world.add_component(entity, stack_info_component);
-
-            // Position コンポーネントを追加 (or 更新)！
             let position_component = Position {
                 x: card_data.position.x,
                 y: card_data.position.y,
             };
             world.add_component(entity, position_component);
-
-            // log(&format!("    Added/Updated components for card entity {:?}", entity));
         }
 
         log("GameApp: Game state update applied.");
-        // World のロックはこの関数のスコープを抜ける時に自動的に解放される。
+        did_change // ★ 変更があったかどうかを返す！
     }
 
     // JSから初期カード配置を実行するためのメソッド

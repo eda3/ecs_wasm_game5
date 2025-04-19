@@ -8,23 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2.100"
-web-sys = { version = "0.3.77", features = [
-    'Document',
-    'Element',
-    'HtmlCanvasElement',
-    'Window',
-    'CanvasRenderingContext2d',
-    'Response',
-    'WebSocket',
-    'MessageEvent',
-    'ErrorEvent',
-    'CloseEvent',
-    'BinaryType',
-    'Blob',
-    'FileReader',
-    'ProgressEvent',
-    'console',
-]}
+web-sys = { version = "0.3.77", features = ["Document", "Element", "HtmlCanvasElement", "Window", "CanvasRenderingContext2d", "Response", "WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent", "BinaryType", "Blob", "FileReader", "ProgressEvent", "console"] }
 js-sys = "0.3.77"
 console_error_panic_hook = "0.1.7"
 serde = { version = "1.0", features = ["derive"] }

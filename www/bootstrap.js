@@ -123,45 +123,53 @@ function setupEventListeners() {
 function updateStatusDisplay() {
     if (!gameApp) return; // gameApp がまだなければ何もしない
 
+    let status = 'Disconnected'; // ★ 変数 status を try の外で定義
+
     try {
         // Rust 側からデバッグ用の接続状態とプレイヤーIDを取得
-        const status = gameApp.get_connection_status_debug();
-        const playerId = gameApp.get_my_player_id_debug(); // Option<u32> は JS では number | undefined になる
+        status = gameApp.get_connection_status_debug(); // ★ let を削除
+        const playerId = gameApp.get_my_player_id_debug();
 
         connectionStatusSpan.textContent = status;
         playerIdSpan.textContent = playerId !== undefined ? playerId.toString() : '未参加';
 
         // --- 接続状態に応じてボタンの有効/無効を切り替え ---
         if (status === 'Connected') {
-            connectButton.disabled = true; // 接続済みなら接続ボタンは無効
-            joinButton.disabled = false;   // 参加ボタンは有効
-            dealButton.disabled = false;   // カード配布ボタンも有効 (仮。本当はゲーム状態による)
+            connectButton.disabled = true;
+            joinButton.disabled = false;
+            dealButton.disabled = false;
         } else if (status === 'Connecting') {
             connectButton.disabled = true;
             joinButton.disabled = true;
             dealButton.disabled = true;
         } else { // Disconnected or Error
-            connectButton.disabled = false; // 未接続なら接続ボタンは有効
+            connectButton.disabled = false;
             joinButton.disabled = true;
             dealButton.disabled = true;
         }
-        // TODO: ゲーム参加後 (playerId が設定された後) の状態制御も追加！
 
     } catch (e) {
         console.error("ステータス更新中にエラー:", e);
         connectionStatusSpan.textContent = "エラー";
         playerIdSpan.textContent = "-";
-        // エラー時はボタンを無効化
         connectButton.disabled = true;
         joinButton.disabled = true;
         dealButton.disabled = true;
     }
 
-    // 受信メッセージを処理する (これも定期的に呼ぶのが簡単かな？)
+    // 受信メッセージを処理し、状態が変わった場合のみ画面を再描画する
     try {
-        gameApp.process_received_messages(); // Rust側のメッセージ処理を呼び出す
+        // ★修正: process_received_messages の戻り値を受け取る！
+        const stateDidChange = gameApp.process_received_messages(); // Rust側のメッセージ処理を呼び出す
+
+        // --- ★ここを修正: 状態が変わった場合のみ renderGame を呼ぶ！★ ---
+        if (stateDidChange) {
+            console.log("State changed according to Rust, rendering game..."); // デバッグ用
+            renderGame(); // 状態が変わったので再描画！✨
+        }
+        // --- ★修正ここまで★ ---
     } catch (e) {
-        console.error("メッセージ処理中にエラー:", e);
+        console.error("メッセージ処理または描画中にエラー:", e);
     }
 }
 
