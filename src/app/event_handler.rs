@@ -39,9 +39,13 @@ pub fn handle_double_click_logic(
         }
     };
 
-    // 自動移動先を探す！🔍 (World の参照を渡す)
-    let target_stack_opt = find_automatic_foundation_move(&card_to_move, &*world_guard);
-    // World のロックを早めに解除！
+    // 自動移動先を探す！🔍
+    // find_automatic_foundation_move 関数を呼び出して、指定されたカードエンティティ (entity) が
+    // 自動的に移動できる Foundation があるか探す。
+    // 引数には World の参照 (`&*world_guard`) とカードの Entity ID (`entity`) を渡すよ！
+    let target_stack_opt = find_automatic_foundation_move(&*world_guard, entity);
+    // World のロックを早めに解除！ これ以降 World の状態は読み書きできないけど、
+    // ロック時間が短くなって、他の処理をブロックする可能性が減るんだ。👍
     drop(world_guard);
 
     match target_stack_opt {
