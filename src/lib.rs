@@ -543,8 +543,8 @@ impl GameApp {
             let position = world.get_component::<Position>(entity).expect("Position component not found");
 
             let (stack_type_str, stack_index_json) = match stack_info.stack_type {
-                crate::component::StackType::Stock => ("Stock", serde_json::Value::Null),
-                crate::component::StackType::Waste => ("Waste", serde_json::Value::Null),
+                StackType::Stock => ("Stock", serde_json::Value::Null),
+                StackType::Waste => ("Waste", serde_json::Value::Null),
                 crate::component::StackType::Foundation => ("Foundation", serde_json::json!(stack_info.stack_index)),
                 crate::component::StackType::Tableau => ("Tableau", serde_json::json!(stack_info.stack_index)),
                 crate::component::StackType::Hand => ("Hand", serde_json::Value::Null),
