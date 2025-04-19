@@ -39,7 +39,7 @@ use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Cl
 use crate::component::{Card, Position, StackInfo, DraggingInfo}; // Position を追加
 use crate::protocol::*;
 use crate::rules::*;
-use crate::consts::*;
+use crate::component::{Rank, Suit}; // Add this line
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -571,7 +571,7 @@ impl GameApp {
             Some(target_stack) => {
                 // 移動先が見つかった！🎉 MakeMove メッセージを送信！🚀
                 log(&format!("  Found automatic move target: {:?} for card {:?}", target_stack, card_to_move));
-                let message = ClientMessage::MakeMove { moved_entity: entity, target_stack };
+                let message = ClientMessage::MakeMove { moved_entity: entity, target_stack: target_stack.into() };
 
                 // メッセージ送信 (send_message ヘルパーが使えないので、ここで直接行う)
                 match serde_json::to_string(&message) {
