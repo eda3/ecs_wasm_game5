@@ -61,7 +61,6 @@ use crate::systems::{
 };
 
 // network と protocol 関連
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId, CardData, PositionData};
 
 // Wasm specific types from crate::component
 // (DraggingInfo は component にしかないのでここで use する)
