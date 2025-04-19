@@ -213,35 +213,54 @@ fn get_foundation_top_card<'a>(world: &'a World, foundation_index: u8) -> Option
     top_entity.and_then(|entity| world.get_component::<Card>(entity))
 }
 
-/// ダブルクリックされたカードを自動的に移動できる組札 (Foundation) を探す。
+/// 特定のカードが、現在のワールドの状態において、自動的に移動できる組札（Foundation）があるかどうかを探す関数。
+/// 見つかった場合は、移動先の StackType (Foundation のインデックス付き) を返す。
 ///
 /// # 引数
-/// * `card_to_move`: ダブルクリックされたカードの情報。
-/// * `world`: 現在のゲーム世界の状況 (World)。
+/// - `card_to_move`: 移動させたいカードのコンポーネントへの参照。
+/// - `world`: 現在の World の状態への参照。
 ///
 /// # 戻り値
-/// * `Some(StackType::Foundation(index))`: 移動可能な組札が見つかった場合、その StackType。
-/// * `None`: どの組札にも移動できない場合。
+/// - `Some(StackType)`: 移動可能な組札が見つかった場合、その組札の StackType (Foundation(index))。
+/// - `None`: 移動可能な組札が見つからなかった場合。
 pub fn find_automatic_foundation_move<'a>(
-    card_to_move: &Card,
-    world: &'a World,
+    card_to_move: &crate::component::Card,
+    world: &'a World
 ) -> Option<StackType> {
-    // 4つの Foundation (0 から 3) を順番にチェック！
-    for i in 0..4 {
-        // i 番目の Foundation のスートを取得 (Heart, Diamond, Club, Spade のどれか)
-        if let Some(foundation_suit) = get_foundation_suit(i) {
-            // i 番目の Foundation の一番上のカードを取得
-            let foundation_top_card = get_foundation_top_card(world, i);
+    log(&format!("[Rules] Finding automatic foundation move for {:?}...", card_to_move));
 
-            // `can_move_to_foundation` で移動可能かチェック！ ✨
-            if can_move_to_foundation(card_to_move, foundation_top_card, foundation_suit) {
-                // 移動できる Foundation が見つかった！その StackType を返す！ 🎉
-                return Some(StackType::Foundation(i));
+    // 移動元カードが A (エース) の場合
+    if card_to_move.rank == Rank::Ace {
+        // 空の Foundation を探す
+        for i in 0..4u8 { // 4つの Foundation をチェック
+            let target_stack = StackType::Foundation(i);
+            if is_foundation_empty(target_stack, world) {
+                log(&format!("  Found empty foundation [{}] for Ace.", i));
+                return Some(target_stack);
+            }
+        }
+        log("  No empty foundation found for Ace.");
+        return None; // 空きがなければ移動できない
+    }
+
+    // 移動元カードが A 以外の場合
+    // 同じスートでランクが1つ下のカードが一番上にある Foundation を探す
+    for i in 0..4u8 { // 4つの Foundation をチェック
+        let target_stack = StackType::Foundation(i);
+        // Foundation の一番上のカードを取得
+        if let Some(top_card_entity) = get_top_card_entity_in_stack(target_stack, world) {
+            if let Some(top_card) = world.get_component::<Card>(top_card_entity) {
+                // ↓↓↓ ここの can_move_to_foundation を使う！ (引数は component::Card になってるはず)
+                if can_move_to_foundation(card_to_move, Some(top_card)) {
+                    log(&format!("  Found valid foundation [{}] for {:?}. Top card: {:?}", i, card_to_move, top_card));
+                    return Some(target_stack);
+                }
             }
         }
     }
-    // どの Foundation にも置けなかった... 😢
-    None
+
+    log(&format!("  No suitable foundation found for {:?}.", card_to_move));
+    None // 適切な移動先が見つからなかった
 }
 
 // TODO: 他の移動パターン (Stock -> Waste, Waste -> Tableau/Foundation など) の

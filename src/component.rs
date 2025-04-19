@@ -263,9 +263,7 @@ impl From<crate::components::stack::StackType> for StackType {
             crate::components::stack::StackType::Foundation(_) => StackType::Foundation,
             crate::components::stack::StackType::Stock => StackType::Stock,
             crate::components::stack::StackType::Waste => StackType::Waste,
-            // components::stack::StackType に Hand がない可能性も考慮
-            // 必要に応じて Hand のマッピングも追加 (もし Hand が存在する場合)
-            // crate::components::stack::StackType::Hand => StackType::Hand,
+            crate::components::stack::StackType::Hand => StackType::Hand,
         }
     }
 }
