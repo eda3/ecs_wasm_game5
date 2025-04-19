@@ -44,56 +44,64 @@ impl MoveCardSystem {
         println!("MoveCardSystem: カード移動リクエストを処理します: {:?} -> {:?}", moved_entity, target_entity);
 
         // --- 2. 必要なコンポーネントの取得 ---
-        // clone するのは、後で可変参照を取るための一時的な対策
         let moved_card_opt = world.get_component::<Card>(moved_entity).cloned();
         let target_card_opt = world.get_component::<Card>(target_entity).cloned();
         let target_pos_opt = world.get_component::<Position>(target_entity).cloned();
+        let source_stack_info_opt = world.get_component::<StackInfo>(moved_entity).cloned();
+        let target_stack_info_opt = world.get_component::<StackInfo>(target_entity).cloned();
 
         // --- 3. ルールチェック＆状態更新 ---
-        if let Some(moved_card) = moved_card_opt {
-            // 移動元と移動先の種類を判定 (TODO: この判定ロジックが必要！)
-            let source_type_opt = self.get_entity_stack_type(world, moved_entity);
-            let target_type_opt = self.get_entity_stack_type(world, target_entity);
+        if let (Some(moved_card), Some(source_stack_info)) = (moved_card_opt, source_stack_info_opt) {
+            let target_type = target_stack_info_opt.map(|info| info.stack_type).or_else(|| {
+                println!("WARN: Target entity {:?} has no StackInfo, assuming Foundation(0)!", target_entity);
+                Some(StackType::Foundation(0))
+            });
 
-            if let (Some(source_type), Some(target_type)) = (source_type_opt, target_type_opt) {
-                 // ルールチェックを実行
-                if self.check_move_validity(world, &moved_card, target_card_opt.as_ref(), source_type, target_type) {
-                    // 状態更新を実行
-                    self.apply_move(world, moved_entity, target_entity, target_pos_opt);
+            if let Some(target_type) = target_type {
+                let foundation_top_card = self.get_foundation_top_card(world, target_type);
+
+                if self.check_move_validity(&moved_card, target_card_opt.as_ref(), source_stack_info.stack_type, target_type, foundation_top_card) {
+                    self.apply_move(world, moved_entity, target_entity, target_pos_opt, target_type);
                 } else {
                     println!("  ルール違反！移動できませんでした。🙅‍♀️");
                 }
             } else {
-                eprintln!("MoveCardSystem: 移動元または移動先の種類を特定できませんでした。");
+                eprintln!("MoveCardSystem: 移動先の種類を特定できませんでした。");
             }
         } else {
-            eprintln!("MoveCardSystem: 移動元のカード {:?} が見つかりません！", moved_entity);
+            eprintln!("MoveCardSystem: 移動元のカード {:?} または StackInfo が見つかりません！", moved_entity);
         }
     }
 
-    /// エンティティがどの種類のスタックに属するかを返す (TODO: 実装！)
-    /// StackType コンポーネントなどを Entity に持たせる必要がある
-    fn get_entity_stack_type(&self, world: &World, entity: Entity) -> Option<StackType> {
-        // 仮実装: WorldからStackTypeコンポーネントを取得する想定
-        // world.get_component::<StackTypeComponent>(entity).map(|comp| comp.stack_type)
-        println!("TODO: get_entity_stack_type 実装");
-        // とりあえず仮で場札を返す (テスト用)
-        if entity.0 < 52 { Some(StackType::Tableau(0)) } else { None } // 仮！
+    /// 指定された Foundation スタックの一番上のカードを取得する（仮実装）
+    /// TODO: 正しい実装には、World から特定の Foundation のカードを効率的に見つける方法が必要
+    fn get_foundation_top_card<'a>(&self, world: &'a World, target_type: StackType) -> Option<&'a Card> {
+        if let StackType::Foundation(index) = target_type {
+            world.get_all_entities_with_component::<Card>()
+                .iter()
+                .filter_map(|&entity| {
+                    world.get_component::<StackInfo>(entity)
+                         .filter(|info| info.stack_type == StackType::Foundation(index))
+                         .map(|info| (entity, info.position_in_stack))
+                })
+                .max_by_key(|&(_, pos)| pos)
+                .and_then(|(entity, _)| world.get_component::<Card>(entity))
+        } else {
+            None
+        }
     }
-
 
     /// 移動がルール上可能かチェックする関数
     fn check_move_validity(
         &self,
-        world: &World, // world が必要な場合があるかも (e.g., 組札の状態を見る)
         moved_card: &Card,
-        target_card_opt: Option<&Card>, // 移動先がカードの場合
+        target_card_opt: Option<&Card>,
         source_type: StackType,
         target_type: StackType,
+        foundation_top_card: Option<&Card>,
     ) -> bool {
         println!("  ルールチェック実行: {:?} ({:?}) -> {:?}", moved_card.rank, source_type, target_type);
         match (source_type, target_type) {
-            // --- 場札 (Tableau) からの移動 ---
             (StackType::Tableau(_), StackType::Tableau(_)) => {
                 if let Some(target_card) = target_card_opt {
                     self.can_move_tableau_to_tableau(moved_card, target_card)
@@ -101,35 +109,39 @@ impl MoveCardSystem {
                     self.can_move_tableau_to_empty_tableau(moved_card)
                 }
             }
-            (StackType::Tableau(_), StackType::Foundation(target_suit_index)) => {
-                // 場札 -> 組札
-                // TODO: target_entity (組札の場所) に対応する組札の一番上のカードを取得する必要がある
-                let foundation_top_card: Option<&Card> = None; // 仮！
-                // TODO: ↓の Suit チェックは target_suit_index (u8) と比較できないのでコメントアウト。
-                //       正しいチェックロジック (Foundation index がどの Suit に対応するか World から引く等) が必要。
-                // if moved_card.suit != target_suit { return false; } // スートが違う組札には置けない
+            (StackType::Tableau(_), StackType::Foundation(target_index)) => {
+                let target_suit = match target_index {
+                    0 => Some(Suit::Heart),
+                    1 => Some(Suit::Diamond),
+                    2 => Some(Suit::Club),
+                    3 => Some(Suit::Spade),
+                    _ => None,
+                };
+                if target_suit != Some(moved_card.suit) {
+                    println!("    組札への移動失敗: スート不一致 ({:?} vs {:?})", moved_card.suit, target_suit);
+                    return false;
+                }
                 self.can_move_to_foundation(moved_card, foundation_top_card)
             }
-
-            // --- 山札 (Stock/Waste) からの移動 ---
             (StackType::Waste, StackType::Tableau(_)) => {
                  if let Some(target_card) = target_card_opt {
-                    self.can_move_stock_to_tableau(moved_card, target_card) // ルールは同じ
+                    self.can_move_stock_to_tableau(moved_card, target_card)
                 } else {
-                    self.can_move_stock_to_empty_tableau(moved_card) // ルールは同じ
+                    self.can_move_stock_to_empty_tableau(moved_card)
                 }
             }
-             (StackType::Waste, StackType::Foundation(target_suit_index)) => {
-                // Waste -> 組札
-                // TODO: 組札の一番上のカードを取得
-                let foundation_top_card: Option<&Card> = None; // 仮！
-                // TODO: ↓の Suit チェックは target_suit_index (u8) と比較できないのでコメントアウト。
-                //       正しいチェックロジックが必要。
-                // if moved_card.suit != target_suit { return false; }
-                self.can_move_stock_to_foundation(moved_card, foundation_top_card) // ルールは同じ
+             (StackType::Waste, StackType::Foundation(target_index)) => {
+                let target_suit = match target_index {
+                    0 => Some(Suit::Heart), 1 => Some(Suit::Diamond),
+                    2 => Some(Suit::Club), 3 => Some(Suit::Spade),
+                    _ => None,
+                };
+                if target_suit != Some(moved_card.suit) {
+                    println!("    組札への移動失敗: スート不一致 ({:?} vs {:?})", moved_card.suit, target_suit);
+                    return false;
+                }
+                self.can_move_stock_to_foundation(moved_card, foundation_top_card)
             }
-
-            // --- 他の移動パターンは基本的に不可 ---
             _ => {
                 println!("  未対応または不正な移動パターンです: {:?} -> {:?}", source_type, target_type);
                 false
@@ -138,31 +150,45 @@ impl MoveCardSystem {
     }
 
     /// 実際に World の状態を更新する関数
-    fn apply_move(&self, world: &mut World, moved_entity: Entity, target_entity: Entity, target_pos_opt: Option<Position>) {
-        println!("  カード {:?} を {:?} へ移動します！", moved_entity, target_entity);
+    fn apply_move(
+        &self,
+        world: &mut World,
+        moved_entity: Entity,
+        target_entity: Entity,
+        target_pos_opt: Option<Position>,
+        target_type: StackType,
+    ) {
+        println!("  カード {:?} を {:?} ({:?}) へ移動します！", moved_entity, target_entity, target_type);
 
-        // 1. 移動するカードの Position コンポーネントを更新
         if let Some(target_pos) = target_pos_opt {
             if let Some(moved_pos_mut) = world.get_component_mut::<Position>(moved_entity) {
-                // TODO: 重ねて表示する場合のオフセット計算 (ターゲットの種類やスタックのカード数による)
-                let y_offset = 0.0; // 仮
+                let y_offset = 0.0;
                 moved_pos_mut.x = target_pos.x;
                 moved_pos_mut.y = target_pos.y + y_offset;
                 println!("    {:?} の位置を ({}, {}) に更新しました。", moved_entity, moved_pos_mut.x, moved_pos_mut.y);
             }
         } else {
-            eprintln!("MoveCardSystem: 移動先の Position が見つかりません！");
-            // 位置の更新ができない場合は移動を中断すべき？ or エラー？
-            return;
+            if let Some(moved_pos_mut) = world.get_component_mut::<Position>(moved_entity) {
+                if let StackType::Foundation(index) = target_type {
+                    moved_pos_mut.x = 500.0 + (index as f32 * 110.0);
+                    moved_pos_mut.y = 100.0;
+                    println!("    {:?} の位置を Foundation {} ({}, {}) に更新しました。", moved_entity, index, moved_pos_mut.x, moved_pos_mut.y);
+                } else {
+                    eprintln!("MoveCardSystem: 移動先の Position が見つかりません (非 Foundation)！");
+                }
+            }
         }
 
-        // 2. 必要ならカードの表裏状態 (is_face_up) を更新
-        // 例: 場札で下に隠れていたカードを表にする
-        // TODO: 移動元のスタックに残った一番上のカードが裏向きなら表にする処理が必要
-        //       そのためには、カードがどのスタックの何番目にあったか、という情報も必要になるかも？ (面倒！)
-
-        // 3. 必要ならエンティティの親子関係や所属スタック情報を更新
-        // TODO: カードがどのスタックに属しているかを示すコンポーネント (e.g., Parent, StackMembership) があれば更新
+        if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) {
+             let old_stack_type = stack_info.stack_type;
+             stack_info.stack_type = target_type;
+             let new_position_in_stack = 0;
+             stack_info.position_in_stack = new_position_in_stack;
+            println!("    {:?} の StackInfo を {:?} (元: {:?}) に更新しました。", moved_entity, stack_info, old_stack_type);
+        } else {
+            eprintln!("MoveCardSystem: 移動元 {:?} の StackInfo が見つかりません！", moved_entity);
+            return;
+        }
 
         println!("  状態更新完了！");
     }
@@ -233,7 +259,7 @@ impl System for MoveCardSystem {
 
         // --- 1. 移動リクエストの取得 ---
         // TODO: プレイヤーからの入力を受け取る (別のシステムやイベントキューから)
-        let maybe_move_request: Option<(Entity, Entity)> = None; // 仮
+        let maybe_move_request: Option<(Entity, Entity)> = Some((Entity(1), Entity(3))); // 仮！要修正！
 
         // --- 2. リクエスト処理 ---
         if let Some((moved_entity, target_entity)) = maybe_move_request {
