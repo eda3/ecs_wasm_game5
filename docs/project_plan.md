@@ -8,7 +8,7 @@
 - [x] `wasm-bindgen` の設定と JS 連携の準備
 - [x] ログ出力 (`console.log`) とパニックハンドリングの設定 (`console_error_panic_hook`)
 - [x] ECSコア実装: `Entity` 型の定義 (`entity.rs`)
-- [/] ECSコア実装: `Component` の概念定義 (`component.rs`) - **⚠️ 注意: `components/` と定義重複あり！要整理！**
+- [x] ECSコア実装: `Component` の概念定義 (`component.rs`) - **基本的な概念定義完了！** ✅
 - [x] ECSコア実装: `World` 構造体の実装 (`world.rs`) - **基本的な構造体と主要メソッド実装完了！** 🎉
 - [/] ECSコア実装: `World` エンティティ作成・削除 - `create_entity`, `create_entity_with_id`, `destroy_entity` 実装済。 **ただし `destroy_entity` 時のコンポーネント自動削除は未実装 (TODO)！** 🧹
 - [x] ECSコア実装: `World` コンポーネント追加・削除・取得 - `register_component`, `add_component`, `get_component`, `get_component_mut`, `remove_component` 実装完了！ ✅
