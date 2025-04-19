@@ -160,24 +160,22 @@ impl MoveCardSystem {
     ) {
         println!("  カード {:?} を {:?} ({:?}) へ移動します！", moved_entity, target_entity, target_type);
 
-        // --- position_in_stack の計算を先にやる！ ---
-        // 移動先のスタックにあるカードの現在の position_in_stack の最大値を探す
-        let max_pos_in_target_stack = world // ここでは world は immutable borrow で OK
+        // --- 移動前の情報を一時保存 ---
+        let old_stack_info = world.get_component::<StackInfo>(moved_entity).cloned(); // 移動前の StackInfo を複製して取っておく
+
+        // --- position_in_stack の計算 ---
+        let max_pos_in_target_stack = world
             .get_all_entities_with_component::<StackInfo>()
             .iter()
             .filter_map(|&entity| {
-                // 移動しようとしているエンティティ自身は除外
                 if entity == moved_entity { return None; }
                 world.get_component::<StackInfo>(entity)
                     .filter(|info| info.stack_type == target_type)
                     .map(|info| info.position_in_stack)
             })
             .max();
-
-        // 新しい position_in_stack を計算
         let new_position_in_stack = max_pos_in_target_stack.map_or(0, |max| max + 1);
         println!("    移動先の最大 position_in_stack: {:?}, 新しい position: {}", max_pos_in_target_stack, new_position_in_stack);
-        // --- position_in_stack の計算 ここまで ---
 
         // 1. 移動するカードの Position コンポーネントを更新
         if let Some(target_pos) = target_pos_opt {
@@ -200,25 +198,73 @@ impl MoveCardSystem {
         }
 
         // 2. 移動するカードの StackInfo コンポーネントを更新
-        //    (計算済みの new_position_in_stack を使う！)
-        if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) { // ここで mutable borrow 開始
-             let old_stack_type = stack_info.stack_type;
+        if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) {
+             // 古い情報は old_stack_info から取得するように変更
 
-             // 計算済みの値で更新！
              stack_info.stack_type = target_type;
-             stack_info.position_in_stack = new_position_in_stack; // 計算済みの値を使う
+             stack_info.position_in_stack = new_position_in_stack;
 
-             // TODO: 移動元のスタックに残ったカードの position_in_stack も詰める必要があるかも？
-             println!("    {:?} の StackInfo を {:?} (元: {:?}) に更新しました。", moved_entity, stack_info, old_stack_type);
-        } else { // mutable borrow はここで終了
-            eprintln!("MoveCardSystem: 移動元 {:?} の StackInfo が見つかりません！", moved_entity);
-            return; // StackInfo がないと状態更新できない
+             if let Some(ref old_info) = old_stack_info { // old_stack_info がちゃんと取れてたら
+                println!("    {:?} の StackInfo を {:?} (元: {:?}) に更新しました。", moved_entity, stack_info, old_info);
+             } else {
+                 println!("    {:?} の StackInfo を {:?} (元情報なし) に更新しました。", moved_entity, stack_info);
+             }
+             // ここで stack_info の mutable borrow は一旦終了！
+        } else {
+            eprintln!("MoveCardSystem: 移動元 {:?} の StackInfo が見つかりません！ 更新できませんでした。", moved_entity);
+            // StackInfo が更新できない場合でも、is_face_up 処理は試みる
         }
 
-        // 3. 必要ならカードの表裏状態 (is_face_up) を更新
-        // 例: 場札で下に隠れていたカードを表にする
-        // TODO: 移動元のスタックに残った一番上のカードが裏向きなら表にする処理が必要
-        //       そのためには、移動元スタックの情報をちゃんと取得・更新する必要がある。
+        // --- ここから is_face_up の更新処理 ---
+        if let Some(old_info) = old_stack_info { 
+            if let StackType::Tableau(_) = old_info.stack_type { 
+                if old_info.position_in_stack > 0 { 
+                    let position_to_reveal = old_info.position_in_stack - 1;
+                    println!("    移動元 ({:?}) の位置 {} にあったカードを表にするかチェックします...", old_info.stack_type, position_to_reveal);
+
+                    // World から該当するエンティティを検索 (find_map を使う！)
+                    let entity_to_reveal: Option<Entity> = world // 型を明記 (Option<Entity> になる)
+                        .get_all_entities_with_component::<StackInfo>()
+                        .iter()
+                        .find_map(|&entity| { // find から find_map に変更！
+                            if entity == moved_entity { return None; } // 自分自身はスキップ
+                            if world.get_component::<StackInfo>(entity)
+                                .map_or(false, |info| {
+                                    info.stack_type == old_info.stack_type &&
+                                    info.position_in_stack == position_to_reveal
+                                })
+                            {
+                                Some(entity) // 条件に合ったら参照(&entity)じゃなくて値(entity)を Some で返す！
+                            } else {
+                                None // 合わなければ None
+                            }
+                        });
+
+                    // find_map の結果 (Option<Entity>) を使う
+                    if let Some(found_entity) = entity_to_reveal { // & を削除！
+                        println!("      -> 位置 {} にエンティティ {:?} を発見！", position_to_reveal, found_entity);
+                        if let Some(card_to_reveal) = world.get_component_mut::<Card>(found_entity) {
+                            if !card_to_reveal.is_face_up {
+                                println!("        -> カード {:?} を表向きにします！", card_to_reveal);
+                                card_to_reveal.is_face_up = true;
+                            } else {
+                                println!("        -> カードは既に表向きでした。");
+                            }
+                        } else {
+                             println!("      -> WARN: エンティティ {:?} に Card コンポーネントがありません！", found_entity);
+                        }
+                    } else {
+                         println!("      -> 位置 {} にエンティティが見つかりませんでした。", position_to_reveal);
+                    }
+                } else {
+                     println!("    移動したカードは場札の一番下だったので、表にするカードはありません。");
+                }
+            }
+        } else {
+             println!("    WARN: 移動元の StackInfo が取得できなかったため、カードを表にする処理をスキップします。");
+        }
+        // --- is_face_up の更新処理 ここまで ---
+
 
         println!("  状態更新完了！");
     }
