@@ -96,42 +96,38 @@ impl MoveCardSystem {
             // --- 場札 (Tableau) からの移動 ---
             (StackType::Tableau(_), StackType::Tableau(_)) => {
                 if let Some(target_card) = target_card_opt {
-                    // 場札 -> 場札 (カードの上)
                     self.can_move_tableau_to_tableau(moved_card, target_card)
                 } else {
-                    // 場札 -> 場札 (空の列)
-                    // TODO: target_entity が本当に空の列かどうかのチェックも必要
                     self.can_move_tableau_to_empty_tableau(moved_card)
                 }
             }
-            (StackType::Tableau(_), StackType::Foundation(target_suit)) => {
+            (StackType::Tableau(_), StackType::Foundation(target_suit_index)) => {
                 // 場札 -> 組札
                 // TODO: target_entity (組札の場所) に対応する組札の一番上のカードを取得する必要がある
                 let foundation_top_card: Option<&Card> = None; // 仮！
-                if moved_card.suit != target_suit { return false; } // スートが違う組札には置けない
+                // TODO: ↓の Suit チェックは target_suit_index (u8) と比較できないのでコメントアウト。
+                //       正しいチェックロジック (Foundation index がどの Suit に対応するか World から引く等) が必要。
+                // if moved_card.suit != target_suit { return false; } // スートが違う組札には置けない
                 self.can_move_to_foundation(moved_card, foundation_top_card)
             }
 
             // --- 山札 (Stock/Waste) からの移動 ---
             (StackType::Waste, StackType::Tableau(_)) => {
                  if let Some(target_card) = target_card_opt {
-                    // Waste -> 場札 (カードの上)
                     self.can_move_stock_to_tableau(moved_card, target_card) // ルールは同じ
                 } else {
-                    // Waste -> 場札 (空の列)
                     self.can_move_stock_to_empty_tableau(moved_card) // ルールは同じ
                 }
             }
-             (StackType::Waste, StackType::Foundation(target_suit)) => {
+             (StackType::Waste, StackType::Foundation(target_suit_index)) => {
                 // Waste -> 組札
                 // TODO: 組札の一番上のカードを取得
                 let foundation_top_card: Option<&Card> = None; // 仮！
-                 if moved_card.suit != target_suit { return false; }
+                // TODO: ↓の Suit チェックは target_suit_index (u8) と比較できないのでコメントアウト。
+                //       正しいチェックロジックが必要。
+                // if moved_card.suit != target_suit { return false; }
                 self.can_move_stock_to_foundation(moved_card, foundation_top_card) // ルールは同じ
             }
-
-            // --- 組札 (Foundation) からの移動 (ソリティアによっては許可される) ---
-            // (StackType::Foundation(_), StackType::Tableau(_)) => { ... }
 
             // --- 他の移動パターンは基本的に不可 ---
             _ => {
