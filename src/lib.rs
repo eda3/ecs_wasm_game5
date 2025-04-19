@@ -14,6 +14,10 @@ pub mod system;
 // components/ ディレクトリ以下をモジュールとして宣言！
 pub mod components;
 
+// --- Game Specific Systems --- 
+// systems/ ディレクトリ以下をモジュールとして宣言！
+pub mod systems;
+
 // デバッグ用に、パニック（エラー）が起きた時にコンソールのエラー出力に詳細を出す設定！
 // これを最初に一回呼んでおくと、何か問題が起きた時に原因を突き止めやすくなるよ！👍
 #[wasm_bindgen(start)] // Wasmが読み込まれた時に最初に実行される関数に指定！
