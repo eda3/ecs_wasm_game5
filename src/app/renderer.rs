@@ -78,7 +78,17 @@ pub fn render_game_rust(
     log(&format!("    Drew Stock placeholder at ({}, {})", STOCK_POS_X, STOCK_POS_Y));
 
     // 2.5.2: 捨て札 (Waste) のプレースホルダーを描画
-    log("    Attempting to draw Waste placeholder...");
+    log("    Attempting to draw Waste placeholder..."); 
+    // ★★★ デバッグ: draw_rounded_rect + stroke の代わりに stroke_rect を試す！ ★★★
+    log("      Calling context.stroke_rect() for Waste...");
+    context.stroke_rect(
+        WASTE_POS_X as f64,
+        WASTE_POS_Y as f64,
+        RENDER_CARD_WIDTH,
+        RENDER_CARD_HEIGHT
+    );
+    log("      context.stroke_rect() for Waste called (assuming success).");
+    /* --- 元のコード (コメントアウト) ---
     match draw_rounded_rect(
         context,
         WASTE_POS_X as f64,
@@ -96,6 +106,7 @@ pub fn render_game_rust(
     log("      Calling context.stroke() for Waste...");
     context.stroke();
     log("      context.stroke() for Waste called (assuming success).");
+    */
     log(&format!("    Finished drawing Waste placeholder at ({}, {})", WASTE_POS_X, WASTE_POS_Y));
 
     // 2.5.3: 上がり札 (Foundation) のプレースホルダーを描画 (4つあるからループ！)

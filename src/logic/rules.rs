@@ -246,6 +246,35 @@ pub fn check_win_condition(foundation_card_count: usize) -> bool {
 //     None // 適切な移動先が見つからなかった
 // }
 
+/// 指定されたスタック (`target_stack`) の一番上にあるカードのエンティティID (`Entity`) を取得するよ。
+// ... (関数コメント略) ...
+fn get_top_card_entity(world: &World, target_stack: StackType) -> Option<Entity> {
+    // log(&format!("[Rules Helper] get_top_card_entity for {:?} called", target_stack)); // デバッグログ
+
+    // StackInfo コンポーネントを持つ全てのエンティティを取得するイテレータを作成。
+    let stack_entities = world.get_all_entities_with_component::<StackInfo>();
+
+    // イテレータを処理していくよ！
+    // ★★★ エラー修正: Vec<Entity> をイテレータにするために .into_iter() を追加！ ★★★
+    stack_entities
+        .into_iter() // <- これを追加！ Vec をイテレータに変換！
+        // filter を使って、各エンティティの StackInfo をチェックする。
+        .filter(|&entity| {
+            // world から StackInfo コンポーネントを取得。
+            world.get_component::<StackInfo>(entity)
+                // map_or を使って、Option の中身を処理する。
+                .map_or(false, |stack_info| stack_info.stack_type == target_stack)
+        })
+        // フィルターされたエンティティの中から、position_in_stack が最大のものを探す。
+        .max_by_key(|&entity| {
+            // world から StackInfo を取得。
+            world.get_component::<StackInfo>(entity)
+                // map_or を使って、Some(stack_info) なら position_in_stack を返す。
+                .map_or(0, |stack_info| stack_info.position_in_stack)
+        })
+    // max_by_key は Option<Entity> を返すので、それをそのまま関数の戻り値とする。
+}
+
 // TODO: 他の移動パターン (Stock -> Waste, Waste -> Tableau/Foundation など) の
 //       ルールチェック関数も必要に応じて追加していく！💪
 
