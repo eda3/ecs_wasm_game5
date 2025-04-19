@@ -103,6 +103,65 @@ pub fn can_move_to_tableau(
     }
 }
 
+/// ストック（山札）からウェスト（捨て札）にカードを配れるかチェックする。
+/// (この関数は単純化されており、実際には World の状態を見る必要があるかもしれない)
+///
+/// # 引数
+/// * `stock_is_empty`: ストックが現在空かどうか。
+///
+/// # 戻り値
+/// * ストックから配れるなら `true`、そうでなければ `false`。
+pub fn can_deal_from_stock(stock_is_empty: bool) -> bool {
+    !stock_is_empty // ストックが空でなければ配れる
+}
+
+/// ストック（山札）が空のときに、ウェスト（捨て札）からストックにカードを戻せるかチェックする。
+/// (この関数は単純化されており、実際には World の状態を見る必要があるかもしれない)
+///
+/// # 引数
+/// * `stock_is_empty`: ストックが現在空かどうか。
+/// * `waste_is_empty`: ウェストが現在空かどうか。
+///
+/// # 戻り値
+/// * ウェストからストックに戻せる（リセットできる）なら `true`、そうでなければ `false`。
+pub fn can_reset_stock_from_waste(stock_is_empty: bool, waste_is_empty: bool) -> bool {
+    stock_is_empty && !waste_is_empty // ストックが空で、ウェストにカードがあればリセットできる
+}
+
+/// ウェスト（捨て札）の一番上のカードが、特定の場札 (Tableau) の一番上に置けるかチェックする。
+///
+/// # 引数
+/// * `waste_top_card`: 移動させようとしているウェストの一番上のカード。
+/// * `tableau_top_card`: 移動先の場札の一番上にあるカード (空の列なら None)。
+///
+/// # 戻り値
+/// * 移動可能なら `true`、そうでなければ `false`。
+pub fn can_move_from_waste_to_tableau(
+    waste_top_card: &Card,
+    tableau_top_card: Option<&Card>,
+) -> bool {
+    // 基本的には Tableau への移動ルールと同じだよ！✨
+    can_move_to_tableau(waste_top_card, tableau_top_card)
+}
+
+/// ウェスト（捨て札）の一番上のカードが、特定の組札 (Foundation) の一番上に置けるかチェックする。
+///
+/// # 引数
+/// * `waste_top_card`: 移動させようとしているウェストの一番上のカード。
+/// * `foundation_top_card`: 移動先の組札の一番上にあるカード (なければ None)。
+/// * `foundation_suit`: 移動先の組札のスート。
+///
+/// # 戻り値
+/// * 移動可能なら `true`、そうでなければ `false`。
+pub fn can_move_from_waste_to_foundation(
+    waste_top_card: &Card,
+    foundation_top_card: Option<&Card>,
+    foundation_suit: Suit,
+) -> bool {
+    // 基本的には Foundation への移動ルールと同じだよ！💖
+    can_move_to_foundation(waste_top_card, foundation_top_card, foundation_suit)
+}
+
 // TODO: 他の移動パターン (Stock -> Waste, Waste -> Tableau/Foundation など) の
 //       ルールチェック関数も必要に応じて追加していく！💪
 
@@ -182,5 +241,47 @@ mod tests {
         assert!(can_move_to_tableau(&ten_hearts, Some(&jack_spades)), "Tableau (J♠️) に 10❤️ は置けるはず");
 
         println!("Tableau 移動ルールテスト、成功！🎉");
+    }
+
+    #[test]
+    fn test_stock_waste_rules() {
+        // ストックがある場合
+        assert!(can_deal_from_stock(false), "ストックがあれば配れるはず");
+        assert!(!can_reset_stock_from_waste(false, false), "ストックがある場合はリセットできないはず");
+        assert!(!can_reset_stock_from_waste(false, true), "ストックがある場合はリセットできないはず");
+
+        // ストックが空の場合
+        assert!(!can_deal_from_stock(true), "ストックが空なら配れないはず");
+        assert!(can_reset_stock_from_waste(true, false), "ストックが空でウェストにあればリセットできるはず");
+        assert!(!can_reset_stock_from_waste(true, true), "ストックもウェストも空ならリセットできないはず");
+        println!("Stock/Waste ルールテスト、成功！🎉");
+    }
+
+    #[test]
+    fn test_can_move_from_waste_rules() {
+        // テスト用カード (既存のテストから拝借 or 新規作成)
+        let queen_hearts = Card { suit: Suit::Heart, rank: Rank::Queen, is_face_up: true };
+        let jack_spades = Card { suit: Suit::Spade, rank: Rank::Jack, is_face_up: true };
+        let king_spades = Card { suit: Suit::Spade, rank: Rank::King, is_face_up: true };
+
+        let ace_hearts = Card { suit: Suit::Heart, rank: Rank::Ace, is_face_up: true };
+        let two_hearts = Card { suit: Suit::Heart, rank: Rank::Two, is_face_up: true };
+        let ace_clubs = Card { suit: Suit::Club, rank: Rank::Ace, is_face_up: true };
+
+        // --- Waste から Tableau への移動テスト ---
+        // 基本的に can_move_to_tableau と同じロジックなので、代表的なケースを確認
+        assert!(can_move_from_waste_to_tableau(&jack_spades, Some(&queen_hearts)), "Waste(J♠️) から Tableau(Q❤️) へ移動できるはず");
+        assert!(!can_move_from_waste_to_tableau(&jack_spades, Some(&king_spades)), "Waste(J♠️) から Tableau(K♠️) へは移動できないはず (同色)");
+        assert!(can_move_from_waste_to_tableau(&king_spades, None), "Waste(K♠️) から 空の Tableau へ移動できるはず");
+        assert!(!can_move_from_waste_to_tableau(&queen_hearts, None), "Waste(Q❤️) から 空の Tableau へは移動できないはず");
+
+        // --- Waste から Foundation への移動テスト ---
+        // 基本的に can_move_to_foundation と同じロジックなので、代表的なケースを確認
+        assert!(can_move_from_waste_to_foundation(&ace_hearts, None, Suit::Heart), "Waste(A❤️) から 空の Heart Foundation へ移動できるはず");
+        assert!(!can_move_from_waste_to_foundation(&ace_clubs, None, Suit::Heart), "Waste(A♣️) から 空の Heart Foundation へは移動できないはず (スート違い)");
+        assert!(can_move_from_waste_to_foundation(&two_hearts, Some(&ace_hearts), Suit::Heart), "Waste(2❤️) から Heart Foundation(A❤️) へ移動できるはず");
+        assert!(!can_move_from_waste_to_foundation(&two_hearts, Some(&ace_clubs), Suit::Club), "Waste(2❤️) から Club Foundation(A♣️) へは移動できないはず (スート違い)");
+
+        println!("Waste からの移動ルールテスト、成功！🎉");
     }
 } 

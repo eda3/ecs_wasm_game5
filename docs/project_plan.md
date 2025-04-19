@@ -63,8 +63,8 @@
 - [x] ルール実装(Rust): `StackType` ごとのカード移動可否判定ヘルパー関数を作成 (`src/rules.rs`？) // 基本ヘルパー (`can_move_to_foundation`, `can_move_to_tableau`) と `CardColor` を実装！✅
 - [x] ルール実装(Rust): タブローからタブローへの移動ルール実装 (色違い、ランク連続) // `can_move_to_tableau` で実装済！✅
 - [x] ルール実装(Rust): タブローからファンデーションへの移動ルール実装 (同スート、ランク昇順) // `can_move_to_foundation` で実装済！✅
-- [ ] ルール実装(Rust): ストックからウェストへの移動ルール実装 (山札クリック時の処理)
-- [ ] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装
+- [x] ルール実装(Rust): ストックからウェストへの移動ルール実装 (山札クリック時の処理) // `can_deal_from_stock`, `can_reset_stock_from_waste` を実装！✅
+- [x] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 // `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation` を実装！✅
 - [ ] ルール実装(Rust): (任意) カード自動移動ロジック (ダブルクリック時、ファンデーションへ移動できるか判定して `MakeMove` を生成？)
 - [ ] ルール実装(Rust): ゲームクリア判定ロジック (全カードがファンデーションにあるか？)
 - [x] UIインタラクション(JS): カードクリックによる選択状態表示 (`.selected` クラス) // bootstrap.js と style.css で実装！🖱️
