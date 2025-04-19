@@ -614,32 +614,36 @@ impl GameApp {
         // --- ステップ3: World からカード情報を取得 & ★ソート！★ --- 
         let world = self.world.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
 
-        // --- カード要素の取得とソート ---
-        let mut cards_to_render: Vec<(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>)> = world
-            .iter::<(Entity, &Position, &Card)>()
+        // --- カード要素の取得とソート --- 
+        // ↓↓↓ 型指定に crate::component:: を追加！
+        let mut cards_to_render: Vec<(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>)> = world
+            // ↓↓↓ iter の型ヒントも修正！ (ただし E0599 はこれでは解決しない)
+            .iter::<(Entity, &crate::component::Position, &crate::component::Card)>()
             .filter_map(|(entity, pos, card)| {
-                let dragging_info = world.get_component::<DraggingInfo>(entity).cloned(); // Remove .ok()
-                let stack_info = world.get_component::<StackInfo>(entity); // Just get Option<&StackInfo>
+                // ↓↓↓ get_component の型指定も crate::component:: を追加！
+                let dragging_info = world.get_component::<crate::component::DraggingInfo>(entity).cloned(); // Remove .ok()
+                let stack_info = world.get_component::<crate::component::StackInfo>(entity); // Just get Option<&StackInfo>
                 Some((entity, pos, card, dragging_info, stack_info))
             })
             .collect();
 
         // Sort cards by stack and position within the stack, or original position if dragging
         cards_to_render.sort_by(|a, b| {
-            let (_, _, _, dragging_info_a, stack_info_a_opt) = a;
-            let (_, _, _, dragging_info_b, stack_info_b_opt) = b;
+            // ↓↓↓ ここも Option<crate::component::DraggingInfo> と Option<&crate::component::StackInfo> を使うように型を明示 (タプル分解の型注釈は通常不要だが念のため)
+            let (_, _, _, dragging_info_a, stack_info_a_opt): &(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>) = a;
+            let (_, _, _, dragging_info_b, stack_info_b_opt): &(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>) = b;
 
             // Use original stack order if dragging, otherwise current stack order
             let order_a = dragging_info_a
                 .as_ref()
-                .map(|di| di.original_position_in_stack)
-                .or_else(|| stack_info_a_opt.map(|si| si.position_in_stack))
+                .map(|di: &crate::component::DraggingInfo| di.original_position_in_stack)
+                .or_else(|| stack_info_a_opt.map(|si: &crate::component::StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
                 .unwrap_or(0); // Default order if no stack info
 
             let order_b = dragging_info_b
                 .as_ref()
-                .map(|di| di.original_position_in_stack)
-                .or_else(|| stack_info_b_opt.map(|si| si.position_in_stack))
+                .map(|di: &crate::component::DraggingInfo| di.original_position_in_stack)
+                .or_else(|| stack_info_b_opt.map(|si: &crate::component::StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
                 .unwrap_or(0); // Default order if no stack info
 
             order_a.cmp(&order_b)
