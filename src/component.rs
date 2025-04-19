@@ -212,6 +212,26 @@ pub enum Rank {
     King,  // キング
 }
 
+impl From<crate::components::card::Rank> for Rank {
+    fn from(other_rank: crate::components::card::Rank) -> Self {
+        match other_rank {
+            crate::components::card::Rank::Ace => Rank::Ace,
+            crate::components::card::Rank::Two => Rank::Two,
+            crate::components::card::Rank::Three => Rank::Three,
+            crate::components::card::Rank::Four => Rank::Four,
+            crate::components::card::Rank::Five => Rank::Five,
+            crate::components::card::Rank::Six => Rank::Six,
+            crate::components::card::Rank::Seven => Rank::Seven,
+            crate::components::card::Rank::Eight => Rank::Eight,
+            crate::components::card::Rank::Nine => Rank::Nine,
+            crate::components::card::Rank::Ten => Rank::Ten,
+            crate::components::card::Rank::Jack => Rank::Jack,
+            crate::components::card::Rank::Queen => Rank::Queen,
+            crate::components::card::Rank::King => Rank::King,
+        }
+    }
+}
+
 /// カード情報を表すコンポーネントだよ。どんなカードかを示す！🃏
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[wasm_bindgen(getter_with_clone)]
