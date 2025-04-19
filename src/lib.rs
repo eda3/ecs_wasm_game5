@@ -181,209 +181,35 @@ impl GameApp {
         }
     }
 
-    // WebSocket接続 (network.rs 修正待ち → 修正済み！ connect 呼び出しを有効化！)
+    // WebSocket接続
     pub fn connect(&self) {
-        log("GameApp: connect() called.");
-        // network.rs が修正されたので、connect の呼び出しを有効にする！
-        // network_manager は Arc<Mutex<>> なので、ロックしてからメソッドを呼ぶ。
-        // connect は &mut self を取るので、MutexGuard を取得する必要がある。
-        match self.network_manager.lock() {
-            Ok(mut nm) => nm.connect(), // ロック成功！connect を呼ぶ
-            Err(e) => log(&format!("GameApp: Failed to lock NetworkManager for connect: {:?}", e)), // ロック失敗
-        }
-    }
-
-    // メッセージ送信ヘルパー
-    fn send_message(&self, message: ClientMessage) -> Result<(), String> {
-        log(&format!("GameApp: Preparing to send message: {:?}", message));
-        match serde_json::to_string(&message) {
-            Ok(json_message) => {
-                let nm = self.network_manager.lock().expect("Failed to lock NetworkManager for sending");
-                nm.send_message(&json_message).map_err(|e| e.to_string())
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to serialize ClientMessage: {}", e);
-                log(&error_msg);
-                Err(error_msg)
-            }
-        }
+        // ★修正: app::network_handler の関数を呼び出す！★
+        app::network_handler::connect(&self.network_manager);
     }
 
     // ゲーム参加メッセージ送信
     #[wasm_bindgen]
     pub fn send_join_game(&self, player_name: String) {
-        log(&format!("GameApp: send_join_game called with name: {}", player_name));
-        let message = ClientMessage::JoinGame { player_name };
-        if let Err(e) = self.send_message(message) {
-            log(&format!("GameApp: Failed to send JoinGame message: {}", e));
-        }
+        // ★修正: app::network_handler の関数を呼び出す！★
+        app::network_handler::send_join_game(&self.network_manager, player_name);
     }
 
     // カード移動メッセージ送信
     #[wasm_bindgen]
     pub fn send_make_move(&self, moved_entity_id: usize, target_stack_json: String) {
-        log(&format!("GameApp: send_make_move called with entity: {}, target: {}", moved_entity_id, target_stack_json));
-        let moved_entity = Entity(moved_entity_id); // Entity を use したので crate::entity:: は不要
-
-        // JSON を StackType に変換 (StackType を use したので直接使える)
-        match serde_json::from_str::<StackType>(&target_stack_json) {
-            Ok(target_stack) => {
-                let message = ClientMessage::MakeMove { moved_entity, target_stack };
-                if let Err(e) = self.send_message(message) {
-                    log(&format!("GameApp: Failed to send MakeMove message: {}", e));
-                }
-            }
-            Err(e) => {
-                log(&format!("GameApp: Failed to deserialize target_stack JSON: {}. Input: {}", e, target_stack_json));
-            }
-        }
+        // ★修正: app::network_handler の関数を呼び出す！★
+        app::network_handler::send_make_move(&self.network_manager, moved_entity_id, target_stack_json);
     }
 
-    // 受信メッセージ処理 (状態変更フラグを返すように変更！)
+    // 受信メッセージ処理
     #[wasm_bindgen]
-    pub fn process_received_messages(&mut self) -> bool { // ★戻り値を bool に変更！
-        let mut state_changed = false; // ★状態変更フラグを追加！
-
-        // 1. メッセージキューをロックして、中身を一時的な Vec に移す
-        let messages_to_process: Vec<ServerMessage> = { // 新しいスコープを作る
-            let mut queue = self.message_queue.lock().expect("Failed to lock message queue");
-            queue.drain(..).collect()
-        }; // ← ここでロック解除！🔓
-
-        // 2. ロックが解除された状態で、一時的な Vec を処理する
-        if !messages_to_process.is_empty() {
-            log(&format!("GameApp: Processing {} received messages...", messages_to_process.len()));
-        }
-
-        for message in messages_to_process {
-            log(&format!("  Processing: {:?}", message));
-            match message {
-                ServerMessage::GameJoined { your_player_id, initial_game_state } => {
-                    *self.my_player_id.lock().expect("Failed to lock my_player_id") = Some(your_player_id);
-                    log(&format!("GameApp: Game joined! My Player ID: {}", your_player_id));
-                    if self.apply_game_state(initial_game_state) { // ★apply_game_state の戻り値を見る
-                        state_changed = true; // ★状態が変わったことを記録！
-                    }
-                }
-                ServerMessage::GameStateUpdate { current_game_state } => {
-                    log("GameApp: Received GameStateUpdate.");
-                    if self.apply_game_state(current_game_state) { // ★apply_game_state の戻り値を見る
-                        state_changed = true; // ★状態が変わったことを記録！
-                    }
-                }
-                ServerMessage::MoveRejected { reason } => {
-                    log(&format!("GameApp: Move rejected by server: {}", reason));
-                    // TODO: MoveRejected をJSに伝える仕組み？
-                }
-                ServerMessage::PlayerJoined { player_id, player_name } => {
-                    log(&format!("GameApp: Player {} ({}) joined.", player_name, player_id));
-                    // TODO: プレイヤーリスト更新のために state_changed = true; すべき？
-                    //       apply_game_state でプレイヤーも更新するなら不要
-                }
-                ServerMessage::PlayerLeft { player_id } => {
-                    log(&format!("GameApp: Player {} left.", player_id));
-                    // TODO: プレイヤーリスト更新のために state_changed = true; すべき？
-                }
-                ServerMessage::Pong => {
-                    log("GameApp: Received Pong from server.");
-                }
-                ServerMessage::Error { message } => {
-                    log(&format!("GameApp: Received error from server: {}", message));
-                }
-            }
-        }
-        state_changed // ★最後にフラグの値を返す！
-    }
-
-    /// サーバーから受け取った GameStateData を World に反映させる内部関数。
-    /// 状態が更新された場合は true を返すように変更！
-    fn apply_game_state(&mut self, game_state: GameStateData) -> bool { // ★戻り値を bool に変更！
-        log("GameApp: Applying game state update...");
-        let mut world = match self.world.lock() { // poison 対応
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                log(&format!("World mutex poisoned in apply_game_state: {:?}. Recovering...", poisoned));
-                poisoned.into_inner()
-            }
-        };
-
-        // ★状態変更があったかどうかのフラグ (今は単純に常に true を返す)
-        // ★ did_change は未使用なので削除 ★
-
-        // --- 1. 既存のプレイヤーとカード情報をクリア --- 
-        // ★ クリアしたら変更ありとみなす (did_change 削除のため、直接 true を返す方向で検討) ★
-        log("  Clearing existing player and card entities...");
-        let existing_player_entities: Vec<Entity> =
-            world.get_all_entities_with_component::<Player>() // ここを Player に！
-                .into_iter()
-                .collect();
-        for entity in existing_player_entities {
-            // Player コンポーネントだけ削除 (他のコンポーネントは残すかもしれない)
-            world.remove_component::<Player>(entity); // ここも Player に！
-        }
-        let existing_card_entities: Vec<Entity> = world
-            .get_all_entities_with_component::<Card>() // ここを Card に！
-            .into_iter()
-            .collect();
-        for entity in existing_card_entities {
-            world.remove_component::<Card>(entity); // ここも Card に！
-            world.remove_component::<Position>(entity); // ここも Position に！
-            world.remove_component::<StackInfo>(entity); // ここも StackInfo に！
-            // DraggingInfo もクリアすべき？ ゲーム状態受信時にドラッグ中はおかしいのでクリアする
-            world.remove_component::<DraggingInfo>(entity);
-        }
-
-        // --- 2. 新しいプレイヤー情報を反映 --- 
-        if !game_state.players.is_empty() { true; }
-        log(&format!("  Applying {} players...", game_state.players.len()));
-        for player_data in game_state.players {
-            log(&format!("    Player ID: {}, Name: {}", player_data.id, player_data.name));
-            // TODO: 実際にプレイヤーコンポーネントを追加/更新する
-        }
-
-        // --- 3. 新しいカード情報を反映 --- 
-        if !game_state.cards.is_empty() { true; }
-        log(&format!("  Applying {} cards...", game_state.cards.len()));
-        for card_data in game_state.cards {
-            let entity = card_data.entity;
-            world.create_entity_with_id(entity); // 存在保証
-            let card_component = crate::components::card::Card {
-                suit: card_data.suit.into(), // protocol::Suit -> components::card::Suit
-                rank: card_data.rank.into(), // protocol::Rank -> components::card::Rank
-                is_face_up: card_data.is_face_up,
-            };
-            world.add_component(entity, card_component);
-
-            // StackInfo コンポーネントを作成 (components::stack::StackInfo を使う)
-            let stack_info_component = StackInfo {
-                // TODO: protocol::StackType から components::stack::StackType への変換が必要！
-                //       現状は From トレイトがないので、手動でマッチさせるか、From を実装する。
-                //       一旦、仮で Tableau(0) を使う。
-                stack_type: match card_data.stack_type {
-                    protocol::StackType::Tableau(_) => StackType::Tableau(0), // 仮インデックス！要修正！
-                    protocol::StackType::Foundation(_) => StackType::Foundation(0), // 仮インデックス！要修正！
-                    protocol::StackType::Stock => StackType::Stock,
-                    protocol::StackType::Waste => StackType::Waste,
-                    protocol::StackType::Hand => StackType::Hand,
-                    // _ => StackType::Stock, // Default case?
-                },
-                // TODO: card_data に position_in_stack が String で入ってる？要確認！
-                //       u8 にパースする必要があるかも。
-                position_in_stack: card_data.position_in_stack, //.parse::<u8>().unwrap_or(0), // 仮！
-                // stack_index: card_data.stack_index, // CardData に stack_index はない
-            };
-            world.add_component(entity, stack_info_component);
-
-            // Position コンポーネントを作成 (components::position::Position を使う)
-            let position_component = Position {
-                x: card_data.position.x,
-                y: card_data.position.y,
-            };
-            world.add_component(entity, position_component);
-        }
-
-        log("GameApp: Game state update applied.");
-        true // ★ 変更があったかどうかを返す！
+    pub fn process_received_messages(&mut self) -> bool {
+        // ★修正: app::network_handler の関数を呼び出す！ 必要な Arc を渡す★
+        app::network_handler::process_received_messages(
+            &self.message_queue,
+            &self.my_player_id,
+            &self.world
+        )
     }
 
     // JSから初期カード配置を実行するためのメソッド
