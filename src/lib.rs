@@ -2,6 +2,11 @@
 
 // WASM と JavaScript を繋ぐための基本！
 use wasm_bindgen::prelude::*;
+// ★復活！ JsCast トレイトを使う！★
+use wasm_bindgen::JsCast;
+
+// ★修正: web-sys から window と、HtmlElement を使う！ Element は削除！★
+use web_sys::{window, HtmlElement};
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
@@ -37,6 +42,9 @@ use crate::systems::deal_system::DealInitialCardsSystem;
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+    // ★追加: console.error も使えるようにしておく！★
+    #[wasm_bindgen(js_namespace = console)]
+    fn error(s: &str);
 }
 
 // main 関数の代わりに、Wasm がロードされた時に最初に実行される関数だよ。
@@ -477,17 +485,102 @@ impl GameApp {
         // World のロックはスコープを抜ける時に自動で解除されるよ
     }
 
-    /// Rust側でゲーム画面を描画する関数 (今はログ出力のみ)
+    /// Rust側でゲーム画面を描画する関数
     #[wasm_bindgen]
     pub fn render_game_rust(&self) {
-        // TODO: ここに web-sys を使ってDOMを操作し、ゲーム画面を描画するコードを書く！
-        //       - #game-area 要素を取得
-        //       - 古いカード要素をクリア
-        //       - self.world からカード情報を取得
-        //       - カード情報に基づいて新しい div 要素を作成・設定
-        //       - イベントリスナーを追加 (ここが最難関！)
-        //       - 作成した要素を #game-area に追加
-        log("GameApp: render_game_rust() called! (Implementation Pending)");
+        log("GameApp: render_game_rust() called!");
+
+        // --- ステップ1: #game-area 要素を取得 ---
+        let window = window().expect("Failed to get window");
+        let document = window.document().expect("Failed to get document");
+        let game_area = match document.get_element_by_id("game-area") {
+            Some(element) => element,
+            None => {
+                error("Fatal: Could not find #game-area element in the DOM!");
+                return;
+            }
+        };
+
+        // --- ステップ2: 中身を空にする ---
+        game_area.set_inner_html("");
+        log("  Cleared #game-area content.");
+
+        // --- ★ステップ3: World からカード情報を取得 --- ★
+        log("  Acquiring world lock to get card data...");
+        let world = match self.world.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                error(&format!("World mutex poisoned in render_game_rust: {:?}. Recovering...", poisoned));
+                // poison された場合でも、とりあえず中身を取得して続行を試みる
+                poisoned.into_inner()
+            }
+        };
+        log("  World lock acquired. Getting card entities...");
+
+        // Card, Position, StackInfo を持つエンティティを取得
+        // World の実装によっては、3つすべてを持つエンティティを直接取得するメソッドがない場合がある。
+        // その場合は、まず Card を持つエンティティを取得し、ループ内で Position と StackInfo の存在を確認する。
+        let card_entities = world.get_all_entities_with_component::<Card>();
+        log(&format!("  Found {} entities with Card component. Iterating...", card_entities.len()));
+
+        // --- ★ステップ4: カード要素を作成・設定 (まだ追加はしない) --- ★
+        for &entity in &card_entities {
+            // Position と StackInfo も持っているか確認 (なければ描画しない)
+            if let (Some(card), Some(position), Some(stack_info)) = (
+                world.get_component::<Card>(entity),
+                world.get_component::<Position>(entity),
+                world.get_component::<StackInfo>(entity)
+            ) {
+                // --- 要素作成 ---
+                let card_element_div = match document.create_element("div") { // 変数名を区別
+                    Ok(el) => el,
+                    Err(e) => {
+                        error(&format!("Failed to create div element for card {:?}: {:?}", entity, e));
+                        continue; // 作成失敗したら次のカードへ
+                    }
+                };
+
+                // ★ Element を HtmlElement にキャスト！ (最初の修正に戻す！) ★
+                let card_element = match card_element_div.dyn_into::<HtmlElement>() {
+                    Ok(html_el) => html_el,
+                    Err(_) => {
+                        error(&format!("Failed to cast Element to HtmlElement for card {:?}", entity));
+                        continue; // キャスト失敗したら次のカードへ
+                    }
+                };
+
+                // --- 基本クラスとID属性を設定 ---
+                // ★ キャストした HtmlElement を使う！ ★
+                if let Err(e) = card_element.class_list().add_1("card") {
+                     error(&format!("Failed to add 'card' class to element for {:?}: {:?}", entity, e));
+                }
+                if let Err(e) = card_element.set_attribute("data-entity-id", &entity.0.to_string()) {
+                     error(&format!("Failed to set data-entity-id for {:?}: {:?}", entity, e));
+                }
+
+                // --- 見た目や位置に関するクラス・スタイルを設定 (次のステップで実装) ---
+                // 例: 表向きか裏向きか、スート、ランク、位置 (top/left)
+                // card_element.class_list().add_1(if card.is_face_up { "face-up" } else { "face-down" }).ok();
+                // card_element.class_list().add_1(&format!("suit-{}", format!("{:?}", card.suit).to_lowercase())).ok();
+                // card_element.class_list().add_1(&format!("rank-{}", format!("{:?}", card.rank).to_lowercase())).ok();
+                // card_element.style().set_property("left", &format!("{}px", position.x)).ok();
+                // card_element.style().set_property("top", &format!("{}px", position.y)).ok();
+
+
+                // --- 要素を game_area に追加 (次のステップで実装) ---
+                // if let Err(e) = game_area.append_child(&card_element) {
+                //     error(&format!("Failed to append card element {:?} to game_area: {:?}", entity, e));
+                // }
+
+                log(&format!("    Created card element for entity {:?} (Position: {}, {}, Stack: {:?}, FaceUp: {})",
+                    entity, position.x, position.y, stack_info.stack_type, card.is_face_up));
+
+            } else {
+                 log(&format!("    Skipping entity {:?} because it's missing Card, Position, or StackInfo component.", entity));
+            }
+        }
+        log("  Finished iterating and creating card elements (not yet appended).");
+        // World のロックはスコープを抜ける時に自動で解除される！
     }
 }
 
