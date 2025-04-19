@@ -220,6 +220,12 @@ function renderGame() {
                 });
                 // --- ★ 追加ここまで ★ ---
 
+                // --- ★ ここから追加: ダブルクリックイベントリスナーを設定 ★ ---
+                cardElement.addEventListener('dblclick', () => {
+                    handleCardDoubleClick(cardData, cardElement);
+                });
+                // --- ★ 追加ここまで ★ ---
+
                 // 作成したカード要素をゲームエリアに追加
                 gameAreaDiv.appendChild(cardElement);
             });
@@ -250,6 +256,19 @@ function handleCardClick(cardData, cardElement) {
     // クリックされたカードに selected クラスを追加
     cardElement.classList.add('selected');
     console.log('  Added .selected class to clicked card.');
+}
+
+// --- ★ 新しい関数: カードダブルクリック処理 ★ ---
+function handleCardDoubleClick(cardData, cardElement) {
+    console.log(`🖱️🖱️ Card double-clicked! Entity ID: ${cardData.entity_id}`, cardData);
+
+    // TODO: ダブルクリックされたカードに応じたゲームロジックを呼び出す
+    //       - 表向きのカードか？
+    //       - どこにあるカードか？ (Tableau? Waste?)
+    //       - Foundation に移動できるか Rust 側に問い合わせる？
+    // 例: if (cardData.is_face_up) { gameApp.try_auto_move_to_foundation(cardData.entity_id); }
+
+    // とりあえずログ出力だけ！
 }
 
 // --- ヘルパー関数: カードの表示位置を計算 --- (超簡易版！)
