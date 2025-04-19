@@ -119,10 +119,10 @@ function updateStatusDisplay() {
     try {
         // Rust 側からデバッグ用の接続状態とプレイヤーIDを取得
         const status = gameApp.get_connection_status_debug();
-        const playerId = gameApp.get_my_player_id_debug(); // Option<u32> は JS では number | null になる
+        const playerId = gameApp.get_my_player_id_debug(); // Option<u32> は JS では number | undefined になる
 
         connectionStatusSpan.textContent = status;
-        playerIdSpan.textContent = playerId !== null ? playerId.toString() : '未参加';
+        playerIdSpan.textContent = playerId !== undefined ? playerId.toString() : '未参加';
 
         // --- 接続状態に応じてボタンの有効/無効を切り替え ---
         if (status === 'Connected') {

@@ -38,7 +38,7 @@
 - [x] 通信プロトコル定義: メッセージ共通で使うデータ構造 (PlayerId, CardData, GameStateData など) の定義
 - [x] 通信プロトコル定義: `serde` を使ったシリアライズ/デシリアライズ設定
 - [x] クライアント側ネットワーク処理: WebSocket接続マネージャー (`NetworkManager`) の実装
-- [x] クライアント側ネットワーク処理: 接続・切断処理 (URL: `ws://162.43.8.148:8101`) // 接続は実装済
+- [x] クライアント側ネットワーク処理: 接続・切断処理 (URL: `ws://localhost:8101`) // 接続は実装済 & URL修正済！
 - [x] クライアント側ネットワーク処理: メッセージ送信・受信キュー
 - [x] クライアント側ネットワーク処理: 接続状態管理 (`ConnectionStatus`)
 - [ ] クライアント側ネットワーク処理: 再接続ロジック (任意)
@@ -48,9 +48,9 @@
 - [x] クライアント側ネットワーク処理: `send_join_game()`, `send_make_move()` などWASM公開メソッド
 - [x] クライアント側ネットワーク処理: `process_received_messages()` で受信キューを処理
 - [x] クライアント側ネットワーク処理: `apply_game_state()` で受信データ (`GameStateData`) を `World` に反映 // 基本実装済
-- [ ] サーバー側: WebSocketサーバーの起動 (`162.43.8.148:8101`)
-- [ ] サーバー側: クライアント接続管理
-- [ ] サーバー側: メッセージ受信・処理 (JoinGame, MakeMove)
+- [x] サーバー側: WebSocketサーバーの起動 (`localhost:8101`) // ws_server.js と npm script で実装！🔌
+- [x] サーバー側: クライアント接続管理 // ws_server.js で簡易実装！🤝
+- [x] サーバー側: メッセージ受信・処理 (JoinGame, MakeMove) // JoinGame に簡易応答実装！📥
 - [ ] サーバー側: ゲーム状態管理 (簡易でOK)
 - [ ] サーバー側: クライアントへのメッセージ送信 (GameStateUpdate など)
 
