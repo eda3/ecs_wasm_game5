@@ -327,11 +327,64 @@ impl GameApp {
         log("GameApp: get_world_state_json called.");
         let world = self.world.lock().expect("Failed to lock world for getting state");
 
-        // TODO: World の状態 (カード、スタック情報など) を取得して、
-        //       JavaScript で扱いやすい形式 (例: JSON) にシリアライズする。
-        //       今は仮の文字列を返すね！
-        log("  (Not implemented yet) Returning placeholder JSON.");
-        serde_json::json!({ "message": "World state serialization not implemented yet!" }).to_string()
+        // JSONを作るためのデータを集めるよ！
+        // まずは Card コンポーネントを持つ全てのエンティティを取得。
+        let card_entities = world.get_all_entities_with_component::<Card>();
+
+        // 各カードエンティティの詳細情報を格納するための Vec を用意。
+        // serde_json::Value 型を使って、柔軟なJSONオブジェクトを作れるようにするよ。
+        let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
+
+        log(&format!("  Found {} card entities. Preparing JSON data...", card_entities.len()));
+
+        // 各カードエンティティについてループして、必要な情報を取得・整形する。
+        for entity in card_entities {
+            // Card コンポーネントを取得 (存在しない場合はエラーにすべきだけど、ここでは unwrap する)
+            let card = world.get_component::<Card>(entity).expect("Card component not found");
+            // StackInfo コンポーネントを取得 (これも unwrap)
+            let stack_info = world.get_component::<StackInfo>(entity).expect("StackInfo component not found");
+
+            // StackType から stack_type (文字列) と stack_index (数値 or null) を決定する。
+            let (stack_type_str, stack_index_json) = match stack_info.stack_type {
+                StackType::Stock => ("Stock", serde_json::Value::Null),
+                StackType::Waste => ("Waste", serde_json::Value::Null),
+                StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
+                StackType::Tableau(index) => ("Tableau", serde_json::json!(index)),
+            };
+
+            // カード情報を serde_json::json! マクロを使ってJSONオブジェクトにする！便利！✨
+            let card_json = serde_json::json!({
+                "entity_id": entity.0, // Entity はタプル構造体 Entity(usize) なので .0 で中身の usize を取得
+                "suit": format!("{:?}", card.suit), // Debug フォーマットで文字列化 (例: "Heart")
+                "rank": format!("{:?}", card.rank), // Debug フォーマットで文字列化 (例: "Ace")
+                "is_face_up": card.is_face_up,
+                "stack_type": stack_type_str,
+                "stack_index": stack_index_json,
+                "order": stack_info.position_in_stack // フィールド名は position_in_stack だったね！
+            });
+
+            // 作成したカードJSONデータを Vec に追加。
+            cards_json_data.push(card_json);
+        }
+
+        log("  Card data preparation complete.");
+
+        // 最終的なJSONオブジェクトを作成。"cards" というキーにカードデータの配列を入れる。
+        let final_json = serde_json::json!({ "cards": cards_json_data });
+
+        // JSONオブジェクトを文字列に変換して返す。
+        match serde_json::to_string(&final_json) {
+            Ok(json_string) => {
+                // log(&format!("  Returning world state JSON: {}", json_string)); // ちょっと長いのでコメントアウト
+                log("  Successfully serialized world state to JSON.");
+                json_string
+            }
+            Err(e) => {
+                log(&format!("Error serializing world state to JSON: {}", e));
+                // エラーの場合は空のJSON配列などを返す？あるいはエラー情報を含むJSON？
+                serde_json::json!({ "error": "Failed to serialize world state", "details": e.to_string() }).to_string()
+            }
+        }
     }
 
     // 接続状態を文字列で返す (デバッグ用)
