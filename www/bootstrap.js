@@ -302,61 +302,88 @@ function handleMouseDown(event, cardData, cardElement) {
     // ドラッグできるのは表向きのカードのみ (今は Stock 以外全部OKにしてみる)
     if (cardData.is_face_up && cardData.stack_type !== 'Stock') {
         console.log(`🖱️ Drag start detected on card Entity ID: ${cardData.entity_id}`);
-
-        // デフォルトのドラッグ動作を抑制 (画像ドラッグとかを防ぐ)
         event.preventDefault();
-
         isDragging = true;
         draggedCardElement = cardElement;
         draggedEntityId = cardData.entity_id;
-
-        // マウスカーソルの位置とカード要素の左上隅との差を計算して保存
         const rect = cardElement.getBoundingClientRect();
         offsetX = event.clientX - rect.left;
         offsetY = event.clientY - rect.top;
-
-        // ドラッグ中の見た目を変更 (例: .dragging クラスを追加)
         cardElement.classList.add('dragging');
-        // さらにカーソルも変える？
-        cardElement.style.cursor = 'grabbing'; // または 'move'
+        cardElement.style.cursor = 'grabbing';
 
-        // TODO: mousemove と mouseup のリスナーを document に一時的に追加する
-        //       (カード要素からマウスが外れても追従・終了できるように！)
+        // --- ★ここから追加: mousemove と mouseup リスナーを document に追加★ ---
+        document.addEventListener('mousemove', handleMouseMove);
+        // mouseup のリスナーもここで追加しちゃう（次のステップ用だけど一緒にやっとく！）
+        document.addEventListener('mouseup', handleMouseUp);
+        // --- ★追加ここまで★ ---
 
     } else {
         console.log(`Card Entity ID: ${cardData.entity_id} is not draggable (face down or stock).`);
     }
 }
 
-// --- ヘルパー関数: カードの表示位置を計算 --- (超簡易版！)
+// --- ★ 新しい関数: カードドラッグ中の処理 (mousemove) ★ --- (修正版！)
+function handleMouseMove(event) {
+    // ドラッグ中でなければ何もしない
+    if (!isDragging || !draggedCardElement) return;
+
+    // ゲームエリアの位置情報を取得 (座標変換のため)
+    const gameAreaRect = gameAreaDiv.getBoundingClientRect();
+
+    // マウスの現在の画面上の座標 (clientX, clientY) から、
+    // ドラッグ開始時のズレ (offsetX, offsetY) を引いて、
+    // カードの左上が「画面上のどこに来るべきか」を計算する。
+    const desiredViewportX = event.clientX - offsetX;
+    const desiredViewportY = event.clientY - offsetY;
+
+    // 「画面上の座標」を「ゲームエリア内の座標」に変換する！
+    // (画面上の座標 - ゲームエリアの左上の画面上の座標 = ゲームエリア内の座標)
+    const newX = desiredViewportX - gameAreaRect.left;
+    const newY = desiredViewportY - gameAreaRect.top;
+
+    // 計算したゲームエリア内の座標をカードのスタイルに設定！
+    draggedCardElement.style.left = `${newX}px`;
+    draggedCardElement.style.top = `${newY}px`;
+}
+
+// --- ★ 新しい関数 (仮): カードドラッグ終了処理 (mouseup) ★ ---
+function handleMouseUp(event) {
+    if (isDragging) {
+        console.log(`🖱️ Drag end detected on card Entity ID: ${draggedEntityId}`);
+        // ここで isDragging を false にしたり、クラスを戻したり、
+        // document のリスナーを削除したり、ドロップ処理を呼び出したりする！
+        // 次のステップで実装するよ！
+    }
+}
+
+// --- ヘルパー関数: カードの表示位置を計算 --- (修正版！)
 function calculateCardPosition(cardData) {
     const cardWidth = 72; // カードの幅 (CSSと合わせる必要あり)
     const cardHeight = 96; // カードの高さ
     const horizontalSpacing = 10; // 横の間隔
     const verticalSpacing = 15;   // 縦の間隔 (重ねる場合)
-    const tableauVerticalOffset = 25; // 場札の重なり具合
+    const tableauVerticalOffset = 25; // 場札の縦の重なり具合
+    const wasteHorizontalOffset = 20; // ★追加: 捨て札の横の重なり具合
 
     let baseX = 10;
     let baseY = 10;
 
     switch (cardData.stack_type) {
         case 'Stock':
-            // 山札は左上に固めておく (雑)
             baseX = 10;
-            baseY = 10; // order で少しずらす？今回は固定
+            baseY = 10;
             break;
         case 'Waste':
-            // 捨て札は山札の右隣 (雑)
-            baseX = 10 + cardWidth + horizontalSpacing;
-            baseY = 10; // order で少しずらす？今回は固定
+            // ★修正: 山札の右隣に、order に応じて少しずつ横にずらす
+            baseX = 10 + cardWidth + horizontalSpacing + (cardData.order * wasteHorizontalOffset);
+            baseY = 10;
             break;
         case 'Foundation':
-            // 上がり札は右上に4つ並べる (雑)
-            baseX = 10 + (cardWidth + horizontalSpacing) * (3 + (cardData.stack_index || 0)); // 3番目以降に配置
+            baseX = 10 + (cardWidth + horizontalSpacing) * (3 + (cardData.stack_index || 0));
             baseY = 10;
             break;
         case 'Tableau':
-            // 場札は7列、下に重ねていく (雑)
             baseX = 10 + (cardWidth + horizontalSpacing) * (cardData.stack_index || 0);
             baseY = 10 + cardHeight + verticalSpacing + (cardData.order * tableauVerticalOffset);
             break;
