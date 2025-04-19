@@ -674,23 +674,23 @@ impl GameApp {
         context.clear_rect(0.0, 0.0, canvas_width, canvas_height);
         // log(&format!("  Canvas cleared ({}x{})."), canvas_width, canvas_height);
 
-        // --- ステップ3: World からカード情報を取得 & ★ソート！★ --- 
+        // --- ステップ3: World からカード情報を取得 & ★ソート！★ ---
         let world = self.world.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
 
-        // --- カード要素の取得とソート --- 
+        // --- カード要素の取得とソート ---
         // ↓↓↓ E0599 修正: world.iter() ではなく get_all_entities_with_component を使う！
         let card_entities = world.get_all_entities_with_component::<Card>();
-        let mut cards_to_render: Vec<(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>)> = Vec::with_capacity(card_entities.len());
+        let mut cards_to_render: Vec<(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>)> = Vec::with_capacity(card_entities.len());
 
         for &entity in &card_entities {
             // ループ内で各コンポーネントを取得
             if let (Some(pos), Some(card)) = (
-                world.get_component::<crate::component::Position>(entity),
-                world.get_component::<crate::component::Card>(entity)
+                world.get_component::<Position>(entity),
+                world.get_component::<Card>(entity)
             ) {
                 // DraggingInfo と StackInfo は Option で取得
-                let dragging_info = world.get_component::<crate::component::DraggingInfo>(entity).cloned(); // cloned() で Option<DraggingInfo> に
-                let stack_info = world.get_component::<crate::component::StackInfo>(entity); // &StackInfo の Option
+                let dragging_info = world.get_component::<DraggingInfo>(entity).cloned(); // cloned() で Option<DraggingInfo> に
+                let stack_info = world.get_component::<StackInfo>(entity); // &StackInfo の Option
 
                 cards_to_render.push((entity, pos, card, dragging_info, stack_info));
             } else {
@@ -702,21 +702,26 @@ impl GameApp {
 
         // Sort cards by stack and position within the stack, or original position if dragging
         cards_to_render.sort_by(|a, b| {
-            // ここも Option<crate::component::DraggingInfo> と Option<&crate::component::StackInfo> を使うように型を明示 (タプル分解の型注釈は通常不要だが念のため)
-            let (_, _, _, dragging_info_a, stack_info_a_opt): &(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>) = a;
-            let (_, _, _, dragging_info_b, stack_info_b_opt): &(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>) = b;
+            // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
+            let (_, _, _, dragging_info_a, stack_info_a_opt): &(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>) = a;
+            // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
+            let (_, _, _, dragging_info_b, stack_info_b_opt): &(Entity, &Position, &Card, Option<DraggingInfo>, Option<&StackInfo>) = b;
 
             // Use original stack order if dragging, otherwise current stack order
             let order_a = dragging_info_a
                 .as_ref()
-                .map(|di: &crate::component::DraggingInfo| di.original_position_in_stack)
-                .or_else(|| stack_info_a_opt.map(|si: &crate::component::StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
+                // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
+                .map(|di: &DraggingInfo| di.original_position_in_stack)
+                // ★ 修正: `crate::component::` を削除 ★
+                .or_else(|| stack_info_a_opt.map(|si: &StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
                 .unwrap_or(0); // Default order if no stack info
 
             let order_b = dragging_info_b
                 .as_ref()
-                .map(|di: &crate::component::DraggingInfo| di.original_position_in_stack)
-                .or_else(|| stack_info_b_opt.map(|si: &crate::component::StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
+                // ★ 修正: `crate::component::` を削除 (DraggingInfoはもともとOK) ★
+                .map(|di: &DraggingInfo| di.original_position_in_stack)
+                // ★ 修正: `crate::component::` を削除 ★
+                .or_else(|| stack_info_b_opt.map(|si: &StackInfo| si.position_in_stack as usize)) // u8 を usize にキャスト
                 .unwrap_or(0); // Default order if no stack info
 
             order_a.cmp(&order_b)
