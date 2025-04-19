@@ -23,7 +23,6 @@ pub mod components;
 pub mod systems;
 pub mod network;
 pub mod protocol;
-pub mod rules;
 pub mod logic;
 pub mod app;
 pub mod config;

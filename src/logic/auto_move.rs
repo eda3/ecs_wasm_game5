@@ -8,7 +8,8 @@ use crate::components::stack::{StackType, StackInfo}; // components の StackTyp
 use crate::entity::Entity; // Entity ID (crate::entity のもの)
 use crate::log;           // ログ出力用 (TODO: logマクロが使えるか確認)
 use crate::world::World; // 自作 World を使うため
-use crate::rules::can_move_to_foundation; // 基本的なルールチェック関数を rules から使う
+// use crate::rules::can_move_to_foundation; // ⛔️ 古いパス！
+use crate::logic::rules::can_move_to_foundation; // ✨ 新しいパスに修正！ rules モジュールは logic の下にお引越ししたよ！
 
 // --- ヘルパー関数 (このモジュール内でのみ使用) ---
 
