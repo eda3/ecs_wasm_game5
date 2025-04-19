@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 // ★修正: web-sys から window と、HtmlElement を使う！ Element は削除！★
-use web_sys::{window, HtmlElement, Event, EventTarget, HtmlSpanElement, MouseEvent, DomRect};
+use web_sys::{window, HtmlElement, Event, EventTarget, HtmlSpanElement, MouseEvent, DomRect, HtmlCanvasElement, CanvasRenderingContext2d};
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
@@ -117,6 +117,10 @@ pub struct GameApp {
     // (ドラッグ中のみ Some になる)
     window_mousemove_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
     window_mouseup_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    // ★追加: Canvas 要素と 2D コンテキストを保持するフィールド★
+    // (今回は Arc<Mutex<>> で囲まず、直接保持してみる)
+    canvas: HtmlCanvasElement,
+    context: CanvasRenderingContext2d,
 }
 
 // GameApp 構造体のメソッドを実装していくよ！
@@ -124,7 +128,7 @@ pub struct GameApp {
 impl GameApp {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        log("GameApp: Initializing...");
+        log("GameApp: Initializing for Canvas rendering...");
         let mut world = World::new();
         // コンポーネント登録 (Player も忘れずに)
         world.register_component::<components::card::Card>();
@@ -157,6 +161,26 @@ impl GameApp {
         let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
         let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
 
+        // ★ Canvas 要素と 2D コンテキストを取得・設定 ★
+        let window = window().expect("Failed to get window");
+        let document = window.document().expect("Failed to get document");
+        let canvas = document
+            .get_element_by_id("game-canvas") // ★ ID を "game-canvas" に変更！★
+            .expect("#game-canvas element not found")
+            .dyn_into::<HtmlCanvasElement>()
+            .map_err(|_| ())
+            .expect("Element is not an HtmlCanvasElement");
+
+        let context = canvas
+            .get_context("2d")
+            .expect("Failed to get 2d context")
+            .expect("Option for 2d context is None") // get_context は Option<Result<Object>> を返す
+            .dyn_into::<CanvasRenderingContext2d>()
+            .map_err(|_| ())
+            .expect("Context is not CanvasRenderingContext2d");
+        
+        log("Canvas and 2D context obtained successfully.");
+
         log("GameApp: Initialization complete.");
         Self {
             world: world_arc,
@@ -168,6 +192,9 @@ impl GameApp {
             dragging_state: dragging_state_arc,
             window_mousemove_closure: window_mousemove_closure_arc,
             window_mouseup_closure: window_mouseup_closure_arc,
+            // ★取得した canvas と context をセット★
+            canvas,
+            context,
         }
     }
 
