@@ -3,8 +3,8 @@
 // まず、wasm-pack が生成した JS ファイルから必要なものをインポートするよ！
 // `init` 関数: WASM モジュールを非同期で初期化する関数。
 // `GameApp` クラス: Rust 側で #[wasm_bindgen] を付けた構造体が JS ではクラスみたいに見える！
-// パスはプロジェクトの構成に合わせてね (普通は `../pkg/` の下にあるはず)
-import init, { GameApp } from '../pkg/ecs_wasm_game5.js';
+// パスはプロジェクトの構成に合わせてね (http-server がルートを配信するので、ルートからの絶対パス /pkg/ になる)
+import init, { GameApp } from '/pkg/ecs_wasm_game5.js';
 
 // グローバルスコープ (どこからでもアクセスできる場所) に gameApp インスタンスを保持する変数を用意するよ。
 // 最初は null (まだ無い状態) にしておく。

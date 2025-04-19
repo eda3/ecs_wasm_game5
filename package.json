@@ -8,8 +8,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start:http": "http-server www -p 8001 --cors -o",
-    "start:ws": "cargo run --manifest-path ../solitaire_server/Cargo.toml",
+    "start:http": "http-server . -p 8001 --cors -o",
+    "start:ws": "node server/ws_server.js",
     "dev": "concurrently \"npm:start:http\" \"npm:start:ws\""
   },
   "keywords": [],
@@ -18,5 +18,8 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "http-server": "^14.1.1"
+  },
+  "dependencies": {
+    "ws": "^8.17.1"
   }
 }

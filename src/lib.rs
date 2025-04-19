@@ -80,7 +80,7 @@ impl GameApp {
         let message_queue_arc = Arc::new(Mutex::new(VecDeque::new()));
         let my_player_id_arc = Arc::new(Mutex::new(None));
 
-        let server_url = format!("ws://{}:{}", "162.43.8.148", 8101);
+        let server_url = format!("ws://{}:{}", "localhost", 8101);
         let status_arc = Arc::new(Mutex::new(ConnectionStatus::Disconnected));
 
         let network_manager = NetworkManager::new(
