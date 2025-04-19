@@ -10,6 +10,13 @@ import init, { GameApp } from '/pkg/ecs_wasm_game5.js';
 // 最初は null (まだ無い状態) にしておく。
 let gameApp = null;
 
+// --- ドラッグ＆ドロップの状態管理変数 --- ★追加★
+let isDragging = false;
+let draggedCardElement = null;
+let draggedEntityId = null;
+let offsetX = 0;
+let offsetY = 0;
+
 // --- DOM 要素を取得 --- (後でイベントリスナーを設定するために先に取っておく！)
 const connectButton = document.getElementById('connect-button');
 const joinButton = document.getElementById('join-button');
@@ -214,17 +221,21 @@ function renderGame() {
                     cardElement.innerHTML = '';
                 }
 
-                // --- ★ ここから追加: クリックイベントリスナーを設定 ★ ---
+                // --- クリックイベントリスナーを設定 --- (変更なし)
                 cardElement.addEventListener('click', () => {
                     handleCardClick(cardData, cardElement);
                 });
-                // --- ★ 追加ここまで ★ ---
 
-                // --- ★ ここから追加: ダブルクリックイベントリスナーを設定 ★ ---
+                // --- ダブルクリックイベントリスナーを設定 --- (変更なし)
                 cardElement.addEventListener('dblclick', () => {
                     handleCardDoubleClick(cardData, cardElement);
                 });
-                // --- ★ 追加ここまで ★ ---
+
+                // --- ★ここから追加: マウスダウンイベントリスナーを設定 (ドラッグ開始)★ ---
+                cardElement.addEventListener('mousedown', (event) => {
+                    handleMouseDown(event, cardData, cardElement);
+                });
+                // --- ★追加ここまで★ ---
 
                 // 作成したカード要素をゲームエリアに追加
                 gameAreaDiv.appendChild(cardElement);
@@ -283,6 +294,37 @@ function handleCardDoubleClick(cardData, cardElement) {
         }
     } else {
         console.log("  Card is face down, ignoring double click for auto-move.");
+    }
+}
+
+// --- ★ 新しい関数: カードドラッグ開始処理 (mousedown) ★ ---
+function handleMouseDown(event, cardData, cardElement) {
+    // ドラッグできるのは表向きのカードのみ (今は Stock 以外全部OKにしてみる)
+    if (cardData.is_face_up && cardData.stack_type !== 'Stock') {
+        console.log(`🖱️ Drag start detected on card Entity ID: ${cardData.entity_id}`);
+
+        // デフォルトのドラッグ動作を抑制 (画像ドラッグとかを防ぐ)
+        event.preventDefault();
+
+        isDragging = true;
+        draggedCardElement = cardElement;
+        draggedEntityId = cardData.entity_id;
+
+        // マウスカーソルの位置とカード要素の左上隅との差を計算して保存
+        const rect = cardElement.getBoundingClientRect();
+        offsetX = event.clientX - rect.left;
+        offsetY = event.clientY - rect.top;
+
+        // ドラッグ中の見た目を変更 (例: .dragging クラスを追加)
+        cardElement.classList.add('dragging');
+        // さらにカーソルも変える？
+        cardElement.style.cursor = 'grabbing'; // または 'move'
+
+        // TODO: mousemove と mouseup のリスナーを document に一時的に追加する
+        //       (カード要素からマウスが外れても追従・終了できるように！)
+
+    } else {
+        console.log(`Card Entity ID: ${cardData.entity_id} is not draggable (face down or stock).`);
     }
 }
 
