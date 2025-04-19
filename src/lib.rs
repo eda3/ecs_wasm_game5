@@ -533,14 +533,14 @@ impl GameApp {
     pub fn get_world_state_json(&self) -> String {
         log("GameApp: get_world_state_json called.");
         let world = self.world.lock().expect("Failed to lock world for getting state");
-        let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
+        let card_entities = world.get_all_entities_with_component::<Card>();
         let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
         log(&format!("  Found {} card entities. Preparing JSON data...", card_entities.len()));
         for &entity in &card_entities {
-            let card = world.get_component::<crate::component::Card>(entity).expect("Card component not found");
-            let stack_info = world.get_component::<crate::component::StackInfo>(entity).expect("StackInfo component not found");
+            let card = world.get_component::<Card>(entity).expect("Card component not found");
+            let stack_info = world.get_component::<StackInfo>(entity).expect("StackInfo component not found");
              // ★ Position も取得！
-            let position = world.get_component::<crate::component::Position>(entity).expect("Position component not found");
+            let position = world.get_component::<Position>(entity).expect("Position component not found");
 
             let (stack_type_str, stack_index_json) = match stack_info.stack_type {
                 crate::component::StackType::Stock => ("Stock", serde_json::Value::Null),
@@ -675,7 +675,7 @@ impl GameApp {
 
         // --- カード要素の取得とソート --- 
         // ↓↓↓ E0599 修正: world.iter() ではなく get_all_entities_with_component を使う！
-        let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
+        let card_entities = world.get_all_entities_with_component::<Card>();
         let mut cards_to_render: Vec<(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>)> = Vec::with_capacity(card_entities.len());
 
         for &entity in &card_entities {
