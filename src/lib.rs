@@ -22,7 +22,7 @@ pub mod protocol; // protocol モジュールを宣言
 // 各モジュールから必要な型をインポート！
 use crate::world::World;
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId}; // protocol から主要な型をインポート
+use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId}; // protocol から主要な型をインポート
 use crate::components::{card::Card, position::Position, stack::StackInfo, player::Player};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
@@ -296,25 +296,60 @@ impl GameApp {
         // World のロックはこの関数のスコープを抜ける時に自動的に解放される。
     }
 
-    // --- 新しく追加！ JSから初期カード配置を実行するためのメソッド --- 🎉
+    // JSから初期カード配置を実行するためのメソッド
     #[wasm_bindgen]
     pub fn deal_initial_cards(&self) {
         log("GameApp: deal_initial_cards() called.");
-        // World のロックを取得する。
-        // self.world は Arc<Mutex<World>> なので、.lock() で MutexGuard を取得する。
-        // MutexGuard は World への可変参照 (&mut World) を提供してくれるよ！
         match self.world.lock() {
             Ok(mut locked_world) => {
-                // ロックに成功したら、保持している deal_system の execute メソッドを呼び出す！
-                // execute メソッドに World の可変参照を渡すよ。
                 log("  Executing DealInitialCardsSystem...");
                 self.deal_system.execute(&mut locked_world);
                 log("  DealInitialCardsSystem executed successfully.");
+                // ★追加: カード配布が終わったら、初期状態をサーバーに送信！
+                self.send_initial_state();
             }
             Err(e) => {
-                // ロックに失敗した場合 (他のスレッドがロックを保持したままパニックしたなど)
                 log(&format!("GameApp: Failed to lock world for dealing cards: {:?}", e));
             }
+        }
+    }
+
+    /// 現在の World の状態から GameStateData を作成する (さっき追加したやつ)
+    fn get_initial_state_data(&self) -> GameStateData {
+        // ... (実装は省略) ...
+        log("GameApp: get_initial_state_data called.");
+        let world = self.world.lock().expect("Failed to lock world for get_initial_state_data");
+        let card_entities = world.get_all_entities_with_component::<Card>();
+        let mut card_data_list = Vec::with_capacity(card_entities.len());
+        log(&format!("  Found {} card entities. Creating CardData list...", card_entities.len()));
+        for &entity in &card_entities {
+            let card = world.get_component::<Card>(entity).expect(&format!("Card component not found for entity {:?}", entity));
+            let stack_info = world.get_component::<StackInfo>(entity).expect(&format!("StackInfo component not found for entity {:?}", entity));
+            let position = world.get_component::<Position>(entity).expect(&format!("Position component not found for entity {:?}", entity));
+            let position_data = PositionData { x: position.x, y: position.y };
+            let card_data = CardData {
+                entity, suit: card.suit, rank: card.rank, is_face_up: card.is_face_up,
+                stack_type: stack_info.stack_type, position_in_stack: stack_info.position_in_stack,
+                position: position_data,
+            };
+            card_data_list.push(card_data);
+        }
+        log("  CardData list created successfully.");
+        GameStateData { players: Vec::<PlayerData>::new(), cards: card_data_list, }
+    }
+
+    // 初期ゲーム状態をサーバーに送信するメソッド
+    // #[wasm_bindgen] // 内部呼び出しのみになったので削除！
+    fn send_initial_state(&self) {
+        log("GameApp: send_initial_state called.");
+        let initial_state_data = self.get_initial_state_data();
+        log("  Initial game state data prepared.");
+        let message = ClientMessage::ProvideInitialState { initial_state: initial_state_data, };
+        log(&format!("  Sending ProvideInitialState message..."));
+        if let Err(e) = self.send_message(message) {
+            log(&format!("GameApp: Failed to send ProvideInitialState message: {}", e));
+        } else {
+            log("  ProvideInitialState message sent successfully.");
         }
     }
 
@@ -323,62 +358,41 @@ impl GameApp {
     pub fn get_world_state_json(&self) -> String {
         log("GameApp: get_world_state_json called.");
         let world = self.world.lock().expect("Failed to lock world for getting state");
-
-        // JSONを作るためのデータを集めるよ！
-        // まずは Card コンポーネントを持つ全てのエンティティを取得。
         let card_entities = world.get_all_entities_with_component::<Card>();
-
-        // 各カードエンティティの詳細情報を格納するための Vec を用意。
-        // serde_json::Value 型を使って、柔軟なJSONオブジェクトを作れるようにするよ。
         let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
-
         log(&format!("  Found {} card entities. Preparing JSON data...", card_entities.len()));
-
-        // 各カードエンティティについてループして、必要な情報を取得・整形する。
-        for entity in card_entities {
-            // Card コンポーネントを取得 (存在しない場合はエラーにすべきだけど、ここでは unwrap する)
+        for entity in card_entities { // ここは &entity ではなく entity でOKだったかも？ world のメソッドによる
             let card = world.get_component::<Card>(entity).expect("Card component not found");
-            // StackInfo コンポーネントを取得 (これも unwrap)
             let stack_info = world.get_component::<StackInfo>(entity).expect("StackInfo component not found");
+             // ★ Position も取得！
+            let position = world.get_component::<Position>(entity).expect("Position component not found");
 
-            // StackType から stack_type (文字列) と stack_index (数値 or null) を決定する。
             let (stack_type_str, stack_index_json) = match stack_info.stack_type {
                 StackType::Stock => ("Stock", serde_json::Value::Null),
                 StackType::Waste => ("Waste", serde_json::Value::Null),
                 StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
                 StackType::Tableau(index) => ("Tableau", serde_json::json!(index)),
             };
-
-            // カード情報を serde_json::json! マクロを使ってJSONオブジェクトにする！便利！✨
             let card_json = serde_json::json!({
-                "entity_id": entity.0, // Entity はタプル構造体 Entity(usize) なので .0 で中身の usize を取得
-                "suit": format!("{:?}", card.suit), // Debug フォーマットで文字列化 (例: "Heart")
-                "rank": format!("{:?}", card.rank), // Debug フォーマットで文字列化 (例: "Ace")
+                "entity_id": entity.0,
+                "suit": format!("{:?}", card.suit),
+                "rank": format!("{:?}", card.rank),
                 "is_face_up": card.is_face_up,
                 "stack_type": stack_type_str,
                 "stack_index": stack_index_json,
-                "order": stack_info.position_in_stack // フィールド名は position_in_stack だったね！
+                "order": stack_info.position_in_stack,
+                // ★ Position も JSON に追加！
+                "x": position.x,
+                "y": position.y,
             });
-
-            // 作成したカードJSONデータを Vec に追加。
             cards_json_data.push(card_json);
         }
-
         log("  Card data preparation complete.");
-
-        // 最終的なJSONオブジェクトを作成。"cards" というキーにカードデータの配列を入れる。
         let final_json = serde_json::json!({ "cards": cards_json_data });
-
-        // JSONオブジェクトを文字列に変換して返す。
         match serde_json::to_string(&final_json) {
-            Ok(json_string) => {
-                // log(&format!("  Returning world state JSON: {}", json_string)); // ちょっと長いのでコメントアウト
-                log("  Successfully serialized world state to JSON.");
-                json_string
-            }
+            Ok(json_string) => { log("  Successfully serialized world state to JSON."); json_string }
             Err(e) => {
                 log(&format!("Error serializing world state to JSON: {}", e));
-                // エラーの場合は空のJSON配列などを返す？あるいはエラー情報を含むJSON？
                 serde_json::json!({ "error": "Failed to serialize world state", "details": e.to_string() }).to_string()
             }
         }
