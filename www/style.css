@@ -110,3 +110,95 @@ h1 {
     margin-top: 50px;
     color: #888;
 }
+
+/* --- カードのスタイル --- */
+.card {
+    width: 72px;
+    /* カードの幅 (bootstrap.js の計算と合わせる) */
+    height: 96px;
+    /* カードの高さ */
+    border: 1px solid #aaa;
+    border-radius: 5px;
+    background-color: white;
+    position: absolute;
+    /* JavaScript で left/top を指定して配置！ */
+    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+    /* ちょっと影をつける */
+    cursor: pointer;
+    /* クリックできそうな見た目に */
+    transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+    /* 簡単なアニメーション */
+    user-select: none;
+    /* テキスト選択を無効に */
+    font-size: 16px;
+    font-weight: bold;
+    overflow: hidden;
+    /* はみ出した内容を隠す */
+    box-sizing: border-box;
+    /* padding, border を width/height に含める */
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    /* ホバー時に少し持ち上げる */
+    box-shadow: 2px 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 裏向きカード */
+.card.face-down {
+    background-color: #4a90e2;
+    /* 青っぽい背景 */
+    /* background-image: url('card-back.png'); */
+    /* 画像を使うならこんな感じ */
+    background-size: cover;
+}
+
+/* 表向きカード */
+.card.face-up {
+    background-color: #fff;
+    display: flex;
+    /* ランクとスートの配置に flexbox を使う */
+    flex-direction: column;
+    /* 縦に並べる */
+    justify-content: space-between;
+    /* 上下端に配置 */
+    padding: 5px;
+}
+
+/* ランク表示 (カードの左上と右下) */
+.card.face-up .rank {
+    display: block;
+    text-align: center;
+    /* 中央揃え */
+    line-height: 1;
+    /* 行間を詰める */
+}
+
+/* 右下のランクはCSSで反転させる (オプション) */
+/* .card.face-up .rank:last-child { transform: rotate(180deg); } */
+
+/* スート表示 (カードの中央) */
+.card.face-up .suit {
+    display: block;
+    text-align: center;
+    font-size: 28px;
+    /* スート記号を大きく */
+    line-height: 1;
+    flex-grow: 1;
+    /* 中央のスペースを埋める */
+    display: flex;
+    /* 中央揃えのため */
+    justify-content: center;
+    align-items: center;
+}
+
+/* スートの色分け */
+.card.suit-heart,
+.card.suit-diamond {
+    color: red;
+}
+
+.card.suit-club,
+.card.suit-spade {
+    color: black;
+}
