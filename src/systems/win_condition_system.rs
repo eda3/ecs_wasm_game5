@@ -56,8 +56,8 @@ impl System for WinConditionSystem {
         // World 内のすべての Card コンポーネントを持つエンティティをイテレート
         // TODO: world.iter() のような、特定のコンポーネントを持つ全エンティティを
         //       効率的に取得するメソッドが World に必要になるかも
-        for entity in world.get_all_entities_with_component::<Card>() { // 仮のメソッド呼び出し
-             if self.is_card_in_foundation(world, *entity) { // 仮のチェック
+        for entity in world.get_all_entities_with_component::<Card>() { // Entity の Vec を返す
+             if self.is_card_in_foundation(world, entity) { // 仮のチェック
                  foundation_card_count += 1;
              }
         }
