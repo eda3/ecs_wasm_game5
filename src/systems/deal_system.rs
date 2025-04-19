@@ -1,225 +1,277 @@
 // src/systems/deal_system.rs
 
-// 必要なモジュールや型をインポートしていくよ！
-use crate::{ // クレート（このプロジェクト）のルートから探す
-    components::{ // components モジュールから
-        card::{Card, Suit, Rank}, // カードのデータ
-        position::Position,       // 位置情報
-        stack::{StackInfo, StackType}, // スタック情報
-        game_state::{GameState, GameStatus}, // ゲーム状態
-    },
-    entity::Entity,           // Entity 型
-    system::System,           // System トレイト
-    world::World,             // World
-};
-use rand::seq::SliceRandom; // 配列のシャッフルに使う！
-use rand::thread_rng;       // 乱数生成器を使う！
+// === 使うものを宣言するよ！ ===
+// World: エンティティやコンポーネントを管理する世界の中心！🌍
+// components モジュール: カード(Card)とか場所(StackInfo)とか、色々なデータ部品(コンポーネント)が入ってるよ。🃏📍
+// card モジュール: 特にカードに関するもの (create_standard_deck 関数とか Suit, Rank 列挙型とか)
+// stack モジュール: カードを置く場所の種類 (StackType) とか、場所情報 (StackInfo)
+// system モジュール: システムの基本となるトレイト (今は使わないけど、将来的に使うかも！)
+// entity モジュール: エンティティ (ゲーム世界のモノを表すID)
+// rand クレート: カードをシャッフルするのに使うよ！🎲 (さっき追加したやつ！)
+use crate::world::World;
+use crate::components::{self, card::{self, Card}, stack::{StackInfo, StackType}};
+use crate::system::System; // 今は直接使わないけど、将来的な拡張性のために use しておくのもアリ！
+use crate::entity::Entity;
+use rand::seq::SliceRandom; // Vec (配列みたいなもの) の要素をシャッフルする機能 (shuffle) を使うために必要！
+use rand::thread_rng; // OS が提供する安全な乱数生成器を使うために必要！
 
-/// DealSystem（ディールシステム）だよ！
-///
-/// ゲーム開始時にカードをシャッフルして、
-/// 初期配置（山札、場札）にカードエンティティを生成・配置する役割を持つよ！
-/// トランプゲームの「カードを配る人」みたいな感じだね！🃏
-pub struct DealSystem {
-    has_dealt: bool, // すでに配ったかどうかを記録するフラグだよ🚩
-}
+// === 初期カード配置システム！ ===
+// ゲーム開始時に、山札と7つの場札にカードを配る役割を担うシステムだよ。
+// 構造体 (struct) は、関連するデータをまとめるためのもの。ここでは DealInitialCardsSystem という名前の空の構造体を作ってる。
+//メソッド (処理) を関連付けるために構造体を使ってる感じだね！
+#[derive(Default)] // `DealInitialCardsSystem::default()` で簡単にインスタンスを作れるようにするおまじない ✨
+pub struct DealInitialCardsSystem;
 
-impl DealSystem {
-    /// 新しい DealSystem を作るよ！
-    /// 最初はまだ配ってないから `has_dealt` は `false` にしておくよ。
-    pub fn new() -> Self {
-        Self { has_dealt: false }
-    }
+// DealInitialCardsSystem にメソッド (関数みたいなもの) を実装していくよ！
+impl DealInitialCardsSystem {
+    /// ゲームの初期カード配置を実行する関数だよ！ 🎉
+    ///
+    /// # 引数
+    /// - `world`: 可変参照 (&mut World)。World の中身 (エンティティやコンポーネント) を変更する必要があるから `&mut` が付いてるよ。
+    ///
+    /// # 処理の流れ
+    /// 1. 新しいカードデッキ (52枚、全部裏向き) を作る。
+    /// 2. デッキをシャッフルする。
+    /// 3. 既存のカードエンティティがあれば削除する (念のためのお掃除🧹)。
+    /// 4. シャッフルされたデッキからカードを取り出して、クロンダイクのルールに従って配置していく。
+    ///    - 山札 (Stock): 24枚、全部裏向き。
+    ///    - 場札 (Tableau): 7列。1列目は1枚(表向き)、2列目は2枚(一番上だけ表向き)、... 7列目は7枚(一番上だけ表向き)。
+    /// 5. 各カードエンティティに `Card` コンポーネントと `StackInfo` コンポーネントを追加する。
+    pub fn execute(&self, world: &mut World) {
+        // --- 1. デッキの準備 ---
+        // card モジュールにある create_standard_deck 関数を呼び出して、52枚のカードデッキを作るよ。
+        // `mut` を付けてるから、後でシャッフル (中身の順番を変える) できる！
+        let mut deck = card::create_standard_deck();
+        println!("🃏 デッキ作成完了！ ({}枚)", deck.len()); // デバッグ用に枚数をログ出力！
 
-    /// カードの山（デッキ）を作成するよ！ 52枚のカードデータを生成する！
-    fn create_deck(&self) -> Vec<Card> {
-        let mut deck = Vec::with_capacity(52); // 52枚分のメモリを確保しておくと効率的！
-        // Suit (マーク) と Rank (数字) の全組み合わせをループで作る！
-        for &suit in &[Suit::Heart, Suit::Diamond, Suit::Club, Suit::Spade] {
-            for rank_value in 1..=13 { // 1 (Ace) から 13 (King) まで
-                let rank = match rank_value {
-                    1 => Rank::Ace, 2 => Rank::Two, 3 => Rank::Three, 4 => Rank::Four,
-                    5 => Rank::Five, 6 => Rank::Six, 7 => Rank::Seven, 8 => Rank::Eight,
-                    9 => Rank::Nine, 10 => Rank::Ten, 11 => Rank::Jack,
-                    12 => Rank::Queen, 13 => Rank::King,
-                    _ => unreachable!(), // 1..=13 以外はありえない！
-                };
-                // カードを作成してデッキに追加！最初は全部裏向きだよ！
-                deck.push(Card { suit, rank, is_face_up: false });
+        // --- 2. シャッフル ---
+        // `thread_rng()` で乱数生成器を取得して、`shuffle` メソッドでデッキの順番をランダムに入れ替えるよ！
+        // これで毎回違うゲームが楽しめるね！🥳
+        let mut rng = thread_rng();
+        deck.shuffle(&mut rng);
+        println!("🎲 デッキをシャッフルしました！");
+
+        // --- 3. 既存カードのクリア (念のため) ---
+        // ゲーム開始時に前のゲームのカードが残ってたら大変だから、先に掃除しておくよ！🧹
+        // `world.query_entities_with_component::<Card>()` で Card コンポーネントを持つ全てのエンティティIDを取得する。
+        // `collect::<Vec<_>>()` で取得したIDを一時的な Vec (配列みたいなの) に集める。
+        //   -> なぜ一時的な Vec に？: world の中身をループしながら world を変更しようとすると、Rust に怒られちゃう (借用規則違反)。
+        //      なので、先にIDだけ集めておいて、そのIDリストを使ってループするんだ。賢い！🧠
+        let existing_card_entities: Vec<Entity> = world.get_all_entities_with_component::<Card>().into_iter().collect();
+        if !existing_card_entities.is_empty() {
+            println!("🧹 既存のカードエンティティ {} 個を削除します...", existing_card_entities.len());
+            for entity in existing_card_entities {
+                // world から Card コンポーネントを削除
+                world.remove_component::<Card>(entity);
+                // Card に関連する他のコンポーネント (StackInfo や Position もあれば) も削除するのが親切かも。
+                // 今は StackInfo だけ削除しておくね。Position はまだ使ってないから大丈夫かな？🤔
+                world.remove_component::<StackInfo>(entity);
+                // 本当はエンティティ自体を削除 (world.delete_entity(entity)) したいけど、
+                // 他のコンポーネントがまだ付いてる可能性もあるから、一旦コンポーネント削除だけに留めておくね。
             }
+            println!("🧹 既存カードの削除完了。");
         }
-        deck // 完成したデッキを返す！
-    }
 
-    /// デッキをシャッフルするよ！ `rand` クレートの力を借りる！<0xF0><0x9F><0xA7><0x84>
-    fn shuffle_deck(&self, deck: &mut Vec<Card>) {
-        let mut rng = thread_rng(); // 乱数生成器を取得
-        deck.shuffle(&mut rng); // デッキをランダムに並び替える！
-        println!("デッキをシャッフルしました！🃏");
-    }
 
-    /// シャッフルされたデッキからカードを配って、World にエンティティとコンポーネントを作成するよ！
-    fn deal_cards(&mut self, world: &mut World, deck: Vec<Card>) {
-        println!("カードを配ります...🎁");
-        let mut current_card_index = 0; // デッキの何枚目を配るかを示すインデックス
+        // --- 4. カードの配置 ---
+        // `deck.into_iter()` でデッキのカードを1枚ずつ取り出せるようにするよ。
+        // `into_iter()` は元の `deck` の所有権を奪うから、もう `deck` は使えなくなる。注意！⚠️
+        let mut card_iterator = deck.into_iter();
 
-        // --- GameState エンティティを作成・設定 --- (DealSystem が担当するのが自然かな？)
-        // ID 0 は GameState 用に予約する想定 (create_entity_with_id を使うべきかも)
-        let game_state_entity = Entity(0);
-        // GameState::new() ではなく、直接構造体リテラルで作成する！
-        world.add_component(game_state_entity, GameState { status: GameStatus::Playing }); // 初期状態は Playing
-        println!("  GameState エンティティ ({:?}) を作成し、初期状態を設定しました。", game_state_entity);
+        // 配置するカードのインデックス (何枚目のカードか) を追跡するカウンター
+        let mut card_index = 0;
 
-        // --- 場札 (Tableau) に配る --- (7列あるよ)
-        for i in 0..7 { // i は列のインデックス (0 から 6)
-            for j in 0..=i { // j は各列に配るカードの枚数 (1枚目から i+1 枚目まで)
-                // デッキからカードを取り出す (インデックスチェックは省略してるけど、本当は必要！)
-                let card = deck[current_card_index].clone();
-                // 新しいエンティティを作成 (カード1枚 = 1エンティティ)
-                // create_entity の戻り値は Option<Entity> だったはず -> World の実装が変わったので Entity を返す
+        // --- 4a. 場札 (Tableau) への配置 ---
+        println!("⏳ 場札 (Tableau) にカードを配置中...");
+        // 7つの場札の列を作るよ (0番目から6番目まで)。
+        for tableau_index in 0..7 { // 0 から 6 までの数字を順番に tableau_index に入れて繰り返す
+            // 各列に配置するカード枚数は (列番号 + 1) 枚。
+            for card_in_tableau in 0..(tableau_index + 1) {
+                // デッキからカードを1枚取り出す。
+                // `next()` は Option<Card> を返す (カードがあれば Some(card), なければ None)。
+                // `expect()` は None の場合にプログラムをクラッシュさせる。ここではデッキが足りないことは無いはずだから使う！💥
+                let mut card = card_iterator.next().expect("デッキにカードが足りません！(場札配置中)");
+
+                // エンティティ (カードの実体) を World に作成する。
+                // `create_entity()` は新しいユニークなID (Entity) を返す。
                 let entity = world.create_entity();
 
-                // カードコンポーネントを追加
-                world.add_component(entity, card);
-                // 位置コンポーネントを追加 (座標は仮だよ！後でちゃんと計算する)
-                let pos = Position { x: 100.0 + i as f32 * 110.0, y: 250.0 + j as f32 * 30.0 };
-                world.add_component(entity, pos);
-                // スタック情報コンポーネントを追加
-                let stack_info = StackInfo::new(StackType::Tableau(i as u8), j as u8);
-                world.add_component(entity, stack_info);
-
-                // 各列の一番上のカード (j == i) だけ表向きにする！
-                if j == i {
-                    if let Some(c) = world.get_component_mut::<Card>(entity) { // 可変参照を取得して変更！
-                        c.is_face_up = true;
-                    }
-                    println!("  場札 {} の {} 枚目 ({:?}) を表向きで配置しました。", i, j + 1, entity);
-                } else {
-                    println!("  場札 {} の {} 枚目 ({:?}) を裏向きで配置しました。", i, j + 1, entity);
+                // その列の一番上のカードだけ表向きにするよ！👀
+                let is_face_up = card_in_tableau == tableau_index;
+                if is_face_up {
+                    card.is_face_up = true; // カードの is_face_up フラグを true に更新！
                 }
 
-                current_card_index += 1; // 次のカードへ！
+                // Card コンポーネントをエンティティに追加！これで「このエンティティはこういうカードだ」とわかる。
+                world.add_component(entity, card);
+
+                // StackInfo コンポーネントも追加！これで「このカードはどこにあるか」がわかる。
+                world.add_component(entity, StackInfo {
+                    // `StackType::Tableau(tableau_index)` で「場札の〇番目の列」という場所を指定。
+                    stack_type: StackType::Tableau(tableau_index),
+                    // `order` はその場札列の中での順番 (0が一番奥/下)。
+                    position_in_stack: card_in_tableau,
+                });
+
+                // デバッグ用にログ出力
+                // println!("  配置: {:?} を 場札[{}] の {}番目 に (表向き: {})", world.get_component::<Card>(entity).unwrap(), tableau_index, card_in_tableau, is_face_up);
+
+                card_index += 1; // 配置したカード枚数をカウントアップ
+            }
+        }
+        println!("✅ 場札への配置完了！ ({}枚配置)", card_index);
+
+        // --- 4b. 山札 (Stock) への配置 ---
+        // 残りのカードを全部、山札に裏向きで置くよ。
+        println!("⏳ 山札 (Stock) にカードを配置中...");
+        let mut stock_order = 0; // 山札の中での順番カウンター
+        // `card_iterator` に残っているカードをすべてループで処理する。
+        for card in card_iterator { // `card` は最初から裏向き (`is_face_up: false`) のはず！
+            // 新しいエンティティを作成
+            let entity = world.create_entity();
+            // Card コンポーネントを追加 (中身は card 変数そのもの)
+            world.add_component(entity, card);
+            // StackInfo コンポーネントを追加
+            world.add_component(entity, StackInfo {
+                // 場所は `StackType::Stock` (山札)
+                stack_type: StackType::Stock,
+                // 順番は `stock_order`
+                position_in_stack: stock_order,
+            });
+            // デバッグ用にログ出力
+            // println!("  配置: {:?} を 山札 の {}番目 に", world.get_component::<Card>(entity).unwrap(), stock_order);
+            stock_order += 1; // 順番カウンターを増やす
+            card_index += 1; // 全体の配置枚数カウンターも増やす
+        }
+        println!("✅ 山札への配置完了！ ({}枚配置)", stock_order);
+        println!("🎉 合計 {} 枚のカードを配置しました！", card_index);
+
+        // --- 5. ファンデーションとウェスト用の空スタック情報も作る？ ---
+        // クロンダイクには、カードを最終的に移動させる4つの「上がり札置き場 (Foundation)」と、
+        // 山札からめくったカードを一時的に置く「捨て札置き場 (Waste)」があるよね。
+        // これらは最初は空だけど、「ここがFoundationだよ」「ここがWasteだよ」という情報だけは
+        // World に持たせておくと、後でカード移動のルールを実装する時に便利かも？🤔
+        // 例えば、特定のエンティティを作って、それに StackInfo だけ付けておくとか？
+        // 今回はカード配置がメインだから、一旦省略するね！後で必要になったら追加しよう！👍
+    }
+}
+
+
+// --- テストコード ---
+// `#[cfg(test)]` アトリビュートは、`cargo test` コマンドを実行した時だけコンパイルされるコードブロックを示すよ。
+#[cfg(test)]
+mod tests {
+    // `use super::*;` で、この test モジュールが属している親モジュール (このファイルの上部) で定義されているもの
+    // (DealInitialCardsSystem, World, Card, StackInfo, StackType など) を全部使えるようにするよ！便利！🌟
+    use super::*;
+    use crate::components::card::{Rank, Suit}; // テストで具体的なカードを確認するために Rank と Suit も使うよ
+
+    // `#[test]` アトリビュートが付いた関数が、個別のテストケースになるよ。
+    #[test]
+    fn test_initial_deal() {
+        // --- 準備 ---
+        // 1. テスト用の World インスタンスを作成
+        let mut world = World::new();
+        // 2. 必要なコンポーネントを World に登録 (実際の GameApp::new でもやってるはず！)
+        //    これがないと add_component とか get_component が失敗しちゃう！😱
+        world.register_component::<Card>();
+        world.register_component::<StackInfo>();
+        // Position とか Player とかは、このテストでは直接使わないけど、登録しておいても害はないかな。
+        // world.register_component::<Position>();
+        // world.register_component::<Player>();
+
+        // 3. テスト対象のシステム (DealInitialCardsSystem) のインスタンスを作成
+        let deal_system = DealInitialCardsSystem::default(); // #[derive(Default)] のおかげで簡単！
+
+        // --- 実行 ---
+        // 4. システムの execute メソッドを実行して、カードを配置してもらう！
+        println!("--- test_initial_deal 開始 ---");
+        deal_system.execute(&mut world);
+        println!("--- deal_system.execute() 完了 ---");
+
+        // --- 検証 ---
+        // 5. 配置されたカードの枚数を確認！ 合計52枚のはず！
+        let all_card_entities: Vec<Entity> = world.get_all_entities_with_component::<Card>().collect();
+        assert_eq!(all_card_entities.len(), 52, "配置されたカードの総数が52枚ではありません！");
+        println!("✔️ カード総数チェックOK ({}枚)", all_card_entities.len());
+
+        // 6. 各スタックタイプごとの枚数と状態を確認！
+        let mut stock_count = 0;
+        let mut tableau_counts = [0; 7]; // 7つの場札列の枚数をカウントする配列
+        let mut foundation_count = 0; // 上がり札 (今回は配置されないはず)
+        let mut waste_count = 0;      // 捨て札 (今回は配置されないはず)
+
+        let mut tableau_face_up_counts = [0; 7]; // 各場札列の表向きカード枚数
+
+        // 配置された全カードエンティティをループして、StackInfo を確認するよ
+        for entity in all_card_entities {
+            // Card コンポーネントを取得 (これは存在するはず！)
+            let card = world.get_component::<Card>(entity)
+                .expect("Card コンポーネントが見つかりません！");
+            // StackInfo コンポーネントを取得 (これも存在するはず！)
+            let stack_info = world.get_component::<StackInfo>(entity)
+                .expect("StackInfo コンポーネントが見つかりません！");
+
+            // StackType によってカウントを振り分ける
+            match stack_info.stack_type {
+                StackType::Stock => {
+                    stock_count += 1;
+                    // 山札のカードは全部裏向きのはず！
+                    assert!(!card.is_face_up, "山札に表向きのカードがあります！{:?}", card);
+                }
+                StackType::Tableau(index) => {
+                    // index が 0..7 の範囲内かチェック (念のため)
+                    assert!(index < 7, "無効な Tableau インデックスです: {}", index);
+                    tableau_counts[index] += 1; // その列のカウントを増やす
+                    // 場札の一番上のカード (position_in_stack == index) だけが表向きのはず！
+                    if stack_info.position_in_stack == index {
+                        assert!(card.is_face_up, "場札の[{}]番目({}) が裏向きです！{:?}", index, stack_info.position_in_stack, card);
+                        tableau_face_up_counts[index] += 1;
+                    } else {
+                        assert!(!card.is_face_up, "場札の[{}]番目({}) が表向きです！{:?}", index, stack_info.position_in_stack, card);
+                    }
+                    // position_in_stack が正しい範囲 (0 <= position_in_stack <= index) かチェック
+                    assert!(stack_info.position_in_stack <= index, "Tableau[{}] の position_in_stack が不正です: {}", index, stack_info.position_in_stack);
+                }
+                StackType::Foundation(_) => foundation_count += 1,
+                StackType::Waste => waste_count += 1,
             }
         }
 
-        // --- 残りのカードを山札 (Stock) に配置 --- 
-        println!("  残りのカードを山札に配置します...");
-        for i in current_card_index..deck.len() {
-            let card = deck[i].clone();
-            let entity = world.create_entity();
-            world.add_component(entity, card);
-            // 山札の位置 (仮)
-            let pos = Position { x: 100.0, y: 100.0 };
-            world.add_component(entity, pos);
-            // スタック情報: Stock, 位置は積む順 (0が一番下)
-            let stack_info = StackInfo::new(StackType::Stock, (i - current_card_index) as u8);
-            world.add_component(entity, stack_info);
-            println!("    山札の {} 枚目 ({:?}) を配置しました。", i - current_card_index + 1, entity);
+        // --- 結果の確認 ---
+        // 山札 (Stock) の枚数チェック (52 - (1+2+3+4+5+6+7)) = 52 - 28 = 24 枚
+        assert_eq!(stock_count, 24, "山札のカード枚数が24枚ではありません！ ({})", stock_count);
+        println!("✔️ 山札の枚数チェックOK ({})", stock_count);
+
+        // 場札 (Tableau) の枚数チェック
+        for i in 0..7 {
+            assert_eq!(tableau_counts[i], i + 1, "場札[{}]の枚数が{}枚ではありません！ ({})", i, i + 1, tableau_counts[i]);
+            assert_eq!(tableau_face_up_counts[i], 1, "場札[{}]の表向きカードが1枚ではありません！ ({})", i, tableau_face_up_counts[i]);
         }
+        println!("✔️ 場札の枚数チェックOK (合計 {}枚)", tableau_counts.iter().sum::<usize>());
+        println!("✔️ 場札の表向きカードチェックOK");
 
-        println!("カードの配布が完了しました！✨");
-        self.has_dealt = true; // 配り終えたフラグを立てる！
-    }
-}
+        // Foundation と Waste にはカードがないはず
+        assert_eq!(foundation_count, 0, "Foundation にカードが配置されています！ ({})", foundation_count);
+        assert_eq!(waste_count, 0, "Waste にカードが配置されています！ ({})", waste_count);
+        println!("✔️ Foundation/Waste が空であることのチェックOK");
 
-// System トレイトの実装！
-// これで World が DealSystem を「システム」として認識できるようになるよ！
-impl System for DealSystem {
-    /// システムを実行するメソッドだよ！
-    /// World の状態を受け取って、必要な処理（ここではカード配布）を行う。
-    fn run(&mut self, world: &mut World) {
-        // まだカードを配っていなければ...
-        if !self.has_dealt {
-            println!("DealSystem: 実行します！ (初回実行)");
-            // 1. デッキを作る
-            let mut deck = self.create_deck();
-            // 2. デッキをシャッフルする
-            self.shuffle_deck(&mut deck);
-            // 3. カードを配る (World にエンティティとコンポーネントを作成する)
-            self.deal_cards(world, deck);
-        } else {
-            // もう配り終わってる場合は何もしない
-            // println!("DealSystem: 既に配布済みのためスキップします。");
+        // 7. カードの重複がないかチェック (念のため)
+        //    配置された全カードの (Suit, Rank) の組み合わせを HashSet に入れて、重複がないか確認する。
+        use std::collections::HashSet;
+        let mut unique_cards = HashSet::new();
+        let all_cards: Vec<Card> = world.query_components::<Card>().cloned().collect(); // 全Cardコンポーネントを取得
+        let mut duplicate_found = false;
+        for card in all_cards {
+            if !unique_cards.insert((card.suit, card.rank)) {
+                println!("重複カード発見！ Suit: {:?}, Rank: {:?}", card.suit, card.rank);
+                duplicate_found = true;
+            }
         }
-    }
-}
+        assert!(!duplicate_found, "配置されたカードに重複が見つかりました！");
+        println!("✔️ カードの重複チェックOK");
 
-// --- DealSystem のテスト --- 
-#[cfg(test)]
-mod tests {
-    use super::*; // DealSystem, World などをインポート
-    use crate::components::card::Card; // テスト確認用
-    use crate::components::stack::{StackInfo, StackType}; // テスト確認用
 
-    #[test]
-    fn deal_system_deals_cards_correctly() {
-        // 1. セットアップ
-        let mut world = World::new();
-        let mut deal_system = DealSystem::new();
-
-        // 必要なコンポーネントを事前に登録！
-        world.register_component::<Card>();
-        world.register_component::<Position>();
-        world.register_component::<StackInfo>();
-        world.register_component::<GameState>(); // GameState も登録！
-
-        // 2. 実行！
-        deal_system.run(&mut world);
-
-        // 3. 検証！
-        // 正しく 52 枚のカード + 1 つの GameState エンティティが生成されたか？
-        // (create_entity は 0 から ID を振るので、next_entity_id が 53 になっているはず)
-        assert_eq!(world.next_entity_id, 52 + 1, "エンティティ数が正しくない！"); 
-
-        // GameState が ID 0 に存在するか？
-        assert!(world.get_component::<GameState>(Entity(0)).is_some(), "GameStateエンティティが見つからない！");
-
-        // カードコンポーネントを持つエンティティが 52 個あるか？
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        assert_eq!(card_entities.len(), 52, "カードエンティティ数が52ではない！");
-
-        // 場札の各列の一番上のカードが表向きになっているか？ (例: 列0)
-        let tableau0_entities: Vec<_> = card_entities.iter().filter(|&&e| 
-            world.get_component::<StackInfo>(e).map_or(false, |si| si.stack_type == StackType::Tableau(0))
-        ).collect();
-        assert_eq!(tableau0_entities.len(), 1, "場札0のカード数が違う！");
-        let top_card_entity_t0 = tableau0_entities[0];
-        let top_card_t0 = world.get_component::<Card>(*top_card_entity_t0).unwrap();
-        assert!(top_card_t0.is_face_up, "場札0の一番上のカードが裏向き！");
-        let top_card_stack_t0 = world.get_component::<StackInfo>(*top_card_entity_t0).unwrap();
-        assert_eq!(top_card_stack_t0.position_in_stack, 0, "場札0のカードのスタック位置が違う！");
-
-         // 場札の列6の一番上のカードが表向きになっているか？
-        let tableau6_entities: Vec<_> = card_entities.iter().filter(|&&e| 
-            world.get_component::<StackInfo>(e).map_or(false, |si| si.stack_type == StackType::Tableau(6))
-        ).collect();
-        assert_eq!(tableau6_entities.len(), 7, "場札6のカード数が違う！"); // 列6には7枚
-        // position_in_stack が最大のものが一番上
-        let top_card_entity_t6 = tableau6_entities.iter().max_by_key(|&&e| 
-            world.get_component::<StackInfo>(e).unwrap().position_in_stack
-        ).unwrap();
-        let top_card_t6 = world.get_component::<Card>(*top_card_entity_t6).unwrap();
-        assert!(top_card_t6.is_face_up, "場札6の一番上のカードが裏向き！");
-        let top_card_stack_t6 = world.get_component::<StackInfo>(*top_card_entity_t6).unwrap();
-        assert_eq!(top_card_stack_t6.position_in_stack, 6, "場札6の一番上のカードのスタック位置が違う！");
-
-        // 山札のカードが全て裏向きか？
-        let stock_cards: Vec<_> = card_entities.iter().filter(|&&e| 
-            world.get_component::<StackInfo>(e).map_or(false, |si| si.stack_type == StackType::Stock)
-        ).collect();
-        // 52 - (1+2+3+4+5+6+7) = 52 - 28 = 24枚
-        assert_eq!(stock_cards.len(), 24, "山札のカード数が違う！"); 
-        for entity in stock_cards {
-            let card = world.get_component::<Card>(*entity).unwrap();
-            assert!(!card.is_face_up, "山札のカード {:?} が表向き！", entity);
-        }
-
-        // DealSystem が再度実行されてもカードが増えないか？
-        let entity_count_before = world.next_entity_id;
-        deal_system.run(&mut world);
-        let entity_count_after = world.next_entity_id;
-        assert_eq!(entity_count_before, entity_count_after, "DealSystem が2回実行されてエンティティが増えた！");
-
-        println!("DealSystem のカード配布テスト、成功！🎉");
+        println!("✅✅✅ test_initial_deal 成功！ 🎉🎉🎉");
     }
 } 
