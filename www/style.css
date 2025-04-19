@@ -1,0 +1,112 @@
+/* www/style.css */
+
+/* 基本的なスタイル */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* もうちょっとモダンなフォントにしてみる？ */
+    background-color: #f4f4f4;
+    /* ちょっと薄いグレー */
+    color: #333;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    /* コンテンツを中央寄せしやすくする */
+    justify-content: center;
+    align-items: flex-start;
+    /* 上寄せ */
+    min-height: 100vh;
+    /* 画面の高さいっぱいに広げる */
+}
+
+#game-container {
+    background-color: #fff;
+    /* 白い背景 */
+    padding: 25px;
+    margin-top: 20px;
+    border-radius: 8px;
+    /* 角をちょっと丸くする */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    /* 影をつける */
+    max-width: 900px;
+    /* 最大幅 */
+    width: 90%;
+    /* 幅を可変に */
+}
+
+h1 {
+    color: #e91e63;
+    /* ピンク系のタイトルカラー！💖 */
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+/* ステータス表示部分 */
+#status {
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    color: #555;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    /* 下線 */
+}
+
+#status span {
+    font-weight: bold;
+    color: #007bff;
+    /* 青色で目立たせる */
+}
+
+/* 操作ボタン部分 */
+#controls {
+    margin-bottom: 20px;
+    text-align: center;
+    /* ボタンを中央寄せ */
+}
+
+#controls button {
+    margin: 5px 8px;
+    padding: 10px 18px;
+    font-size: 1em;
+    cursor: pointer;
+    background-color: #5cb85c;
+    /* 緑系のボタン */
+    color: white;
+    border: none;
+    border-radius: 5px;
+    transition: background-color 0.2s ease;
+    /* ホバー効果を滑らかに */
+}
+
+#controls button:hover {
+    background-color: #4cae4c;
+    /* ホバー時にもう少し濃い緑に */
+}
+
+#controls button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+/* ゲームエリア */
+#game-area {
+    width: 100%;
+    /* コンテナに合わせて幅100% */
+    height: 600px;
+    /* 高さは固定 (カード配置に合わせて調整) */
+    border: 1px solid #ccc;
+    background-color: #dff0d8;
+    /* 少し薄い緑 */
+    position: relative;
+    /* カードを絶対位置で配置する時のために */
+    border-radius: 5px;
+    overflow: hidden;
+    /* はみ出した要素を隠す (念のため) */
+}
+
+/* ゲームエリア内のプレースホルダーテキスト (後で消す) */
+#game-area p {
+    text-align: center;
+    margin-top: 50px;
+    color: #888;
+}

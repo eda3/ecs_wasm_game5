@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マルチプレイソリティア 🃏</title>
+    <link rel="stylesheet" href="style.css"> <!-- CSSファイルを読み込むよ -->
+    <style>
+        /* ちょっとだけスタイルを直接書いちゃう！ */
+        body {
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+        }
+
+        #game-container {
+            padding: 20px;
+        }
+
+        #status {
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            color: #555;
+        }
+
+        #game-area {
+            /* ここにゲーム画面 (Canvasとかカードとか) が入るよ */
+            width: 800px;
+            /* とりあえず仮のサイズ */
+            height: 600px;
+            border: 1px solid #ccc;
+            background-color: #e0ffe0;
+            /* 緑っぽい背景にしてみる？ */
+            position: relative;
+            /* カードを絶対位置で配置する時のために */
+        }
+
+        #controls button {
+            margin: 5px;
+            padding: 8px 15px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container">
+        <h1>マルチプレイソリティア！💖</h1>
+        <div id="status">
+            接続状況: <span id="connection-status">接続中...</span> |
+            プレイヤーID: <span id="player-id">未参加</span>
+        </div>
+        <div id="controls">
+            <button id="connect-button">サーバーに接続</button>
+            <button id="join-button">ゲームに参加</button>
+            <button id="deal-button">カードを配る</button>
+            <button id="get-state-button">状態取得(Console)</button>
+        </div>
+        <div id="game-area">
+            <!-- ゲームの描画は JavaScript で行うよ！ -->
+            <p style="text-align: center; margin-top: 50px;">(ここにゲーム画面が表示される予定だよ！)</p>
+        </div>
+    </div>
+
+    <!-- WASM をロードして実行する JavaScript ファイルを読み込むよ -->
+    <!-- type="module" を忘れずにね！ -->
+    <script type="module" src="./bootstrap.js"></script>
+</body>
+
+</html>
