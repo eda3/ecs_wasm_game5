@@ -14,23 +14,20 @@ use crate::components::{card::{self, Card}, position::Position, stack::{StackInf
 use crate::entity::Entity;
 use rand::seq::SliceRandom; // Vec (配列みたいなもの) の要素をシャッフルする機能 (shuffle) を使うために必要！
 use rand::thread_rng; // OS が提供する安全な乱数生成器を使うために必要！
+// ★追加: レイアウト定数を config::layout から使う！
+use crate::config::layout::*;
+use crate::components::card::{Suit, Rank, ALL_SUITS, ALL_RANKS};
+use crate::components::coordinates::Coordinates;
+use crate::components::deck::Deck;
+use crate::components::stock::Stock;
+use crate::components::tableau::Tableau;
+use crate::components::foundation::Foundation;
+use crate::components::waste::Waste;
+use crate::logic::deck::{create_standard_deck, shuffle_deck}; // デッキ操作関数を logic::deck からインポート
 
-// --- カード配置用の定数を定義 --- ✨
-const STOCK_POS_X: f32 = 50.0;  // 山札のX座標
-const STOCK_POS_Y: f32 = 100.0; // 山札のY座標
+use bevy::prelude::*;
 
-const TABLEAU_START_X: f32 = 150.0; // 場札の最初の列のX座標
-const TABLEAU_START_Y: f32 = 100.0; // 場札の最初のカードのY座標
-const TABLEAU_X_OFFSET: f32 = 110.0; // 場札の列間のX方向のオフセット
-const TABLEAU_Y_OFFSET_FACE_DOWN: f32 = 10.0; // 場札の裏向きカードのY方向オフセット
-const TABLEAU_Y_OFFSET_FACE_UP: f32 = 20.0; // 場札の表向きカードのY方向オフセット (少し大きめに)
-
-// TODO: Foundation と Waste の位置も必要になったら定義しよう！
-// const FOUNDATION_START_X: f32 = STOCK_POS_X + TABLEAU_X_OFFSET * 3.0; // 例
-// const FOUNDATION_START_Y: f32 = STOCK_POS_Y;
-// const WASTE_POS_X: f32 = STOCK_POS_X + TABLEAU_X_OFFSET; // 例
-// const WASTE_POS_Y: f32 = STOCK_POS_Y;
-
+// --- カード配置用の定数は config/layout.rs に移動したので削除！ --- 
 
 // === 初期カード配置システム！ ===
 // ゲーム開始時に、山札と7つの場札にカードを配る役割を担うシステムだよ。
@@ -58,17 +55,11 @@ impl DealInitialCardsSystem {
         // --- 1. デッキの準備 ---
         // card モジュールにある create_standard_deck 関数を呼び出して、52枚のカードデッキを作るよ。
         // `mut` を付けてるから、後でシャッフル (中身の順番を変える) できる！
-        let mut deck = card::create_standard_deck();
-        println!("🃏 デッキ作成完了！ ({}枚)", deck.len()); // デバッグ用に枚数をログ出力！
+        let mut deck_cards = create_standard_deck();
+        shuffle_deck(&mut deck_cards);
+        println!("🃏 デッキ作成完了！ ({}枚)", deck_cards.len()); // デバッグ用に枚数をログ出力！
 
-        // --- 2. シャッフル ---
-        // `thread_rng()` で乱数生成器を取得して、`shuffle` メソッドでデッキの順番をランダムに入れ替えるよ！
-        // これで毎回違うゲームが楽しめるね！🥳
-        let mut rng = thread_rng();
-        deck.shuffle(&mut rng);
-        println!("🎲 デッキをシャッフルしました！");
-
-        // --- 3. 既存カードのクリア (念のため) ---
+        // --- 2. 既存カードのクリア (念のため) ---
         // ゲーム開始時に前のゲームのカードが残ってたら大変だから、先に掃除しておくよ！🧹
         // `world.query_entities_with_component::<Card>()` で Card コンポーネントを持つ全てのエンティティIDを取得する。
         // `collect::<Vec<_>>()` で取得したIDを一時的な Vec (配列みたいなの) に集める。
@@ -93,9 +84,9 @@ impl DealInitialCardsSystem {
 
 
         // --- 4. カードの配置 ---
-        // `deck.into_iter()` でデッキのカードを1枚ずつ取り出せるようにするよ。
-        // `into_iter()` は元の `deck` の所有権を奪うから、もう `deck` は使えなくなる。注意！⚠️
-        let mut card_iterator = deck.into_iter();
+        // `deck_cards.into_iter()` でデッキのカードを1枚ずつ取り出せるようにするよ。
+        // `into_iter()` は元の `deck_cards` の所有権を奪うから、もう `deck_cards` は使えなくなる。注意！⚠️
+        let mut card_iterator = deck_cards.into_iter();
 
         // 配置するカードのインデックス (何枚目のカードか) を追跡するカウンター
         let mut card_index = 0;
@@ -214,6 +205,7 @@ mod tests {
     use crate::components::position::Position;
     use crate::components::card::{Rank, Suit}; // テストで具体的なカードを確認するために Rank と Suit も使うよ
     use std::collections::HashMap; // ★追加: テストで HashMap を使うためにインポート！
+    // ★ use crate::config::layout::*; // テスト内でも必要！
 
 
     // `#[test]` アトリビュートが付いた関数が、個別のテストケースになるよ。

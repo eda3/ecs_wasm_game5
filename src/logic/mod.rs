@@ -1,1 +1,2 @@
-pub mod auto_move; 
+pub mod auto_move;
+pub mod deck; 

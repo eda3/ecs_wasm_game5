@@ -3,55 +3,57 @@
 // WASM と JavaScript を繋ぐための基本！
 use wasm_bindgen::prelude::*;
 // ★復活！ JsCast トレイトを使う！★
-use wasm_bindgen::JsCast;
+// use wasm_bindgen::JsCast; // game_app.rs に移動
 
 // ★修正: 未使用の型をごっそり削除！ Event, window, HtmlCanvasElement, CanvasRenderingContext2d は残す★
-use web_sys::{window, Event, HtmlCanvasElement, CanvasRenderingContext2d};
+// use web_sys::{window, Event, HtmlCanvasElement, CanvasRenderingContext2d}; // game_app.rs に移動
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
-use std::sync::{Arc, Mutex};
+// use std::sync::{Arc, Mutex}; // game_app.rs に移動
 // メッセージキュー（受信メッセージを一時的に溜めておく場所）のために VecDeque を使うよ。
-use std::collections::VecDeque;
+// use std::collections::VecDeque; // game_app.rs に移動
 
 // 自分で作ったモジュールたち！ これでコードを整理してるんだ。
 pub mod entity;
 pub mod component;
-pub mod world; // この world モジュールは自作ECSのコアになるかも？
+pub mod world;
 pub mod system;
-pub mod components; // components モジュールを宣言
+pub mod components;
 pub mod systems;
-pub mod network; // network モジュールを宣言
-pub mod protocol; // protocol モジュールを宣言
-pub mod rules; // ★追加: 新しい rules モジュールを宣言！
-pub mod logic; // ← これを追加！
-pub mod app; // ★追加: 新しい app モジュールを宣言
+pub mod network;
+pub mod protocol;
+pub mod rules;
+pub mod logic;
+pub mod app;
+pub mod config;
+
+// ★追加: GameApp を lib.rs のスコープに公開！
+pub use app::game_app::GameApp;
 
 // 各モジュールから必要な型をインポート！
-// use crate::world::World; // <-- これも不要 (自作Worldを使う想定)
-// use hecs::World; // <-- これを削除！
-use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PositionData, PlayerId};
-use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
-use crate::entity::Entity; // send_make_move で使う Entity も use しておく！ (自作Entityを使う)
-use serde_json; // serde_json を使う
-use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
+// use crate::network::NetworkManager; // game_app.rs に移動
+// use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PositionData, PlayerId}; // game_app.rs に移動
+// use crate::components::stack::StackType; // game_app.rs に移動
+// use crate::entity::Entity; // game_app.rs に移動
+// use serde_json; // game_app.rs に移動
+// use crate::network::ConnectionStatus; // game_app.rs に移動
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
-use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
-use crate::components::dragging_info::DraggingInfo; // ★変更: 新しいパスからインポート！
-use crate::world::World; // <<< これを追加！
-use crate::systems::deal_system::DealInitialCardsSystem;
+// use wasm_bindgen::closure::Closure; // game_app.rs に移動
+// use crate::components::dragging_info::DraggingInfo; // game_app.rs に移動
+// use crate::world::World; // game_app.rs に移動
+// use crate::systems::deal_system::DealInitialCardsSystem; // game_app.rs に移動
 
 // components/ 以下の主要なコンポーネントを use 宣言！
 // (ここで use したものは、このファイル内では直接型名で参照できる！)
-use crate::components::{ 
-    card::Card, // Import specifics from card module
-    position::Position,
-    player::Player, // Import Player from components
-    stack::{StackInfo}, // Import StackInfo/StackType from components
-};
+// use crate::components::{ // game_app.rs に移動
+//     card::Card,
+//     position::Position,
+//     player::Player,
+//     stack::{StackInfo},
+// };
 
-use crate::logic::auto_move::find_automatic_foundation_move;
+// use crate::logic::auto_move::find_automatic_foundation_move; // game_app.rs に移動
 
 // systems/ 以下のシステムを use 宣言！
 // ★ 空の use ブロックは削除 ★
@@ -81,214 +83,4 @@ pub fn greet(name: &str) {
     log(&format!("Hello from Rust, {}!", name));
 }
 
-// --- ゲーム全体のアプリケーション状態を管理する構造体 ---
-#[wasm_bindgen]
-pub struct GameApp {
-    world: Arc<Mutex<World>>,
-    network_manager: Arc<Mutex<NetworkManager>>,
-    message_queue: Arc<Mutex<VecDeque<ServerMessage>>>,
-    my_player_id: Arc<Mutex<Option<PlayerId>>>,
-    // DealInitialCardsSystem のインスタンスを持っておこう！ (状態を持たないので Clone でも Default でもOK)
-    deal_system: DealInitialCardsSystem,
-    // ★追加: イベントリスナーのクロージャを保持する Vec ★
-    // Arc<Mutex<>> で囲むことで、&self からでも変更可能にし、
-    // スレッドセーフにする (Wasm は基本シングルスレッドだが作法として)
-    event_closures: Arc<Mutex<Vec<Closure<dyn FnMut(Event)>>>>,
-    // ★追加: ドラッグ状態 (現在ドラッグ中のカード情報)★
-    dragging_state: Arc<Mutex<Option<DraggingInfo>>>,
-    // ★追加: Window にアタッチする MouseMove/MouseUp リスナー★
-    // (ドラッグ中のみ Some になる)
-    window_mousemove_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
-    window_mouseup_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
-    // ★追加: Canvas 要素と 2D コンテキストを保持するフィールド★
-    // (今回は Arc<Mutex<>> で囲まず、直接保持してみる)
-    canvas: HtmlCanvasElement,
-    context: CanvasRenderingContext2d,
-}
-
-// GameApp 構造体のメソッドを実装していくよ！
-#[wasm_bindgen]
-impl GameApp {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        log("GameApp: Initializing..."); // シンプルな開始ログに変更
-
-        // --- World, Network, Canvas の初期化は init_handler に委譲 --- 
-        let world_arc = app::init_handler::initialize_world();
-        let message_queue_arc = Arc::new(Mutex::new(VecDeque::new()));
-        let network_manager_arc = app::init_handler::initialize_network(Arc::clone(&message_queue_arc));
-
-        // Canvas 初期化 (エラー処理は expect で簡略化)
-        // TODO: エラー発生時に panic する代わりに、適切なエラー処理 (例: Result を返す) を検討
-        let (canvas, context) = app::init_handler::initialize_canvas()
-            .expect("Failed to initialize canvas and context");
-
-        // --- その他のフィールド初期化 --- 
-        let my_player_id_arc = Arc::new(Mutex::new(None));
-        let deal_system = DealInitialCardsSystem::default();
-        let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
-        let dragging_state_arc = Arc::new(Mutex::new(None));
-        let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
-        let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
-
-        log("GameApp: Initialization complete.");
-        Self {
-            world: world_arc,
-            network_manager: network_manager_arc,
-            message_queue: message_queue_arc,
-            my_player_id: my_player_id_arc,
-            deal_system,
-            event_closures: event_closures_arc,
-            dragging_state: dragging_state_arc,
-            window_mousemove_closure: window_mousemove_closure_arc,
-            window_mouseup_closure: window_mouseup_closure_arc,
-            canvas,
-            context,
-        }
-    }
-
-    // WebSocket接続
-    pub fn connect(&self) {
-        // ★修正: app::network_handler の関数を呼び出す！★
-        app::network_handler::connect(&self.network_manager);
-    }
-
-    // ゲーム参加メッセージ送信
-    #[wasm_bindgen]
-    pub fn send_join_game(&self, player_name: String) {
-        // ★修正: app::network_handler の関数を呼び出す！★
-        app::network_handler::send_join_game(&self.network_manager, player_name);
-    }
-
-    // カード移動メッセージ送信
-    #[wasm_bindgen]
-    pub fn send_make_move(&self, moved_entity_id: usize, target_stack_json: String) {
-        // ★修正: app::network_handler の関数を呼び出す！★
-        app::network_handler::send_make_move(&self.network_manager, moved_entity_id, target_stack_json);
-    }
-
-    // 受信メッセージ処理
-    #[wasm_bindgen]
-    pub fn process_received_messages(&mut self) -> bool {
-        // ★修正: app::network_handler の関数を呼び出す！ 必要な Arc を渡す★
-        app::network_handler::process_received_messages(
-            &self.message_queue,
-            &self.my_player_id,
-            &self.world
-        )
-    }
-
-    // JSから初期カード配置を実行するためのメソッド
-    #[wasm_bindgen]
-    pub fn deal_initial_cards(&self) {
-        // ★修正: app::init_handler の関数を呼び出す！★
-        app::init_handler::deal_initial_cards(
-            &self.world,
-            &self.network_manager,
-            &self.deal_system
-        );
-    }
-
-    // WASM から World の状態を取得して JSON 文字列で返す (デバッグ・描画用)
-    #[wasm_bindgen]
-    pub fn get_world_state_json(&self) -> String {
-        log("GameApp: get_world_state_json called.");
-        let world = self.world.lock().expect("Failed to lock world for getting state");
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
-        log(&format!("  Found {} card entities. Preparing JSON data...", card_entities.len()));
-        for &entity in &card_entities {
-            let card = world.get_component::<Card>(entity).expect("Card component not found");
-            let stack_info = world.get_component::<StackInfo>(entity).expect("StackInfo component not found");
-             // ★ Position も取得！
-            let position = world.get_component::<Position>(entity).expect("Position component not found");
-
-            // JSONに変換する際、StackTypeの各バリアントを文字列と対応するインデックス（またはNull）のタプルに変換する
-            let (stack_type_str, stack_index_json) = match stack_info.stack_type {
-                // Stock, Waste, Foundationはインデックスを持つタプルバリアントなので、(index)で値を取り出す
-                StackType::Stock => ("Stock", serde_json::Value::Null), // Stockにはインデックス不要
-                StackType::Waste => ("Waste", serde_json::Value::Null), // Wasteにもインデックス不要
-                StackType::Foundation(index) => ("Foundation", serde_json::json!(index)), // indexを使用
-                // Tableauもインデックスを持つタプルバリアント
-                StackType::Tableau(index) => ("Tableau", serde_json::json!(index)), // 誤: crate::component::StackType::Tableau, stack_info.stack_index -> 正: StackType::Tableau(index), index
-                // Handは単純なバリアント
-                StackType::Hand => ("Hand", serde_json::Value::Null), // 誤: crate::component::StackType::Hand
-            };
-            let card_json = serde_json::json!({
-                "entity_id": entity.0,
-                "suit": format!("{:?}", card.suit),
-                "rank": format!("{:?}", card.rank),
-                "is_face_up": card.is_face_up,
-                "stack_type": stack_type_str,
-                "stack_index": stack_index_json,
-                "order": stack_info.position_in_stack,
-                // ★ Position も JSON に追加！
-                "x": position.x,
-                "y": position.y,
-            });
-            cards_json_data.push(card_json);
-        }
-        log("  Card data preparation complete.");
-        let final_json = serde_json::json!({ "cards": cards_json_data });
-        match serde_json::to_string(&final_json) {
-            Ok(json_string) => { log("  Successfully serialized world state to JSON."); json_string }
-            Err(e) => {
-                log(&format!("Error serializing world state to JSON: {}", e));
-                serde_json::json!({ "error": "Failed to serialize world state", "details": e.to_string() }).to_string()
-            }
-        }
-    }
-
-    // 接続状態を文字列で返す (デバッグ用)
-    #[wasm_bindgen]
-    pub fn get_connection_status_debug(&self) -> String {
-        // 内部でロックを取るので match を使う方が丁寧かもだけど、デバッグ用なので expect で！
-        let status = self.network_manager.lock().expect("Failed to lock NetworkManager for status").get_status();
-        format!("{:?}", status) // Debug トレイトを使って文字列に変換
-    }
-
-    // 自分の Player ID を返す (デバッグ用)
-    #[wasm_bindgen]
-    pub fn get_my_player_id_debug(&self) -> Option<u32> {
-        // Option<PlayerId> を Option<u32> に変換する
-        self.my_player_id.lock().expect("Failed to lock my_player_id").map(|id| id)
-    }
-
-    /// カードがダブルクリックされた時の処理 (JSから呼び出される元のメソッド)
-    #[wasm_bindgen]
-    pub fn handle_double_click(&self, entity_id: usize) {
-        log(&format!("GameApp: handle_double_click called for entity_id: {}", entity_id));
-        // ★修正: app::event_handler の関数を呼び出す！★
-        app::event_handler::handle_double_click_logic(
-            entity_id,
-            Arc::clone(&self.world),
-            Arc::clone(&self.network_manager)
-        );
-    }
-
-    /// Rust側で Canvas にゲーム画面を描画する関数
-    #[wasm_bindgen]
-    pub fn render_game_rust(&self) -> Result<(), JsValue> {
-        // ★修正: app::renderer の関数を呼び出す！★
-        app::renderer::render_game_rust(
-            &self.world,
-            &self.canvas,
-            &self.context
-        )
-    }
-}
-
-// GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)
-// JS側でインスタンスがGCされた時などに呼ばれる…はず！
-impl Drop for GameApp {
-    fn drop(&mut self) {
-        log("GameApp: Dropping GameApp instance. Disconnecting WebSocket...");
-        // ロックを取得して disconnect を呼ぶ
-        match self.network_manager.lock() {
-            Ok(mut nm) => nm.disconnect(),
-            Err(e) => log(&format!("GameApp: Failed to lock NetworkManager for disconnect: {:?}", e)),
-        }
-    }
-}
-
-// ... 関数型・ベストプラクティスコメント、次のステップコメント ...
+// --- GameApp 関連のコードは src/app/game_app.rs に移動しました ---

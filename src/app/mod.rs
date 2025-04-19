@@ -1,9 +1,10 @@
 // src/app/mod.rs
-//! GameApp の内部ロジックを役割ごとに分割して置くモジュールだよ！
+//! アプリケーション全体に関わるモジュール（初期化、状態管理など）をまとめるよ！
 
-pub mod event_handler;
+pub mod game_app;     // GameApp 構造体とその実装
+pub mod init_handler; // 初期化処理
+pub mod network_handler; // ネットワーク関連のハンドラー
+pub mod event_handler; // イベント処理
+pub mod renderer;    // 描画処理
 pub mod state_handler;   // ★追加
-pub mod network_handler; // ★追加
-pub mod init_handler;    // ★追加
-pub mod renderer;      // ★追加
 // pub mod init_handler;    // 今後追加予定 
