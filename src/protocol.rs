@@ -49,6 +49,8 @@ pub enum ClientMessage {
     // ResetWasteToStock,
     /// ゲームの状態を要求する (接続直後とか？)
     RequestGameState,
+    /// 初期ゲーム状態をサーバーに提供するためのメッセージ！
+    ProvideInitialState { initial_state: GameStateData },
     /// 生存確認のためのメッセージ（接続が切れてないか確認）
     Ping,
 }
