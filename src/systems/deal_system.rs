@@ -17,17 +17,18 @@ use rand::thread_rng; // OS が提供する安全な乱数生成器を使うた�
 // ★追加: レイアウト定数を config::layout から使う！
 use crate::config::layout::*;
 use crate::components::card::{Suit, Rank, ALL_SUITS, ALL_RANKS};
-use crate::components::coordinates::Coordinates;
-use crate::components::deck::Deck;
-use crate::components::stock::Stock;
-use crate::components::tableau::Tableau;
-use crate::components::foundation::Foundation;
-use crate::components::waste::Waste;
+// ↓↓↓ --- ここから不要な use 文をコメントアウト --- ↓↓↓
+// use crate::components::coordinates::Coordinates; // 古いコードの名残？今は使ってないからコメントアウト！🗑️
+// use crate::components::deck::Deck;             // 同上！🗑️
+// use crate::components::stock::Stock;           // 同上！🗑️
+// use crate::components::tableau::Tableau;         // 同上！🗑️
+// use crate::components::foundation::Foundation;     // 同上！🗑️
+// use crate::components::waste::Waste;           // 同上！🗑️
+// use bevy::prelude::*;                        // bevy クレートは使ってないからコメントアウト！🗑️
+// ↑↑↑ --- ここまで不要な use 文をコメントアウト --- ↑↑↑
 use crate::logic::deck::{create_standard_deck, shuffle_deck}; // デッキ操作関数を logic::deck からインポート
 
-use bevy::prelude::*;
-
-// --- カード配置用の定数は config/layout.rs に移動したので削除！ --- 
+// --- カード配置用の定数は config/layout.rs に移動したので削除！ ---
 
 // === 初期カード配置システム！ ===
 // ゲーム開始時に、山札と7つの場札にカードを配る役割を担うシステムだよ。
