@@ -72,7 +72,7 @@
 - [x] UIインタラクション(JS): カードダブルクリック時にRust側の自動移動ロジックを呼び出す (`GameApp` にメソッド追加) // `handle_double_click` を実装し JS から呼び出し！✅
 - [x] UIインタラクション(JS): カードのドラッグ開始 (`mousedown` or `dragstart`)
 - [x] UIインタラクション(JS): カードのドラッグ中 (`mousemove` or `drag`) のカード追従表示
-- [ ] UIインタラクション(JS): カードのドロップ (`mouseup` or `drop`)
+- [x] UIインタラクション(JS): カードのドロップ (`mouseup` or `drop`)
 - [ ] UIインタラクション(JS): ドロップ位置から移動先スタックを判定するロジック
 - [ ] UIインタラクション(JS): クリック/ダブルクリック/ドロップ操作を `gameApp.send_make_move()` 呼び出しに変換
 - [ ] 状態更新と表示(JS): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (今は `GameJoined` でのみ実行)

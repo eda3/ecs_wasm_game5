@@ -347,14 +347,34 @@ function handleMouseMove(event) {
     draggedCardElement.style.top = `${newY}px`;
 }
 
-// --- ★ 新しい関数 (仮): カードドラッグ終了処理 (mouseup) ★ ---
+// --- ★ 新しい関数: カードドラッグ終了処理 (mouseup) ★ --- (本格実装版！)
 function handleMouseUp(event) {
-    if (isDragging) {
-        console.log(`🖱️ Drag end detected on card Entity ID: ${draggedEntityId}`);
-        // ここで isDragging を false にしたり、クラスを戻したり、
-        // document のリスナーを削除したり、ドロップ処理を呼び出したりする！
-        // 次のステップで実装するよ！
-    }
+    // ドラッグ中でなければ何もしない
+    if (!isDragging || !draggedCardElement) return;
+
+    console.log(`🖱️ Drag end detected on card Entity ID: ${draggedEntityId} at (${event.clientX}, ${event.clientY})`);
+
+    // ドラッグ中の見た目を元に戻す
+    draggedCardElement.classList.remove('dragging');
+    draggedCardElement.style.cursor = 'grab'; // または 'default'
+
+    // ★超重要: document に追加したリスナーを削除！★
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    console.log("  Removed mousemove and mouseup listeners from document.");
+
+    // TODO: ここでドロップ位置 (event.clientX, event.clientY) を判定して、
+    //       適切な移動先スタックを見つけ、 gameApp.send_make_move を呼び出す処理を追加する (次のステップ！)
+    //       例: const targetStack = findDropTarget(event.clientX, event.clientY);
+    //           if (targetStack) { ... send_make_move ... }
+
+    // ドラッグ状態をリセット
+    isDragging = false;
+    draggedCardElement = null;
+    draggedEntityId = null;
+    offsetX = 0;
+    offsetY = 0;
+    console.log("  Dragging state reset.");
 }
 
 // --- ヘルパー関数: カードの表示位置を計算 --- (修正版！)
