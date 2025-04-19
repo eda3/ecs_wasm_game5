@@ -183,6 +183,17 @@ pub enum Suit {
     Spade,   // ♠️
 }
 
+impl From<crate::components::card::Suit> for Suit {
+    fn from(other_suit: crate::components::card::Suit) -> Self {
+        match other_suit {
+            crate::components::card::Suit::Heart => Suit::Heart,
+            crate::components::card::Suit::Diamond => Suit::Diamond,
+            crate::components::card::Suit::Club => Suit::Club,
+            crate::components::card::Suit::Spade => Suit::Spade,
+        }
+    }
+}
+
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)] // Ord/PartialOrd で順序付けできるように
 pub enum Rank {
