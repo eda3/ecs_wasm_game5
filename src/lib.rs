@@ -396,7 +396,7 @@ impl GameApp {
                 //       現状は From トレイトがないので、手動でマッチさせるか、From を実装する。
                 //       一旦、仮で Tableau(0) を使う。
                 stack_type: match card_data.stack_type {
-                    protocol::StackType::Tableau => StackType::Tableau(0), // 仮インデックス！要修正！
+                    protocol::StackType::Tableau(_) => StackType::Tableau(0), // 仮インデックス！要修正！
                     protocol::StackType::Foundation => StackType::Foundation(0), // 仮インデックス！要修正！
                     protocol::StackType::Stock => StackType::Stock,
                     protocol::StackType::Waste => StackType::Waste,
