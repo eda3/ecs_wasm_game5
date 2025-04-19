@@ -4,6 +4,7 @@
 use serde::{Serialize, Deserialize};
 // Component トレイトを使う宣言！このファイルで作る構造体がコンポーネントであることを示すため！
 use crate::component::Component; // `crate::` はプロジェクトのルートから、って意味ね！
+use wasm_bindgen::prelude::*;
 
 /// カードのスート（マーク）を表す列挙型だよ！❤️♦️♣️♠️
 ///
@@ -13,6 +14,7 @@ use crate::component::Component; // `crate::` はプロジェクトのルート�
 /// - PartialEq, Eq: 等しいか比較できるように (`==`)
 /// - Hash: HashMap のキーとかで使えるように
 /// - Serialize, Deserialize: JSON などに変換できるように
+#[wasm_bindgen]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Suit {
     Heart,   // ❤️
@@ -21,11 +23,25 @@ pub enum Suit {
     Spade,   // ♠️
 }
 
+// ↓↓↓ 逆方向の From トレイト実装を追加！ ↓↓↓
+impl From<crate::component::Suit> for Suit {
+    fn from(component_suit: crate::component::Suit) -> Self {
+        match component_suit {
+            crate::component::Suit::Heart => Suit::Heart,
+            crate::component::Suit::Diamond => Suit::Diamond,
+            crate::component::Suit::Club => Suit::Club,
+            crate::component::Suit::Spade => Suit::Spade,
+        }
+    }
+}
+// ↑↑↑ 逆方向の From トレイト実装を追加！ ↑↑↑
+
 /// カードのランク（数字）を表す列挙型だよ！ A, 2, 3, ..., K
 ///
 /// スートと同じように #[derive(...)] を付けておくよ！
 /// PartialOrd, Ord も追加して、ランクの大小比較 (`<`, `>`) もできるようにしておこう！ソリティアで使いそう！👍
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum Rank {
     Ace = 1, // A は 1 として扱うよ (ソリティアのルールによるかもだけど、一旦こうしておく！)
     Two,     // 2
