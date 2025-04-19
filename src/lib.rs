@@ -64,7 +64,7 @@ use crate::systems::{
 
 // Wasm specific types from crate::component
 // (DraggingInfo は component にしかないのでここで use する)
-use crate::component::{DraggingInfo, Suit as WasmSuit, Rank as WasmRank, StackType as WasmStackType, GameState as WasmGameState};
+use crate::component::{Suit as WasmSuit, Rank as WasmRank, StackType as WasmStackType, GameState as WasmGameState};
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
