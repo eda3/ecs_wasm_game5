@@ -260,6 +260,24 @@ impl World {
         //       より厳密なエンティティ管理が必要になるかも。
         println!("World: Entity {:?} created/reserved with specific ID.", entity);
     }
+
+    /// 指定された型のコンポーネントを持つ全てのエンティティのリストを取得するよ。
+    ///
+    /// # 戻り値
+    /// - `Vec<Entity>`: 指定された型のコンポーネントを持つ全てのエンティティのリスト。
+    /// - `Vec::new()`: 指定された型のコンポーネントを持つエンティティが存在しない場合。
+    pub fn get_all_entities_with_component<T: Component + 'static>(&self) -> Vec<Entity> {
+        // storage メソッドは ComponentStorage<T> を返す想定
+        if let Some(storage) = self.storage::<T>() {
+            // ComponentStorage の iter() (またはそれに類するメソッド) を使う
+             storage.iter()
+                 // ここを修正！ `entity` は `&Entity` だけど、Copy トレイトがあるから `*entity` で値を取得できる！
+                 .map(|(entity, _component)| *entity)
+                 .collect()
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 

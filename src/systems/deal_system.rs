@@ -191,43 +191,11 @@ mod tests {
     use crate::world::World; // テスト用の World を作る
     // StackInfo と StackType をテストで使うためにインポート
     use crate::components::stack::{StackInfo, StackType};
-
-    // World に entity_exists と create_entity_with_id の仮実装を追加
-    // TODO: 本来は world.rs に実装されるべき
-    impl World {
-        fn entity_exists(&self, entity: Entity) -> bool {
-            // 仮実装: ID が現在のエンティティ数未満かチェック
-            entity.0 < self.next_entity_id
-        }
-        fn create_entity_with_id(&mut self, entity: Entity) {
-            // 仮実装: 指定 ID までエンティティを増やす (簡略化のため vec をリサイズ)
-            let id = entity.0;
-            if id >= self.next_entity_id {
-                 // In a real scenario, resizing logic for component vectors would go here.
-                 self.next_entity_id = id + 1;
-            }
-            // println!("World::create_entity_with_id({:?}) (仮実装)", entity);
-        }
-         // storage メソッドの仮実装 (テストコンパイル用)
-        fn storage<T: Component + 'static>(&self) -> Option<&Vec<Option<T>>> {
-            self.components.get(&std::any::TypeId::of::<T>())
-                .and_then(|any_vec| any_vec.downcast_ref::<Vec<Option<T>>>())
-        }
-        // get_component_mut の仮実装 (テストコンパイル用)
-        fn get_component_mut<T: Component + 'static>(&mut self, entity: Entity) -> Option<&mut T> {
-             self.components.get_mut(&std::any::TypeId::of::<T>())
-                .and_then(|any_vec| any_vec.downcast_mut::<Vec<Option<T>>>())
-                .and_then(|vec| vec.get_mut(entity.0))
-                .and_then(|opt| opt.as_mut())
-        }
-         // get_component の仮実装 (テストコンパイル用)
-        fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
-            self.storage::<T>()
-                .and_then(|vec| vec.get(entity.0))
-                .and_then(|opt| opt.as_ref())
-        }
-    }
-
+    use crate::component::Component; // Component トレイトも必要かも
+    use crate::entity::Entity; // Entity も必要かも
+    use crate::components::game_state::{GameState, GameStatus}; // GameState/Status も必要
+    use crate::components::card::Card; // Card も必要
+    use crate::components::position::Position; // Position も必要
 
     #[test]
     fn deal_system_distributes_cards_correctly() {

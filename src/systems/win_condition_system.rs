@@ -78,21 +78,6 @@ impl System for WinConditionSystem {
     }
 }
 
-// --- World に get_all_entities_with_component の仮実装を追加 ---
-// TODO: このメソッドは本来 world.rs に実装されるべき
-impl World {
-    // 指定されたコンポーネントを持つすべてのエンティティIDのリストを返す (仮実装)
-    fn get_all_entities_with_component<T: Component + 'static>(&self) -> Vec<&Entity> {
-        println!("World::get_all_entities_with_component<{}> (仮実装)", std::any::type_name::<T>());
-        // self.components から T 型の Vec<Option<T>> を探し、
-        // Some(component) が入っているインデックス (Entity ID) を集める
-        // Box<dyn Any> からダウンキャストする必要がある
-        // ... 複雑なので、今は空の Vec を返す
-        Vec::new() // 仮
-    }
-}
-
-
 // --- テスト ---
 #[cfg(test)]
 mod tests {
