@@ -5,8 +5,8 @@ use wasm_bindgen::prelude::*;
 // ★復活！ JsCast トレイトを使う！★
 use wasm_bindgen::JsCast;
 
-// ★修正: web-sys から window と、HtmlElement を使う！ Element は削除！★
-use web_sys::{window, HtmlElement, Event, EventTarget, HtmlSpanElement, MouseEvent, DomRect, HtmlCanvasElement, CanvasRenderingContext2d};
+// ★修正: 未使用の型をごっそり削除！ Event, window, HtmlCanvasElement, CanvasRenderingContext2d は残す★
+use web_sys::{window, Event, HtmlCanvasElement, CanvasRenderingContext2d};
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
@@ -593,121 +593,90 @@ impl GameApp {
         }
     }
 
-    /// Rust側でゲーム画面を描画する関数
+    /// Rust側で Canvas にゲーム画面を描画する関数
     #[wasm_bindgen]
     pub fn render_game_rust(&self) {
-        log("GameApp: render_game_rust() called! Setting inline styles...");
+        log("GameApp: render_game_rust (Canvas) called!");
 
-        // --- ステップ1 & 2: 要素取得とクリア ---
-        let window = window().expect("Failed to get window");
-        let document = window.document().expect("Failed to get document");
-        let game_area = document.get_element_by_id("game-area").expect("game-area not found");
-        game_area.set_inner_html("");
-        {
-            let mut closures = self.event_closures.lock().expect("Failed to lock event_closures for clearing");
-            closures.clear();
-        }
+        // --- ステップ1: コンテキストと Canvas 寸法を取得 --- ★変更！★
+        let context = &self.context;
+        let canvas = &self.canvas;
+        let canvas_width = canvas.width() as f64; // u32 から f64 へキャスト
+        let canvas_height = canvas.height() as f64;
 
-        // --- ステップ3: World からカード情報を取得 --- 
+        // --- ステップ2: Canvas をクリア --- ★変更！★
+        context.clear_rect(0.0, 0.0, canvas_width, canvas_height);
+        // log(&format!("  Canvas cleared ({}x{})."), canvas_width, canvas_height);
+
+        // --- ステップ3: World からカード情報を取得 --- (変更なし)
         let world = self.world.lock().expect("Failed to lock world for rendering");
         let card_entities = world.get_all_entities_with_component::<Card>();
+        log(&format!("  Found {} entities with Card component. Drawing cards...", card_entities.len()));
 
-        // --- ステップ4: カード要素を作成・設定・追加 & イベントリスナー設定★ ---
+        // --- ステップ4: カードを描画 --- ★ここから大幅に変更！★
+        let card_width = 72.0;
+        let card_height = 96.0;
+
         for &entity in &card_entities {
-            if let (Some(card), Some(position), Some(stack_info)) = (
+            if let (Some(card), Some(position)) = (
                 world.get_component::<Card>(entity),
-                world.get_component::<Position>(entity),
-                world.get_component::<StackInfo>(entity)
+                world.get_component::<Position>(entity)
             ) {
-                // --- 要素作成 & キャスト ---
-                let card_element_div = document.create_element("div").expect("Failed to create div");
-                let card_element = card_element_div.dyn_into::<HtmlElement>().expect("Failed to cast to HtmlElement");
-                let style = card_element.style(); // スタイル操作用に取得
+                let x = position.x as f64;
+                let y = position.y as f64;
 
-                // --- ★ CSS クラスの代わりにインラインスタイルを設定！ --- ★
-                // --- 基本スタイル (.card に相当) ---
-                style.set_property("width", "72px").expect("set width");
-                style.set_property("height", "96px").expect("set height");
-                style.set_property("border", "1px solid #aaa").expect("set border");
-                style.set_property("border-radius", "5px").expect("set border-radius");
-                style.set_property("position", "absolute").expect("set position");
-                style.set_property("box-shadow", "1px 1px 3px rgba(0,0,0,0.2)").expect("set box-shadow");
-                style.set_property("cursor", "pointer").expect("set cursor");
-                style.set_property("user-select", "none").expect("set user-select");
-                style.set_property("font-size", "16px").expect("set font-size");
-                style.set_property("font-weight", "bold").expect("set font-weight");
-                style.set_property("overflow", "hidden").expect("set overflow");
-                style.set_property("box-sizing", "border-box").expect("set box-sizing");
-                // z-index もここで設定 (stack_info を使う！)
-                style.set_property("z-index", &stack_info.position_in_stack.to_string()).expect("set z-index");
+                // --- 四角形と枠線を描画 --- 
+                let fill_color = if card.is_face_up { "#ffffff" } else { "#4a90e2" };
+                // ★修正: メソッド名を _str に！★
+                context.set_fill_style_str(fill_color); 
+                context.fill_rect(x, y, card_width, card_height);
+                // ★修正: メソッド名を _str に！★
+                context.set_stroke_style_str("#aaaaaa"); 
+                context.set_line_width(1.0);
+                context.stroke_rect(x, y, card_width, card_height);
 
-                // --- data-entity-id 属性はそのまま設定 ---
-                card_element.set_attribute("data-entity-id", &entity.0.to_string()).expect("Failed to set data-entity-id");
-                
-                // --- 表裏に応じたスタイルと内容 --- 
+                // --- ★追加: 表向きならランクとスートを描画★ ---
                 if card.is_face_up {
-                    // --- 表向きスタイル (.face-up に相当) ---
-                    style.set_property("background-color", "#fff").expect("set bg-color white");
-                    style.set_property("display", "flex").expect("set display flex");
-                    style.set_property("flex-direction", "column").expect("set flex-direction");
-                    style.set_property("justify-content", "space-between").expect("set justify-content");
-                    style.set_property("padding", "5px").expect("set padding");
-
-                    // スートによる色分け
-                    let color = match card.suit {
+                    let rank_text = get_rank_text(&card.rank);
+                    let suit_symbol = get_suit_symbol(&card.suit);
+                    let text_color = match card.suit {
                         Suit::Heart | Suit::Diamond => "red",
                         Suit::Club | Suit::Spade => "black",
                     };
-                    style.set_property("color", color).expect("set color");
 
-                    // --- ランク span 作成 & スタイル設定 ---
-                    let rank_span_el = document.create_element("span").expect("Failed to create rank span");
-                    let rank_span = rank_span_el.dyn_into::<HtmlSpanElement>().expect("Failed to cast rank span");
-                    let rank_style = rank_span.style();
-                    rank_style.set_property("display", "block").expect("set rank display");
-                    rank_style.set_property("text-align", "center").expect("set rank text-align");
-                    rank_style.set_property("line-height", "1").expect("set rank line-height");
-                    rank_span.set_text_content(Some(&get_rank_text(&card.rank)));
-                    card_element.append_child(&rank_span).expect("Failed to append rank span");
+                    // --- テキストスタイル設定 --- 
+                    context.set_font("bold 16px sans-serif"); // フォント設定
+                    // ★修正: メソッド名を _str に！★
+                    context.set_fill_style_str(text_color); // テキストの色を設定
+                    context.set_text_align("center");       // 横方向中央揃え
+                    context.set_text_baseline("middle");      // 縦方向中央揃え
 
-                    // --- スート span 作成 & スタイル設定 ---
-                    let suit_span_el = document.create_element("span").expect("Failed to create suit span");
-                    let suit_span = suit_span_el.dyn_into::<HtmlSpanElement>().expect("Failed to cast suit span");
-                    let suit_style = suit_span.style();
-                    suit_style.set_property("display", "block").expect("set suit display block"); // CSS では flex item だったが、一旦 block で
-                    suit_style.set_property("text-align", "center").expect("set suit text-align");
-                    suit_style.set_property("font-size", "28px").expect("set suit font-size");
-                    suit_style.set_property("line-height", "1").expect("set suit line-height");
-                    suit_style.set_property("flex-grow", "1").expect("set suit flex-grow"); // flex container なので効くはず
-                    suit_style.set_property("display", "flex").expect("set suit display flex"); // 中央揃えのため再設定
-                    suit_style.set_property("justify-content", "center").expect("set suit justify");
-                    suit_style.set_property("align-items", "center").expect("set suit align");
-                    suit_span.set_text_content(Some(&get_suit_symbol(&card.suit)));
-                    card_element.append_child(&suit_span).expect("Failed to append suit span");
+                    // --- ランクを描画 (左上と右下っぽく) --- 
+                    let rank_margin_x = 10.0;
+                    let rank_margin_y = 10.0;
+                    context.set_text_align("left"); // 左揃えに戻す
+                    context.set_text_baseline("top"); // 上揃えに戻す
+                    context.fill_text(&rank_text, x + rank_margin_x, y + rank_margin_y)
+                           .expect("Failed to draw top rank");
+                    // 右下はちょっと難しいので、一旦左上だけ！
+                    // context.save(); // 回転とかするなら状態保存
+                    // context.translate(x + card_width - rank_margin_x, y + card_height - rank_margin_y);
+                    // context.rotate(std::f64::consts::PI).unwrap(); // 180度回転
+                    // context.fill_text(&rank_text, 0.0, 0.0).expect("Failed to draw bottom rank");
+                    // context.restore(); // 状態復元
 
-                    // ★注意: face-up, suit-*, rank-* クラスはもう付けない！★
-
-                } else {
-                    // --- 裏向きスタイル (.face-down に相当) ---
-                    style.set_property("background-color", "#4a90e2").expect("set bg-color blue");
-                    // ★注意: face-down クラスはもう付けない！★
+                    // --- スートを描画 (中央に大きく) --- 
+                    context.set_font("bold 28px sans-serif"); // スートは大きく
+                    context.set_text_align("center");
+                    context.set_text_baseline("middle");
+                    context.fill_text(&suit_symbol, x + card_width / 2.0, y + card_height / 2.0)
+                           .expect("Failed to draw suit");
                 }
-                
-                // 位置スタイル設定 (これは変更なし)
-                style.set_property("left", &format!("{}px", position.x)).expect("set left");
-                style.set_property("top", &format!("{}px", position.y)).expect("set top");
-
-                // イベントリスナー設定 (これも基本変更なし、ただし dragging クラスは削除)
-                let target: EventTarget = card_element.clone().into();
-                // ... (クリックリスナー - 中で .selected クラス操作をやめる必要あり)
-                // ... (ダブルクリックリスナー - 変更なし)
-                // ... (mousedown リスナー - 中で .dragging クラス操作をやめる必要あり)
-                
-                // 要素を追加
-                game_area.append_child(&card_element).expect("Failed to append card");
+            } else {
+                 log(&format!("    Skipping entity {:?} because it's missing Card or Position component.", entity));
             }
         }
-        log("  Finished iterating, appending elements (with inline styles), and adding listeners.");
+        log("  Finished drawing card rectangles and face-up details."); // ログ更新
     }
 }
 
