@@ -18,6 +18,7 @@ pub mod components; // components モジュールを宣言
 pub mod systems;
 pub mod network; // network モジュールを宣言
 pub mod protocol; // protocol モジュールを宣言
+pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 
 // 各モジュールから必要な型をインポート！
 use crate::world::World;
