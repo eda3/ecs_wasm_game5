@@ -2,13 +2,68 @@
 //! GameApp の初期化や初期状態送信に関するロジック。
 
 use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 use crate::world::World;
-use crate::network::NetworkManager;
+use crate::network::{NetworkManager, ConnectionStatus};
 use crate::systems::deal_system::DealInitialCardsSystem;
-use crate::protocol::{GameStateData, ClientMessage, CardData, PositionData};
-use crate::components::{Card, StackInfo, Position, StackType};
+use crate::protocol::{GameStateData, ClientMessage, CardData, PositionData, ServerMessage};
+use crate::components::{self, Card, StackInfo, Position, StackType};
 use crate::{log, error}; // log と error マクロを使う
 use crate::app::network_handler; // send_serialized_message を使うために必要
+use wasm_bindgen::JsValue;
+use wasm_bindgen::JsCast;
+use web_sys::{window, HtmlCanvasElement, CanvasRenderingContext2d};
+
+// --- 初期化ヘルパー関数 (GameApp::new から移動) ---
+
+/// World の初期化とコンポーネント登録を行う。
+pub(crate) fn initialize_world() -> Arc<Mutex<World>> {
+    log("App::Init: Initializing world...");
+    let mut world = World::new();
+    // コンポーネント登録
+    world.register_component::<components::card::Card>();
+    world.register_component::<components::position::Position>();
+    world.register_component::<components::stack::StackInfo>();
+    world.register_component::<components::game_state::GameState>();
+    world.register_component::<components::player::Player>();
+    // ★ DraggingInfo も登録 ★
+    world.register_component::<components::dragging_info::DraggingInfo>();
+    Arc::new(Mutex::new(world))
+}
+
+/// NetworkManager の初期化を行う。
+pub(crate) fn initialize_network(message_queue_arc: Arc<Mutex<VecDeque<ServerMessage>>>) -> Arc<Mutex<NetworkManager>> {
+    log("App::Init: Initializing network...");
+    let server_url = format!("ws://{}:{}", "localhost", 8101);
+    let status_arc = Arc::new(Mutex::new(ConnectionStatus::Disconnected)); // Status Arc はここで作る
+    let network_manager = NetworkManager::new(
+        server_url,
+        Arc::clone(&status_arc),
+        message_queue_arc, // 引数で受け取る
+    );
+    Arc::new(Mutex::new(network_manager))
+}
+
+/// Canvas と 2D Context の取得を行う。
+pub(crate) fn initialize_canvas() -> Result<(HtmlCanvasElement, CanvasRenderingContext2d), JsValue> {
+    log("App::Init: Initializing canvas...");
+    let window = window().ok_or_else(|| JsValue::from_str("Failed to get window"))?;
+    let document = window.document().ok_or_else(|| JsValue::from_str("Failed to get document"))?;
+    let canvas = document
+        .get_element_by_id("game-canvas")
+        .ok_or_else(|| JsValue::from_str("#game-canvas element not found"))?
+        .dyn_into::<HtmlCanvasElement>()
+        .map_err(|_| JsValue::from_str("Element is not an HtmlCanvasElement"))?;
+
+    let context = canvas
+        .get_context("2d")?
+        .ok_or_else(|| JsValue::from_str("Option for 2d context is None"))?
+        .dyn_into::<CanvasRenderingContext2d>()
+        .map_err(|_| JsValue::from_str("Context is not CanvasRenderingContext2d"))?;
+
+    log("Canvas and 2D context obtained successfully.");
+    Ok((canvas, context))
+}
 
 // --- ヘルパー関数 (GameApp::get_initial_state_data から移動) ---
 

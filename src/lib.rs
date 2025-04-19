@@ -111,58 +111,25 @@ pub struct GameApp {
 impl GameApp {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        log("GameApp: Initializing for Canvas rendering...");
-        let mut world = World::new();
-        // コンポーネント登録 (Player も忘れずに)
-        world.register_component::<components::card::Card>();
-        world.register_component::<components::position::Position>();
-        world.register_component::<components::stack::StackInfo>();
-        world.register_component::<components::game_state::GameState>();
-        world.register_component::<components::player::Player>();
+        log("GameApp: Initializing..."); // シンプルな開始ログに変更
 
-        let world_arc = Arc::new(Mutex::new(world));
+        // --- World, Network, Canvas の初期化は init_handler に委譲 --- 
+        let world_arc = app::init_handler::initialize_world();
         let message_queue_arc = Arc::new(Mutex::new(VecDeque::new()));
+        let network_manager_arc = app::init_handler::initialize_network(Arc::clone(&message_queue_arc));
+
+        // Canvas 初期化 (エラー処理は expect で簡略化)
+        // TODO: エラー発生時に panic する代わりに、適切なエラー処理 (例: Result を返す) を検討
+        let (canvas, context) = app::init_handler::initialize_canvas()
+            .expect("Failed to initialize canvas and context");
+
+        // --- その他のフィールド初期化 --- 
         let my_player_id_arc = Arc::new(Mutex::new(None));
-
-        let server_url = format!("ws://{}:{}", "localhost", 8101);
-        let status_arc = Arc::new(Mutex::new(ConnectionStatus::Disconnected));
-
-        let network_manager = NetworkManager::new(
-            server_url,
-            Arc::clone(&status_arc),
-            Arc::clone(&message_queue_arc),
-        );
-        let network_manager_arc = Arc::new(Mutex::new(network_manager));
-
-        // DealInitialCardsSystem のインスタンスも作る！ default() で作れるようにしておいてよかった！ ✨
         let deal_system = DealInitialCardsSystem::default();
-
-        // ★ event_closures を初期化 ★
         let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
-        // ★追加: 新しいフィールドの初期化★
         let dragging_state_arc = Arc::new(Mutex::new(None));
         let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
         let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
-
-        // ★ Canvas 要素と 2D コンテキストを取得・設定 ★
-        let window = window().expect("Failed to get window");
-        let document = window.document().expect("Failed to get document");
-        let canvas = document
-            .get_element_by_id("game-canvas") // ★ ID を "game-canvas" に変更！★
-            .expect("#game-canvas element not found")
-            .dyn_into::<HtmlCanvasElement>()
-            .map_err(|_| ())
-            .expect("Element is not an HtmlCanvasElement");
-
-        let context = canvas
-            .get_context("2d")
-            .expect("Failed to get 2d context")
-            .expect("Option for 2d context is None") // get_context は Option<Result<Object>> を返す
-            .dyn_into::<CanvasRenderingContext2d>()
-            .map_err(|_| ())
-            .expect("Context is not CanvasRenderingContext2d");
-        
-        log("Canvas and 2D context obtained successfully.");
 
         log("GameApp: Initialization complete.");
         Self {
@@ -170,12 +137,11 @@ impl GameApp {
             network_manager: network_manager_arc,
             message_queue: message_queue_arc,
             my_player_id: my_player_id_arc,
-            deal_system, // deal_system を GameApp に追加！
-            event_closures: event_closures_arc, // ★初期化したものをセット★
+            deal_system,
+            event_closures: event_closures_arc,
             dragging_state: dragging_state_arc,
             window_mousemove_closure: window_mousemove_closure_arc,
             window_mouseup_closure: window_mouseup_closure_arc,
-            // ★取得した canvas と context をセット★
             canvas,
             context,
         }
