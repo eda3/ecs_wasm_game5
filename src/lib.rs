@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 // ★修正: web-sys から window と、HtmlElement を使う！ Element は削除！★
-use web_sys::{window, HtmlElement, Event, EventTarget, MouseEvent};
+use web_sys::{window, HtmlElement, Event, EventTarget, MouseEvent, HtmlSpanElement};
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
@@ -29,7 +29,7 @@ pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 use crate::world::World;
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
 use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId};
-use crate::components::{card::Card, position::Position, stack::StackInfo, player::Player};
+use crate::components::{card::{Card, Rank, Suit}, position::Position, stack::StackInfo, player::Player};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
 use serde_json; // serde_json を使う
@@ -59,6 +59,34 @@ pub fn set_panic_hook() {
 #[wasm_bindgen]
 pub fn greet(name: &str) {
     log(&format!("Hello from Rust, {}!", name));
+}
+
+// --- ★追加: ヘルパー関数 --- ★
+fn get_rank_text(rank: &Rank) -> String {
+    match rank {
+        Rank::Ace => "A".to_string(),
+        Rank::King => "K".to_string(),
+        Rank::Queen => "Q".to_string(),
+        Rank::Jack => "J".to_string(),
+        Rank::Ten => "10".to_string(),
+        Rank::Nine => "9".to_string(),
+        Rank::Eight => "8".to_string(),
+        Rank::Seven => "7".to_string(),
+        Rank::Six => "6".to_string(),
+        Rank::Five => "5".to_string(),
+        Rank::Four => "4".to_string(),
+        Rank::Three => "3".to_string(),
+        Rank::Two => "2".to_string(),
+    }
+}
+
+fn get_suit_symbol(suit: &Suit) -> String {
+    match suit {
+        Suit::Heart => "♥".to_string(),
+        Suit::Diamond => "♦".to_string(),
+        Suit::Club => "♣".to_string(),
+        Suit::Spade => "♠".to_string(),
+    }
 }
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
@@ -556,8 +584,34 @@ impl GameApp {
                 card_element.set_attribute("data-entity-id", &entity.0.to_string()).expect("Failed to set data-entity-id");
                 let face_class = if card.is_face_up { "face-up" } else { "face-down" };
                 card_element.class_list().add_1(face_class).expect("Failed to add face class");
-                if card.is_face_up { /* スート・ランククラス追加 */ }
-                else { /* スート・ランククラス削除 */ }
+                
+                // ★修正: 表向きの場合、innerHTML の代わりに span 要素を追加★
+                if card.is_face_up {
+                    let suit_class = format!("suit-{}", format!("{:?}", card.suit).to_lowercase());
+                    let rank_class = format!("rank-{}", format!("{:?}", card.rank).to_lowercase());
+                    card_element.class_list().add_1(&suit_class).expect("Failed to add suit class");
+                    card_element.class_list().add_1(&rank_class).expect("Failed to add rank class");
+
+                    // --- ランク span 作成 ---
+                    let rank_span_el = document.create_element("span").expect("Failed to create rank span");
+                    let rank_span = rank_span_el.dyn_into::<HtmlSpanElement>().expect("Failed to cast rank span");
+                    rank_span.class_list().add_1("rank").expect("Failed to add class 'rank'");
+                    rank_span.set_text_content(Some(&get_rank_text(&card.rank)));
+                    card_element.append_child(&rank_span).expect("Failed to append rank span");
+
+                    // --- スート span 作成 ---
+                    let suit_span_el = document.create_element("span").expect("Failed to create suit span");
+                    let suit_span = suit_span_el.dyn_into::<HtmlSpanElement>().expect("Failed to cast suit span");
+                    suit_span.class_list().add_1("suit").expect("Failed to add class 'suit'");
+                    suit_span.set_text_content(Some(&get_suit_symbol(&card.suit)));
+                    card_element.append_child(&suit_span).expect("Failed to append suit span");
+
+                } else {
+                    // 裏向きの場合は中身を空にする（子要素を追加しない）
+                    // card_element.set_inner_html(""); // 念のため呼んでも良い
+                }
+                
+                // 位置スタイル設定
                 let style = card_element.style();
                 style.set_property("left", &format!("{}px", position.x)).expect("Failed to set left style");
                 style.set_property("top", &format!("{}px", position.y)).expect("Failed to set top style");
