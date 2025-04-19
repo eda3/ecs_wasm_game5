@@ -615,21 +615,31 @@ impl GameApp {
         let world = self.world.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
 
         // --- カード要素の取得とソート --- 
-        // ↓↓↓ 型指定に crate::component:: を追加！
-        let mut cards_to_render: Vec<(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>)> = world
-            // ↓↓↓ iter の型ヒントも修正！ (ただし E0599 はこれでは解決しない)
-            .iter::<(Entity, &crate::component::Position, &crate::component::Card)>()
-            .filter_map(|(entity, pos, card)| {
-                // ↓↓↓ get_component の型指定も crate::component:: を追加！
-                let dragging_info = world.get_component::<crate::component::DraggingInfo>(entity).cloned(); // Remove .ok()
-                let stack_info = world.get_component::<crate::component::StackInfo>(entity); // Just get Option<&StackInfo>
-                Some((entity, pos, card, dragging_info, stack_info))
-            })
-            .collect();
+        // ↓↓↓ E0599 修正: world.iter() ではなく get_all_entities_with_component を使う！
+        let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
+        let mut cards_to_render: Vec<(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>)> = Vec::with_capacity(card_entities.len());
+
+        for &entity in &card_entities {
+            // ループ内で各コンポーネントを取得
+            if let (Some(pos), Some(card)) = (
+                world.get_component::<crate::component::Position>(entity),
+                world.get_component::<crate::component::Card>(entity)
+            ) {
+                // DraggingInfo と StackInfo は Option で取得
+                let dragging_info = world.get_component::<crate::component::DraggingInfo>(entity).cloned(); // cloned() で Option<DraggingInfo> に
+                let stack_info = world.get_component::<crate::component::StackInfo>(entity); // &StackInfo の Option
+
+                cards_to_render.push((entity, pos, card, dragging_info, stack_info));
+            } else {
+                // Card または Position が見つからない場合はスキップ (またはエラーログ)
+                log(&format!("Warning: Skipping entity {:?} in render_game_rust because Card or Position component is missing.", entity));
+            }
+        }
+        // ↑↑↑ E0599 修正ここまで
 
         // Sort cards by stack and position within the stack, or original position if dragging
         cards_to_render.sort_by(|a, b| {
-            // ↓↓↓ ここも Option<crate::component::DraggingInfo> と Option<&crate::component::StackInfo> を使うように型を明示 (タプル分解の型注釈は通常不要だが念のため)
+            // ここも Option<crate::component::DraggingInfo> と Option<&crate::component::StackInfo> を使うように型を明示 (タプル分解の型注釈は通常不要だが念のため)
             let (_, _, _, dragging_info_a, stack_info_a_opt): &(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>) = a;
             let (_, _, _, dragging_info_b, stack_info_b_opt): &(Entity, &crate::component::Position, &crate::component::Card, Option<crate::component::DraggingInfo>, Option<&crate::component::StackInfo>) = b;
 
