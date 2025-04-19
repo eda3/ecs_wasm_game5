@@ -26,6 +26,7 @@ use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId}; //
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
 use serde_json; // serde_json を使う
+use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -72,9 +73,17 @@ impl GameApp {
 
         let world_arc = Arc::new(Mutex::new(world));
         let message_queue_arc = Arc::new(Mutex::new(VecDeque::new()));
-        let server_url = format!("ws://{}:{}", "162.43.8.148", 8101);
-        let network_manager_arc = Arc::new(Mutex::new(NetworkManager::new(server_url)));
         let my_player_id_arc = Arc::new(Mutex::new(None));
+
+        let server_url = format!("ws://{}:{}", "162.43.8.148", 8101);
+        let status_arc = Arc::new(Mutex::new(ConnectionStatus::Disconnected));
+
+        let network_manager = NetworkManager::new(
+            server_url,
+            Arc::clone(&status_arc),
+            Arc::clone(&message_queue_arc),
+        );
+        let network_manager_arc = Arc::new(Mutex::new(network_manager));
 
         log("GameApp: Initialization complete.");
         Self {
@@ -85,12 +94,16 @@ impl GameApp {
         }
     }
 
-    // WebSocket接続 (network.rs 修正待ち)
+    // WebSocket接続 (network.rs 修正待ち → 修正済み！ connect 呼び出しを有効化！)
     pub fn connect(&self) {
         log("GameApp: connect() called.");
-        log("GameApp: connect() - Requires modification in network.rs! Call commented out.");
-        // let _nm = self.network_manager.lock().expect("Failed to lock NetworkManager for connect"); // unused warning 対策
-        // _nm.connect();
+        // network.rs が修正されたので、connect の呼び出しを有効にする！
+        // network_manager は Arc<Mutex<>> なので、ロックしてからメソッドを呼ぶ。
+        // connect は &mut self を取るので、MutexGuard を取得する必要がある。
+        match self.network_manager.lock() {
+            Ok(mut nm) => nm.connect(), // ロック成功！connect を呼ぶ
+            Err(e) => log(&format!("GameApp: Failed to lock NetworkManager for connect: {:?}", e)), // ロック失敗
+        }
     }
 
     // メッセージ送信ヘルパー
