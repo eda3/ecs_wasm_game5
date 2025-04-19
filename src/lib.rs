@@ -51,7 +51,7 @@ use crate::components::{
     position::Position,
     player::Player, // Import Player from components
     game_state::{GameState as GameLogicState, GameStatus}, // Import GameState/Status from components
-    stack::{StackInfo, StackType}, // Import StackInfo/StackType from components
+    stack::{StackInfo}, // Import StackInfo/StackType from components
 };
 
 // systems/ 以下のシステムを use 宣言！
