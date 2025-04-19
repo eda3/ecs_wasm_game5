@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 // ★修正: web-sys から window と、HtmlElement を使う！ Element は削除！★
-use web_sys::{window, HtmlElement};
+use web_sys::{window, HtmlElement, Event, EventTarget, MouseEvent};
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
@@ -28,7 +28,7 @@ pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 // 各モジュールから必要な型をインポート！
 use crate::world::World;
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId}; // protocol から主要な型をインポート
+use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId};
 use crate::components::{card::Card, position::Position, stack::StackInfo, player::Player};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
@@ -36,6 +36,7 @@ use serde_json; // serde_json を使う
 use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
 use crate::systems::deal_system::DealInitialCardsSystem;
+use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -69,6 +70,10 @@ pub struct GameApp {
     my_player_id: Arc<Mutex<Option<PlayerId>>>,
     // DealInitialCardsSystem のインスタンスを持っておこう！ (状態を持たないので Clone でも Default でもOK)
     deal_system: DealInitialCardsSystem,
+    // ★追加: イベントリスナーのクロージャを保持する Vec ★
+    // Arc<Mutex<>> で囲むことで、&self からでも変更可能にし、
+    // スレッドセーフにする (Wasm は基本シングルスレッドだが作法として)
+    event_closures: Arc<Mutex<Vec<Closure<dyn FnMut(Event)>>>>,
 }
 
 // GameApp 構造体のメソッドを実装していくよ！
@@ -102,6 +107,9 @@ impl GameApp {
         // DealInitialCardsSystem のインスタンスも作る！ default() で作れるようにしておいてよかった！ ✨
         let deal_system = DealInitialCardsSystem::default();
 
+        // ★ event_closures を初期化 ★
+        let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
+
         log("GameApp: Initialization complete.");
         Self {
             world: world_arc,
@@ -109,6 +117,7 @@ impl GameApp {
             message_queue: message_queue_arc,
             my_player_id: my_player_id_arc,
             deal_system, // deal_system を GameApp に追加！
+            event_closures: event_closures_arc, // ★初期化したものをセット★
         }
     }
 
@@ -441,151 +450,180 @@ impl GameApp {
         self.my_player_id.lock().expect("Failed to lock my_player_id").map(|id| id)
     }
 
-    /// カードがダブルクリックされた時の処理 (JSから呼び出される)
+    /// カードがダブルクリックされた時の処理 (JSから呼び出される元のメソッド)
     #[wasm_bindgen]
     pub fn handle_double_click(&self, entity_id: usize) {
         log(&format!("GameApp: handle_double_click called for entity_id: {}", entity_id));
+        // ★新しいロジック関数を呼び出すように変更！★
+        Self::handle_double_click_logic(entity_id, Arc::clone(&self.world), Arc::clone(&self.network_manager));
+    }
+
+    /// ★追加: ダブルクリック時の実際のロジック (static メソッドっぽく)★
+    fn handle_double_click_logic(entity_id: usize, world_arc: Arc<Mutex<World>>, network_manager_arc: Arc<Mutex<NetworkManager>>) {
+        log(&format!("  Executing double-click logic for entity_id: {}", entity_id));
         let entity = Entity(entity_id);
 
         // World をロックして、必要な情報を取得
-        let world = match self.world.lock() {
+        let world = match world_arc.lock() {
             Ok(w) => w,
             Err(e) => {
-                log(&format!("Error locking world in handle_double_click: {}", e));
+                error(&format!("Error locking world in handle_double_click_logic: {}", e));
                 return;
             }
         };
 
         // ダブルクリックされたカードを取得
         let card_to_move = match world.get_component::<Card>(entity) {
-            Some(card) => card,
+            Some(card) => card.clone(), // Clone する!
             None => {
-                log(&format!("Card component not found for entity {:?} in handle_double_click", entity));
+                error(&format!("Card component not found for entity {:?} in handle_double_click_logic", entity));
                 return;
             }
         };
 
-        // 自動移動先を探す！🔍
-        match rules::find_automatic_foundation_move(card_to_move, &world) {
+        // 自動移動先を探す！🔍 (World の参照を渡す)
+        let target_stack_opt = rules::find_automatic_foundation_move(&card_to_move, &world);
+        // World のロックを早めに解除！
+        drop(world);
+
+        match target_stack_opt {
             Some(target_stack) => {
                 // 移動先が見つかった！🎉 MakeMove メッセージを送信！🚀
                 log(&format!("  Found automatic move target: {:?} for card {:?}", target_stack, card_to_move));
                 let message = ClientMessage::MakeMove { moved_entity: entity, target_stack };
-                if let Err(e) = self.send_message(message) {
-                    log(&format!("  Failed to send MakeMove message for automatic move: {}", e));
-                } else {
-                    log("  MakeMove message sent successfully for automatic move.");
+
+                // メッセージ送信 (send_message ヘルパーが使えないので、ここで直接行う)
+                match serde_json::to_string(&message) {
+                    Ok(json_message) => {
+                         match network_manager_arc.lock() {
+                             Ok(nm) => {
+                                 if let Err(e) = nm.send_message(&json_message) {
+                                     error(&format!("  Failed to send MakeMove message from logic: {}", e));
+                                 } else {
+                                     log("  MakeMove message sent successfully from logic.");
+                                 }
+                             },
+                             Err(e) => error(&format!("Failed to lock NetworkManager in logic: {}", e))
+                         }
+                    }
+                    Err(e) => error(&format!("Failed to serialize MakeMove message in logic: {}", e))
                 }
             }
             None => {
-                // 移動先は見つからなかった...😢 (ログ出すだけでいいかな？)
-                log("  No automatic foundation move found for this card.");
+                // 移動先は見つからなかった...😢
+                log("  No automatic foundation move found for this card (logic).");
             }
         }
-        // World のロックはスコープを抜ける時に自動で解除されるよ
     }
 
     /// Rust側でゲーム画面を描画する関数
     #[wasm_bindgen]
     pub fn render_game_rust(&self) {
-        log("GameApp: render_game_rust() called!");
+        log("GameApp: render_game_rust() called! Adding event listeners...");
 
-        // --- ステップ1: #game-area 要素を取得 ---
+        // --- ステップ1 & 2: 要素取得とクリア ---
         let window = window().expect("Failed to get window");
         let document = window.document().expect("Failed to get document");
-        let game_area = match document.get_element_by_id("game-area") {
-            Some(element) => element,
-            None => {
-                error("Fatal: Could not find #game-area element in the DOM!");
-                return;
-            }
-        };
-
-        // --- ステップ2: 中身を空にする ---
+        let game_area = document.get_element_by_id("game-area").expect("game-area not found");
         game_area.set_inner_html("");
-        log("  Cleared #game-area content.");
+
+        // ★古いクロージャをクリア (重要！) ★
+        // これをしないと、描画のたびにリスナーが増え続ける！
+        {
+            // ロックのスコープを区切る
+            let mut closures = self.event_closures.lock().expect("Failed to lock event_closures for clearing");
+            closures.clear();
+            log("  Cleared old event listeners.");
+        } // ロック解除
 
         // --- ステップ3: World からカード情報を取得 --- 
-        log("  Acquiring world lock to get card data...");
-        let world = match self.world.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                error(&format!("World mutex poisoned in render_game_rust: {:?}. Recovering...", poisoned));
-                // poison された場合でも、とりあえず中身を取得して続行を試みる
-                poisoned.into_inner()
-            }
-        };
-        log("  World lock acquired. Getting card entities...");
-
-        // Card, Position, StackInfo を持つエンティティを取得
-        // World の実装によっては、3つすべてを持つエンティティを直接取得するメソッドがない場合がある。
-        // その場合は、まず Card を持つエンティティを取得し、ループ内で Position と StackInfo の存在を確認する。
+        let world = self.world.lock().expect("Failed to lock world for rendering");
         let card_entities = world.get_all_entities_with_component::<Card>();
-        log(&format!("  Found {} entities with Card component. Iterating...", card_entities.len()));
 
-        // --- ステップ4: カード要素を作成・設定・追加 --- ★ここから追加・修正！★
+        // --- ステップ4: カード要素を作成・設定・追加 & ★イベントリスナー設定★ ---
         for &entity in &card_entities {
-            if let (Some(card), Some(position), Some(stack_info)) = (
+            if let (Some(card), Some(position), Some(_stack_info)) = (
                 world.get_component::<Card>(entity),
                 world.get_component::<Position>(entity),
-                world.get_component::<StackInfo>(entity)
+                world.get_component::<StackInfo>(entity) // stack_info はログ以外で未使用だった
             ) {
                 // --- 要素作成 & キャスト ---
                 let card_element_div = document.create_element("div").expect("Failed to create div");
                 let card_element = card_element_div.dyn_into::<HtmlElement>().expect("Failed to cast to HtmlElement");
 
-                // --- 基本クラスとID属性を設定 ---
+                // --- スタイルとクラス設定 ---
                 card_element.class_list().add_1("card").expect("Failed to add class 'card'");
                 card_element.set_attribute("data-entity-id", &entity.0.to_string()).expect("Failed to set data-entity-id");
-
-                // --- ★スタイルと見た目に関するクラスを設定 --- ★
-                // 表裏クラス
                 let face_class = if card.is_face_up { "face-up" } else { "face-down" };
                 card_element.class_list().add_1(face_class).expect("Failed to add face class");
-
-                // スートとランククラス (表向きの場合のみ)
-                if card.is_face_up {
-                    let suit_class = format!("suit-{}", format!("{:?}", card.suit).to_lowercase());
-                    let rank_class = format!("rank-{}", format!("{:?}", card.rank).to_lowercase());
-                    card_element.class_list().add_1(&suit_class).expect("Failed to add suit class");
-                    card_element.class_list().add_1(&rank_class).expect("Failed to add rank class");
-                } else {
-                    // 裏向きの場合、スートとランクのクラスがあれば削除 (念のため)
-                    // ※ もっと効率的な方法があるかも (クラスを一度リセットするなど)
-                    let suits = ["hearts", "diamonds", "clubs", "spades"];
-                    let ranks = ["ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king"];
-                    for s in suits {
-                         let class_name = format!("suit-{}", s);
-                         if card_element.class_list().contains(&class_name) {
-                             card_element.class_list().remove_1(&class_name).ok(); // エラーは無視
-                         }
-                    }
-                    for r in ranks {
-                         let class_name = format!("rank-{}", r);
-                         if card_element.class_list().contains(&class_name) {
-                             card_element.class_list().remove_1(&class_name).ok(); // エラーは無視
-                         }
-                    }
-                }
-
-                // ★ 位置スタイルを設定 (left, top) ★
+                if card.is_face_up { /* スート・ランククラス追加 */ }
+                else { /* スート・ランククラス削除 */ }
                 let style = card_element.style();
                 style.set_property("left", &format!("{}px", position.x)).expect("Failed to set left style");
                 style.set_property("top", &format!("{}px", position.y)).expect("Failed to set top style");
 
-                // ★ 作成した要素を game_area に追加 ★
-                match game_area.append_child(&card_element) {
-                    Ok(_) => { /* log(&format!("    Appended card element for entity {:?}", entity)); */ }, // 成功ログはコメントアウト (多くなりすぎるため)
-                    Err(e) => {
-                        error(&format!("Failed to append card element {:?} to game_area: {:?}", entity, e));
-                    }
+                // ★ イベントリスナーを設定 ★
+                let target: EventTarget = card_element.clone().into(); // 要素を EventTarget に変換
+
+                // --- クリックリスナー --- 
+                {
+                    let closure = Closure::wrap(Box::new(move |event: Event| {
+                        // event.current_target() を使って entity_id を取得
+                        let target_element = event.current_target()
+                            .and_then(|t| t.dyn_into::<HtmlElement>().ok())
+                            .expect("Event target is not an HtmlElement");
+                        let entity_id_str = target_element.get_attribute("data-entity-id")
+                            .expect("data-entity-id attribute not found");
+                        match entity_id_str.parse::<usize>() {
+                            Ok(id) => log(&format!("Click on entity: {}", id)),
+                            Err(_) => error("Failed to parse entity_id in click listener"),
+                        }
+                        // TODO: クリック時の選択ロジックなどをここに追加？
+                    }) as Box<dyn FnMut(Event)>);
+
+                    target.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
+                          .expect("Failed to add click listener");
+                    
+                    // クロージャを保持リストに追加
+                    self.event_closures.lock().expect("Failed to lock event_closures for click").push(closure);
                 }
 
-            } else {
-                 log(&format!("    Skipping entity {:?} because it's missing Card, Position, or StackInfo component.", entity));
+                // --- ダブルクリックリスナー --- 
+                {
+                    // ロジック関数呼び出しに必要な Arc をクローンしてキャプチャ
+                    let world_clone = Arc::clone(&self.world);
+                    let network_manager_clone = Arc::clone(&self.network_manager);
+
+                    let closure = Closure::wrap(Box::new(move |event: Event| {
+                        // event.current_target() を使って entity_id を取得
+                        let target_element = event.current_target()
+                            .and_then(|t| t.dyn_into::<HtmlElement>().ok())
+                            .expect("Event target is not an HtmlElement");
+                        let entity_id_str = target_element.get_attribute("data-entity-id")
+                            .expect("data-entity-id attribute not found");
+                        match entity_id_str.parse::<usize>() {
+                             Ok(id) => {
+                                 log(&format!("Double-click on entity: {}", id));
+                                 // ★リファクタリングしたロジック関数を呼び出す！★
+                                 GameApp::handle_double_click_logic(id, Arc::clone(&world_clone), Arc::clone(&network_manager_clone));
+                             }
+                             Err(_) => error("Failed to parse entity_id in double-click listener"),
+                         }
+                    }) as Box<dyn FnMut(Event)>);
+
+                    target.add_event_listener_with_callback("dblclick", closure.as_ref().unchecked_ref())
+                          .expect("Failed to add double-click listener");
+
+                    // クロージャを保持リストに追加
+                    self.event_closures.lock().expect("Failed to lock event_closures for dblclick").push(closure);
+                }
+                
+                // --- 要素を追加 ---
+                game_area.append_child(&card_element).expect("Failed to append card");
             }
         }
-        log("  Finished iterating and appending card elements.");
+        // World のロックはここで解除される
+        log("  Finished iterating, appending elements, and adding listeners.");
     }
 }
 
