@@ -153,36 +153,48 @@ impl GameApp {
         }
     }
 
-    // 受信メッセージ処理 (借用エラーあり)
+    // 受信メッセージ処理 (借用エラー E0502 修正！)
     #[wasm_bindgen]
     pub fn process_received_messages(&mut self) {
-        let mut queue = self.message_queue.lock().expect("Failed to lock message queue");
-        while let Some(message) = queue.pop_front() {
-            log(&format!("GameApp: Processing received message: {:?}", message));
+        // 1. メッセージキューをロックして、中身を一時的な Vec に移す
+        let messages_to_process: Vec<ServerMessage> = { // 新しいスコープを作る
+            let mut queue = self.message_queue.lock().expect("Failed to lock message queue");
+            // queue.drain(..) を使って、キューの中身をすべて取り出して Vec にする
+            queue.drain(..).collect()
+            // このスコープの終わりで `queue` (MutexGuard) が破棄され、ロックが解除される！
+        }; // ← ここでロック解除！🔓
+
+        // 2. ロックが解除された状態で、一時的な Vec を処理する
+        if !messages_to_process.is_empty() {
+            log(&format!("GameApp: Processing {} received messages...", messages_to_process.len()));
+        }
+
+        for message in messages_to_process {
+            log(&format!("  Processing: {:?}", message));
             match message {
                 ServerMessage::GameJoined { your_player_id, initial_game_state } => {
                     *self.my_player_id.lock().expect("Failed to lock my_player_id") = Some(your_player_id);
                     log(&format!("GameApp: Game joined! My Player ID: {}", your_player_id));
-                    // ここで借用エラーが発生する！
-                    // self.apply_game_state(initial_game_state);
-                    log("Error E0502: Temporarily commented out apply_game_state call inside loop.");
+                    // 借用エラーが解決したのでコメントアウト解除！🎉
+                    self.apply_game_state(initial_game_state);
+                    // log("Error E0502: Temporarily commented out apply_game_state call inside loop."); // コメント削除
                 }
                 ServerMessage::GameStateUpdate { current_game_state } => {
                     log("GameApp: Received GameStateUpdate.");
-                    // ここも借用エラーが発生する！
-                    // self.apply_game_state(current_game_state);
-                    log("Error E0502: Temporarily commented out apply_game_state call inside loop.");
+                    // 借用エラーが解決したのでコメントアウト解除！🎉
+                    self.apply_game_state(current_game_state);
+                    // log("Error E0502: Temporarily commented out apply_game_state call inside loop."); // コメント削除
                 }
                 ServerMessage::MoveRejected { reason } => {
                     log(&format!("GameApp: Move rejected by server: {}", reason));
                 }
                 ServerMessage::PlayerJoined { player_id, player_name } => {
                     log(&format!("GameApp: Player {} ({}) joined.", player_name, player_id));
-                    // TODO: World にプレイヤー情報を追加/更新する処理
+                    // TODO: World にプレイヤー情報を追加/更新する処理 (apply_game_state でやるかも？)
                 }
                 ServerMessage::PlayerLeft { player_id } => {
                     log(&format!("GameApp: Player {} left.", player_id));
-                    // TODO: World からプレイヤー情報を削除/更新する処理
+                    // TODO: World からプレイヤー情報を削除/更新する処理 (apply_game_state でやるかも？)
                 }
                 ServerMessage::Pong => {
                     log("GameApp: Received Pong from server.");
@@ -192,7 +204,7 @@ impl GameApp {
                 }
             }
         }
-        // TODO: ループの外で apply_game_state を呼ぶなど、E0502 エラーの根本対応が必要。
+        // ループの外で apply_game_state を呼ぶ必要はなくなった！
     }
 
     /// サーバーから受け取った GameStateData を World に反映させる内部関数。
