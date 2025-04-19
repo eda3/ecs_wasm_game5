@@ -325,21 +325,21 @@ impl GameApp {
         did_change = true; // クリアしたら変更ありとみなす
         log("  Clearing existing player and card entities...");
         let player_entities: Vec<Entity> = world
-            .get_all_entities_with_component::<Player>()
+            .get_all_entities_with_component::<crate::component::Player>()
             .into_iter()
             .collect();
         for entity in player_entities {
-            world.remove_component::<Player>(entity);
+            world.remove_component::<crate::component::Player>(entity);
             // log(&format!("    Removed Player component from {:?}", entity));
         }
         let card_entities: Vec<Entity> = world
-            .get_all_entities_with_component::<Card>()
+            .get_all_entities_with_component::<crate::component::Card>()
             .into_iter()
             .collect();
         for entity in card_entities {
-            world.remove_component::<Card>(entity);
-            world.remove_component::<Position>(entity);
-            world.remove_component::<StackInfo>(entity);
+            world.remove_component::<crate::component::Card>(entity);
+            world.remove_component::<crate::component::Position>(entity);
+            world.remove_component::<crate::component::StackInfo>(entity);
             // log(&format!("    Removed Card related components from {:?}", entity));
         }
 
@@ -357,20 +357,25 @@ impl GameApp {
         for card_data in game_state.cards {
             let entity = card_data.entity;
             world.create_entity_with_id(entity); // 存在保証
-            let card_component = Card {
-                suit: card_data.suit,
-                rank: card_data.rank,
+            let card_component = crate::component::Card {
+                suit: card_data.suit.into(), // card::Suit -> component::Suit
+                rank: card_data.rank.into(), // card::Rank -> component::Rank
                 is_face_up: card_data.is_face_up,
             };
             world.add_component(entity, card_component);
-            let stack_info_component = StackInfo {
-                stack_type: card_data.stack_type,
-                position_in_stack: card_data.position_in_stack,
+            let stack_info_component = crate::component::StackInfo {
+                stack_type: card_data.stack_type.into(), // stack::StackType -> component::StackType
+                stack_index: match card_data.stack_type {
+                    crate::components::stack::StackType::Foundation(idx) => idx,
+                    crate::components::stack::StackType::Tableau(idx) => idx,
+                    _ => 0, // Stock, Waste などは index 0 (あるいは適切な値) とする
+                },
+                position_in_stack: card_data.position_in_stack, // u8
             };
             world.add_component(entity, stack_info_component);
-            let position_component = Position {
-                x: card_data.position.x,
-                y: card_data.position.y,
+            let position_component = crate::component::Position {
+                x: card_data.position.x as f64, // f32 to f64
+                y: card_data.position.y as f64, // f32 to f64
             };
             world.add_component(entity, position_component);
         }
@@ -430,18 +435,22 @@ impl GameApp {
     /// 現在の World の状態から GameStateData を作成する
     fn get_initial_state_data(&self, world: &World) -> GameStateData {
         log("GameApp: get_initial_state_data called.");
-        let card_entities = world.get_all_entities_with_component::<Card>();
+        let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
         let mut card_data_list = Vec::with_capacity(card_entities.len());
         log(&format!("  Found {} card entities. Creating CardData list...", card_entities.len()));
         for &entity in &card_entities {
-            let card = world.get_component::<Card>(entity).expect(&format!("Card component not found for entity {:?}", entity));
-            let stack_info = world.get_component::<StackInfo>(entity).expect(&format!("StackInfo component not found for entity {:?}", entity));
-            let position = world.get_component::<Position>(entity).expect(&format!("Position component not found for entity {:?}", entity));
-            let position_data = PositionData { x: position.x, y: position.y };
+            let card = world.get_component::<crate::component::Card>(entity).expect(&format!("Card component not found for entity {:?}", entity));
+            let stack_info = world.get_component::<crate::component::StackInfo>(entity).expect(&format!("StackInfo component not found for entity {:?}", entity));
+            let position = world.get_component::<crate::component::Position>(entity).expect(&format!("Position component not found for entity {:?}", entity));
+            let position_data = PositionData { x: position.x as f32, y: position.y as f32 };
             let card_data = CardData {
-                entity, suit: card.suit, rank: card.rank, is_face_up: card.is_face_up,
-                stack_type: stack_info.stack_type, position_in_stack: stack_info.position_in_stack,
-                position: position_data,
+                entity, 
+                suit: card.suit.into(), // component::Suit -> card::Suit
+                rank: card.rank.into(), // component::Rank -> card::Rank
+                is_face_up: card.is_face_up,
+                stack_type: stack_info.stack_type.into(), // component::StackType -> stack::StackType
+                position_in_stack: stack_info.position_in_stack, // u8
+                position: position_data, // f32 に変換済み
             };
             card_data_list.push(card_data);
         }
@@ -466,20 +475,20 @@ impl GameApp {
     pub fn get_world_state_json(&self) -> String {
         log("GameApp: get_world_state_json called.");
         let world = self.world.lock().expect("Failed to lock world for getting state");
-        let card_entities = world.get_all_entities_with_component::<Card>();
+        let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
         let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
         log(&format!("  Found {} card entities. Preparing JSON data...", card_entities.len()));
-        for entity in card_entities { // ここは &entity ではなく entity でOKだったかも？ world のメソッドによる
-            let card = world.get_component::<Card>(entity).expect("Card component not found");
-            let stack_info = world.get_component::<StackInfo>(entity).expect("StackInfo component not found");
+        for entity in card_entities {
+            let card = world.get_component::<crate::component::Card>(entity).expect("Card component not found");
+            let stack_info = world.get_component::<crate::component::StackInfo>(entity).expect("StackInfo component not found");
              // ★ Position も取得！
-            let position = world.get_component::<Position>(entity).expect("Position component not found");
+            let position = world.get_component::<crate::component::Position>(entity).expect("Position component not found");
 
             let (stack_type_str, stack_index_json) = match stack_info.stack_type {
-                StackType::Stock => ("Stock", serde_json::Value::Null),
-                StackType::Waste => ("Waste", serde_json::Value::Null),
-                StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
-                StackType::Tableau(index) => ("Tableau", serde_json::json!(index)),
+                crate::components::stack::StackType::Stock => ("Stock", serde_json::Value::Null),
+                crate::components::stack::StackType::Waste => ("Waste", serde_json::Value::Null),
+                crate::components::stack::StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
+                crate::components::stack::StackType::Tableau(index) => ("Tableau", serde_json::json!(index)),
             };
             let card_json = serde_json::json!({
                 "entity_id": entity.0,
@@ -544,7 +553,7 @@ impl GameApp {
         };
 
         // ダブルクリックされたカードを取得
-        let card_to_move = match world.get_component::<Card>(entity) {
+        let card_to_move = match world.get_component::<crate::component::Card>(entity) {
             Some(card) => card.clone(), // Clone する!
             None => {
                 error(&format!("Card component not found for entity {:?} in handle_double_click_logic", entity));
