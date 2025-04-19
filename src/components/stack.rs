@@ -2,6 +2,7 @@
 
 // serde を使うためにインポート！Serialize と Deserialize トレイトを使うよ。
 use serde::{Serialize, Deserialize};
+use wasm_bindgen::prelude::*;
 
 /// カードが存在する場所の種類を示す Enum だよ。
 /// これを使って、カードが山札にあるのか、場札の何列目にあるのか、などを区別するよ。
@@ -9,7 +10,7 @@ use serde::{Serialize, Deserialize};
 /// Debug: println! などで中身をデバッグ表示できるようにする。
 /// PartialEq, Eq: == 演算子で比較できるようにする。
 /// Serialize, Deserialize: この Enum を JSON 形式に変換したり、JSON から戻したりできるようにする！これが重要！✨
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StackType {
     /// 場札 (Tableau) だよ。7つの列があるので、列番号 (0-6) を持つ。
     Tableau(u8),
@@ -24,6 +25,7 @@ pub enum StackType {
     /// クロンダイクでは通常1つだけど、ゲームによっては複数あるかも？
     Waste,
     // 将来的には： Hand(PlayerId), DiscardPile など他のゲーム用に拡張できる
+    Hand,
 }
 
 /// カードのスタックに関する情報を持つコンポーネントだよ。
@@ -50,6 +52,20 @@ impl StackInfo {
 // StackInfo をコンポーネントとして使えるように、Component トレイトを実装！
 // 中身は空でOK！マーカーとして機能するよ。
 impl Component for StackInfo {} // これで World に登録できるようになる
+
+// ↓↓↓ 逆方向の StackType の From トレイト実装を追加！ ↓↓↓
+impl From<crate::component::StackType> for StackType {
+    fn from(component_stack_type: crate::component::StackType) -> Self {
+        match component_stack_type {
+            crate::component::StackType::Tableau => StackType::Tableau(0), // デフォルトインデックス 0
+            crate::component::StackType::Foundation => StackType::Foundation(0), // デフォルトインデックス 0
+            crate::component::StackType::Stock => StackType::Stock,
+            crate::component::StackType::Waste => StackType::Waste,
+            crate::component::StackType::Hand => StackType::Hand,
+        }
+    }
+}
+// ↑↑↑ 逆方向の StackType の From トレイト実装を追加！ ↑↑↑
 
 #[cfg(test)]
 mod tests {

@@ -478,17 +478,18 @@ impl GameApp {
         let card_entities = world.get_all_entities_with_component::<crate::component::Card>();
         let mut cards_json_data: Vec<serde_json::Value> = Vec::with_capacity(card_entities.len());
         log(&format!("  Found {} card entities. Preparing JSON data...", card_entities.len()));
-        for entity in card_entities {
+        for &entity in &card_entities {
             let card = world.get_component::<crate::component::Card>(entity).expect("Card component not found");
             let stack_info = world.get_component::<crate::component::StackInfo>(entity).expect("StackInfo component not found");
              // ★ Position も取得！
             let position = world.get_component::<crate::component::Position>(entity).expect("Position component not found");
 
             let (stack_type_str, stack_index_json) = match stack_info.stack_type {
-                crate::components::stack::StackType::Stock => ("Stock", serde_json::Value::Null),
-                crate::components::stack::StackType::Waste => ("Waste", serde_json::Value::Null),
-                crate::components::stack::StackType::Foundation(index) => ("Foundation", serde_json::json!(index)),
-                crate::components::stack::StackType::Tableau(index) => ("Tableau", serde_json::json!(index)),
+                crate::component::StackType::Stock => ("Stock", serde_json::Value::Null),
+                crate::component::StackType::Waste => ("Waste", serde_json::Value::Null),
+                crate::component::StackType::Foundation => ("Foundation", serde_json::json!(stack_info.stack_index)),
+                crate::component::StackType::Tableau => ("Tableau", serde_json::json!(stack_info.stack_index)),
+                crate::component::StackType::Hand => ("Hand", serde_json::Value::Null),
             };
             let card_json = serde_json::json!({
                 "entity_id": entity.0,
