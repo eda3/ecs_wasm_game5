@@ -213,6 +213,21 @@ impl World {
     pub fn storage_mut<T: Component>(&mut self) -> Option<&mut ComponentStorage<T>> {
         self.get_storage_mut::<T>()
     }
+
+    /// 指定されたエンティティIDが存在するかどうかを確認するよ。
+    ///
+    /// # 引数
+    /// * `entity` - 確認したいエンティティID。
+    ///
+    /// # 戻り値
+    /// * エンティティが作成された範囲内であれば `true`、そうでなければ `false`。
+    ///   (削除はまだ考慮していないよ！)
+    ///
+    /// # 実装について
+    /// 今は単純に、エンティティIDが次に割り振られるID (`next_entity_id`) より小さいかで判断してるよ。
+    pub fn entity_exists(&self, entity: Entity) -> bool {
+        entity.0 < self.entity_manager.next_entity_id
+    }
 }
 
 
