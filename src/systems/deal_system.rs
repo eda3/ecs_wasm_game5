@@ -9,8 +9,8 @@
 // entity モジュール: エンティティ (ゲーム世界のモノを表すID)
 // rand クレート: カードをシャッフルするのに使うよ！🎲 (さっき追加したやつ！)
 use crate::world::World;
-use crate::components::{self, card::{self, Card}, stack::{StackInfo, StackType}};
-use crate::system::System; // 今は直接使わないけど、将来的な拡張性のために use しておくのもアリ！
+use crate::components::{card::{self, Card}, stack::{StackInfo, StackType}};
+// use crate::system::System; // 削除: 今は直接使わないのでコメントアウトまたは削除
 use crate::entity::Entity;
 use rand::seq::SliceRandom; // Vec (配列みたいなもの) の要素をシャッフルする機能 (shuffle) を使うために必要！
 use rand::thread_rng; // OS が提供する安全な乱数生成器を使うために必要！

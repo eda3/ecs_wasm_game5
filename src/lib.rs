@@ -28,6 +28,8 @@ use crate::components::stack::StackType; // components::stack から StackType �
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
 use serde_json; // serde_json を使う
 use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
+// systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
+use crate::systems::deal_system::DealInitialCardsSystem;
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -56,6 +58,8 @@ pub struct GameApp {
     network_manager: Arc<Mutex<NetworkManager>>,
     message_queue: Arc<Mutex<VecDeque<ServerMessage>>>,
     my_player_id: Arc<Mutex<Option<PlayerId>>>,
+    // DealInitialCardsSystem のインスタンスを持っておこう！ (状態を持たないので Clone でも Default でもOK)
+    deal_system: DealInitialCardsSystem,
 }
 
 // GameApp 構造体のメソッドを実装していくよ！
@@ -86,12 +90,16 @@ impl GameApp {
         );
         let network_manager_arc = Arc::new(Mutex::new(network_manager));
 
+        // DealInitialCardsSystem のインスタンスも作る！ default() で作れるようにしておいてよかった！ ✨
+        let deal_system = DealInitialCardsSystem::default();
+
         log("GameApp: Initialization complete.");
         Self {
             world: world_arc,
             network_manager: network_manager_arc,
             message_queue: message_queue_arc,
             my_player_id: my_player_id_arc,
+            deal_system, // deal_system を GameApp に追加！
         }
     }
 
@@ -291,19 +299,67 @@ impl GameApp {
         // World のロックはこの関数のスコープを抜ける時に自動的に解放される。
     }
 
-    // デバッグ用: 接続状態取得
+    // --- 新しく追加！ JSから初期カード配置を実行するためのメソッド --- 🎉
     #[wasm_bindgen]
-    pub fn get_connection_status_debug(&self) -> String {
-        match self.network_manager.lock() {
-            Ok(nm) => format!("{:?}", nm.get_status()),
-            Err(_) => "Error: Failed to lock NetworkManager".to_string(),
+    pub fn deal_initial_cards(&self) {
+        log("GameApp: deal_initial_cards() called.");
+        // World のロックを取得する。
+        // self.world は Arc<Mutex<World>> なので、.lock() で MutexGuard を取得する。
+        // MutexGuard は World への可変参照 (&mut World) を提供してくれるよ！
+        match self.world.lock() {
+            Ok(mut locked_world) => {
+                // ロックに成功したら、保持している deal_system の execute メソッドを呼び出す！
+                // execute メソッドに World の可変参照を渡すよ。
+                log("  Executing DealInitialCardsSystem...");
+                self.deal_system.execute(&mut locked_world);
+                log("  DealInitialCardsSystem executed successfully.");
+            }
+            Err(e) => {
+                // ロックに失敗した場合 (他のスレッドがロックを保持したままパニックしたなど)
+                log(&format!("GameApp: Failed to lock world for dealing cards: {:?}", e));
+            }
         }
     }
 
-    // デバッグ用: プレイヤーID取得
+    // WASM から World の状態を取得して JSON 文字列で返す (デバッグ・描画用)
+    #[wasm_bindgen]
+    pub fn get_world_state_json(&self) -> String {
+        log("GameApp: get_world_state_json called.");
+        let world = self.world.lock().expect("Failed to lock world for getting state");
+
+        // TODO: World の状態 (カード、スタック情報など) を取得して、
+        //       JavaScript で扱いやすい形式 (例: JSON) にシリアライズする。
+        //       今は仮の文字列を返すね！
+        log("  (Not implemented yet) Returning placeholder JSON.");
+        serde_json::json!({ "message": "World state serialization not implemented yet!" }).to_string()
+    }
+
+    // 接続状態を文字列で返す (デバッグ用)
+    #[wasm_bindgen]
+    pub fn get_connection_status_debug(&self) -> String {
+        // 内部でロックを取るので match を使う方が丁寧かもだけど、デバッグ用なので expect で！
+        let status = self.network_manager.lock().expect("Failed to lock NetworkManager for status").get_status();
+        format!("{:?}", status) // Debug トレイトを使って文字列に変換
+    }
+
+    // 自分の Player ID を返す (デバッグ用)
     #[wasm_bindgen]
     pub fn get_my_player_id_debug(&self) -> Option<u32> {
-        self.my_player_id.lock().unwrap().clone()
+        // Option<PlayerId> を Option<u32> に変換する
+        self.my_player_id.lock().expect("Failed to lock my_player_id").map(|id| id)
+    }
+}
+
+// GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)
+// JS側でインスタンスがGCされた時などに呼ばれる…はず！
+impl Drop for GameApp {
+    fn drop(&mut self) {
+        log("GameApp: Dropping GameApp instance. Disconnecting WebSocket...");
+        // ロックを取得して disconnect を呼ぶ
+        match self.network_manager.lock() {
+            Ok(mut nm) => nm.disconnect(),
+            Err(e) => log(&format!("GameApp: Failed to lock NetworkManager for disconnect: {:?}", e)),
+        }
     }
 }
 

@@ -26,10 +26,10 @@
 
 -   [ ] **ゲーム初期化:**
     -   [x] カードデッキ生成ロジック // create_standard_deck in card.rs
-    -   [ ] 初期カード配置 (ディール) システムの実装
+    -   [x] 初期カード配置 (ディール) システムの実装 // deal_system.rs & lib.rs に deal_initial_cards() を実装！✨
 -   [ ] **レンダリング準備:**
     -   [x] `GameApp` (WASM側メイン構造体) の実装 (`src/lib.rs`)
-    -   [ ] `GameApp` から World の状態を取得するメソッド実装
+    -   [ ] `GameApp` から World の状態を取得するメソッド実装 // get_world_state_json() の仮実装を追加！🦴
     -   [ ] JS側でWASMをロードし、`GameApp` インスタンスを作成
     -   [ ] 基本的なHTML/CSS構造の作成 (`index.html`, `style.css`)
     -   [ ] JSから定期的にWASMのゲーム状態を取得し、コンソール等に表示 (デバッグ用)
