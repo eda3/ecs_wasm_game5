@@ -14,22 +14,40 @@ use std::collections::HashSet;
 use crate::entity::Entity;
 // Component: 全てのコンポーネントが実装すべきマーカートレイト (中身は空でもOK)。ジェネリクスでコンポーネント型を制約するのに使う。
 use crate::component::Component;
-// ComponentStorage: 特定の型のコンポーネントを Entity をキーとして格納するトレイト (今回は使わないかも？ HashMap<Entity, T> を直接使う方針)
-// use crate::component::{Component, ComponentStorage}; // ★削除: ComponentStorage はもう使わない！
+
+/// コンポーネントストレージとその操作をまとめた内部的な構造体だよ！✨
+/// これを使うことで、`World` の `component_stores` で型情報を隠蔽しつつも、
+/// 型ごとの操作 (特に削除！) を安全に行えるようにするんだ！賢いっしょ？😎
+struct ComponentStoreEntry {
+    /// 実際のコンポーネントデータ (`HashMap<Entity, T>`) を保持するストレージ。
+    /// `Box<dyn Any>` で型情報を隠蔽 (型消去) してるんだ。これにより、
+    /// いろんな型の `HashMap<Entity, T>` を一つの `HashMap` (`component_stores`) で
+    /// まとめて管理できる！マジ便利！💖
+    storage: Box<dyn Any>,
+
+    /// 指定されたエンティティに対応するコンポーネントを `storage` から削除するための関数ポインタ。🧹
+    /// `storage` (Box<dyn Any>) と削除対象の `entity` を引数に取るよ。
+    /// この関数ポインタがあるおかげで、`destroy_entity` の中で `storage` の具体的な型 (`T`) を
+    /// 知らなくても、型ごとに最適化された削除処理を呼び出せるんだ！天才的アイディア！💡
+    /// `fn(&mut Box<dyn Any>, Entity)` っていう型は、「`Box<dyn Any>` の可変参照と `Entity` を受け取って、何も返さない関数」って意味だよ！
+    remover: fn(&mut Box<dyn Any>, Entity),
+    // TODO: 将来的には、コンポーネントのシリアライズ/デシリアライズ関数とか、
+    //       他の型ごとの操作関数もここに追加できるかもね！🤔
+}
 
 /// ゲーム世界の全てのエンティティとコンポーネントを管理する中心的な構造体 (自作ECSのコア！)。
 /// エンティティの生存管理、コンポーネントの型ごとの保存とアクセス機能を提供するよ。
-// #[derive(Default)] // Defaultトレイトは使うフィールドが増えると手動実装の方が良くなるので削除。new() をちゃんと書く。
 pub struct World {
     /// 現在生存しているエンティティIDのセット。エンティティが存在するかどうかを高速にチェックできる。
     entities: HashSet<Entity>,
     /// 次に生成するエンティティに割り当てるID。エンティティが作成されるたびにインクリメントされる。
     next_entity_id: usize,
-    /// コンポーネントの種類 (TypeId) ごとに、その型のコンポーネントデータを格納するストレージ。
-    /// `TypeId` をキーとし、`Box<dyn Any>` を値として持つ HashMap。
-    /// `Box<dyn Any>` の中身は、実際には `HashMap<Entity, T>` (T は具体的なコンポーネント型) が入ってる。
-    /// `dyn Any` を使うことで、様々な型の `HashMap<Entity, T>` を一つの HashMap で管理できる！ (型消去というテクニック)
-    component_stores: HashMap<TypeId, Box<dyn Any>>,
+    /// コンポーネントの種類 (TypeId) ごとに、その型のコンポーネントデータを格納するストレージと操作をまとめたもの。
+    /// `TypeId` をキーとし、`ComponentStoreEntry` を値として持つ HashMap。
+    /// これにより、型安全なコンポーネント削除とかが可能になる！✨
+    component_stores: HashMap<TypeId, ComponentStoreEntry>,
+    // 削除済みエンティティIDを再利用するためのリスト (今は使わないけど、将来的にメモリ効率↑のために使えるかも)
+    // free_list: Vec<usize>,
 }
 
 impl World {
@@ -40,6 +58,7 @@ impl World {
             entities: HashSet::new(),
             next_entity_id: 0,
             component_stores: HashMap::new(),
+            // free_list: Vec::new(),
         }
     }
 
@@ -88,8 +107,8 @@ impl World {
         self.entities.contains(&entity)
     }
 
-    /// 指定されたエンティティを削除 (破棄) する。
-    /// このエンティティに紐づけられている全てのコンポーネントも削除される **(TODO: 現状未実装！)**。
+    /// 指定されたエンティティを削除 (破棄) する。 ✨超重要メソッド！✨
+    /// このエンティティに紐づけられている全てのコンポーネントも **自動的に削除される** よ！🧹 これでゴミデータが残らない！安心！💖
     ///
     /// # 引数
     /// * `entity` - 削除したいエンティティ。
@@ -98,37 +117,39 @@ impl World {
     /// エンティティが存在し、正常に削除された場合は `true`。
     /// エンティティが存在しなかった場合は `false`。
     pub fn destroy_entity(&mut self, entity: Entity) -> bool {
-        // まず、生存リストからエンティティを削除
+        // まず、エンティティが生存リストにいるか確認。いなければ何もせず false を返す。
         if self.entities.remove(&entity) {
             println!("World: Destroying entity with ID {}", entity.0); // 標準出力
-            // 次に、全てのコンポーネントストレージをイテレートして、
-            // このエンティティに関連するコンポーネントを削除する。
-            // `component_stores` の値 (Box<dyn Any>) に対して操作を行う必要がある。
-            // ここで `Any` トレイトのメソッド (`downcast_mut` など) を使うことになる。
-            // 各ストレージは `HashMap<Entity, _>` である想定。
-            for (_type_id, _storage_any) in self.component_stores.iter_mut() { // ★警告修正: storage_any を _storage_any に
-                // Box<dyn Any> から中のデータへの可変参照を取得しようとする。
-                // ただし、具体的な型がわからないと HashMap の remove は呼べない。
-                // ここでちょっと困る。どうやって型ごとに remove を呼ぶか？
-                // -> 解決策: Component トレイトに「指定エンティティのデータを削除する」メソッドを追加するか、
-                //    あるいは、World が各ストレージの具体的な型を知っている Map (TypeId -> remover function?) を持つ必要がある。
-                //    より簡単なのは、登録時に型ごとの削除関数も登録しておくことかも。
-                //
-                // *** 一旦、削除処理の詳細は保留 (この部分は結構難しい！) ***
-                // *** 理想的な実装には、トレイトオブジェクトやマクロなどが関係してくるかも。 ***
-                // *** 今はまず、コンポーネントの追加・取得を優先して実装しよう！ ***
-                // TODO: エンティティ削除時にコンポーネントも削除するロジックを実装する。
+
+            // よっしゃ！エンティティは生存リストから消した！👍
+            // 次は、このエンティティにくっついてたコンポーネントたちを全種類お掃除する番だ！🧹💨
+
+            // `component_stores` (型ごとの倉庫&お掃除係のマップ) の中身を全部見て回るよ！
+            // `values_mut()` を使うと、各倉庫 (`ComponentStoreEntry`) の中身を書き換えられる可変参照が手に入る！🔥
+            for entry in self.component_stores.values_mut() {
+                // 各 `ComponentStoreEntry` には、お掃除専用の関数 `remover` が登録されてる！✨
+                // この `remover` 関数に、実際のデータ倉庫 (`entry.storage` の可変参照) と
+                // 削除したいエンティティ (`entity`) を渡して実行してもらう！🙏
+                // これで、`destroy_entity` 関数自体は `storage` の中身の具体的な型を知らなくても、
+                // 型ごとに最適化された削除処理を安全に呼び出せるんだ！マジ天才！😎💖
+                (entry.remover)(&mut entry.storage, entity);
             }
-            true // 生存リストから削除できたので true を返す
+
+            // TODO: 将来的には、ここで free_list に entity.0 を追加してID再利用を実装できるかも
+            // self.free_list.push(entity.0);
+
+            true // 削除成功！✨
         } else {
+            // 指定されたエンティティは元々存在しなかったみたい…🤔
             println!("World: Attempted to destroy non-existent entity with ID {}", entity.0);
-            false // エンティティが存在しなかったので false
+            false // 削除失敗 (というか対象がいなかった)
         }
     }
 
     /// 新しい型のコンポーネントを World に登録する。
     /// これにより、その型のコンポーネントをエンティティに追加できるようになる。
-    /// 内部的には、そのコンポーネント型用のストレージ (HashMap<Entity, T>) を初期化してる。
+    /// 内部的には、そのコンポーネント型用のストレージ (`HashMap<Entity, T>`) と、
+    /// その型のコンポーネントを削除するための **お掃除関数🧹** を初期化して登録する！
     ///
     /// # 型パラメータ
     /// * `T` - 登録したいコンポーネントの型。`Component` トレイトと `Any` トレイトを実装し、
@@ -139,10 +160,55 @@ impl World {
     /// 通常はゲーム初期化時に一度だけ呼ぶ。
     pub fn register_component<T: Component + Any + 'static>(&mut self) {
         let type_id = TypeId::of::<T>();
-        println!("World: Registering component type with ID {:?}", type_id); // 標準出力
-        // 新しい空の HashMap<Entity, T> を作成し、それを Box<dyn Any> で包んで component_stores に挿入する。
+        println!("World: Registering component type {:?} ({})", type_id, std::any::type_name::<T>()); // 型名もログに出す！
+
+        // 型ごとの削除処理を行うための関数を定義するよ！✨
+        // これはジェネリック関数じゃない、具体的な型 `T` のための関数ポインタになる！
+        // 引数として `Box<dyn Any>` の可変参照と `Entity` を取る。
+        // 関数の中では、`downcast_mut` を使って `Box<dyn Any>` を安全に `HashMap<Entity, T>` に変換して、
+        // `remove` メソッドを呼び出す！👍
+        let remover_fn: fn(&mut Box<dyn Any>, Entity) = |storage_any, entity| {
+            // storage_any (Box<dyn Any>) を HashMap<Entity, T> にダウンキャスト試行！
+            if let Some(storage) = storage_any.downcast_mut::<HashMap<Entity, T>>() {
+                // 成功したら、HashMap から entity をキーにしてコンポーネントを削除！🧹
+                // remove は削除された値 (Some(T)) か None を返すけど、ここでは使わないから捨てる！
+                let _removed_component = storage.remove(&entity);
+                // println!("Removed component for entity {} from storage {:?}", entity.0, TypeId::of::<T>()); // デバッグ用ログ
+            } else {
+                // ダウンキャスト失敗！？！？！？！？！？！？！？！？
+                // `register_component` で正しい型の remover を登録してるはずだから、
+                // ここに来ることは通常ありえないはず…もし来たら、プログラムのどこかがおかしい！😱
+                eprintln!(
+                    "FATAL ERROR in remover for type {}: Failed to downcast storage for TypeId {:?}. This indicates a critical bug!",
+                    std::any::type_name::<T>(),
+                    TypeId::of::<T>()
+                );
+                // ここでパニックしてもいいかも？🤔 でもとりあえずエラーメッセージだけにしとくか…
+                // panic!("Critical error: Component storage type mismatch during removal!");
+            }
+        };
+
+        // 新しい空の HashMap<Entity, T> を作成。これがコンポーネントの実データを保持する場所になる。
         let new_storage: HashMap<Entity, T> = HashMap::new();
-        self.component_stores.insert(type_id, Box::new(new_storage));
+
+        // `ComponentStoreEntry` を作成して、データ倉庫 (Box化されたHashMap) とお掃除関数をセットにする！✨
+        let entry = ComponentStoreEntry {
+            storage: Box::new(new_storage), // HashMap を Box に入れて Any で型消去！
+            remover: remover_fn,           // 型 T 専用のお掃除関数ポインタ！🧹
+        };
+
+        // `component_stores` に、この型の `TypeId` をキーとして、作成した `ComponentStoreEntry` を挿入！
+        // これで、この型のコンポーネントが使えるようになって、削除もできるようになった！🎉
+        if self.component_stores.insert(type_id, entry).is_some() {
+            // もし insert が Some を返したら、それは既に同じ TypeId が存在してたってこと！
+            // これは普通、初期化ロジックのミス！🙅‍♀️ パニックさせてもいいレベル！
+            eprintln!(
+                "WARNING: Component type {:?} ({}) was registered more than once! Overwriting previous registration.",
+                type_id,
+                std::any::type_name::<T>()
+            );
+            // panic!("Component type registered twice!"); // 厳しくするならパニック！
+        }
     }
 
     /// 指定されたエンティティにコンポーネントを追加する。
@@ -159,31 +225,40 @@ impl World {
     pub fn add_component<T: Component + Any + 'static>(&mut self, entity: Entity, component: T) {
         // エンティティが生きてるかチェック (死んでるエンティティには追加しない)
         if !self.is_entity_alive(entity) {
-            println!("World: Attempted to add component to non-existent entity {}", entity.0);
+            // println!("World: Attempted to add component to non-existent entity {}", entity.0);
+            // 存在しないエンティティへの追加はよくあることなので、ログレベルを下げるかコメントアウト
             return; // 何もせずに関数を抜ける
         }
 
         let type_id = TypeId::of::<T>();
-        println!("World: Adding component {:?} to entity {}", type_id, entity.0); // 標準出力
+        // println!("World: Adding component {:?} to entity {}", type_id, entity.0); // デバッグ用ログ
 
-        // 1. `component_stores` から `TypeId` に対応する `Box<dyn Any>` を可変参照で取得する。
-        //    `get_mut` は `Option<&mut Box<dyn Any>>` を返す。
-        if let Some(storage_any) = self.component_stores.get_mut(&type_id) {
-            // 2. `Box<dyn Any>` から、目的の型 `HashMap<Entity, T>` への可変参照を取得する。
+        // 1. `component_stores` から `TypeId` に対応する `ComponentStoreEntry` を可変参照で取得する。
+        //    `get_mut` は `Option<&mut ComponentStoreEntry>` を返す。
+        if let Some(entry) = self.component_stores.get_mut(&type_id) {
+            // 2. `entry.storage` (Box<dyn Any>) から、目的の型 `HashMap<Entity, T>` への可変参照を取得する。
             //    `downcast_mut::<HashMap<Entity, T>>()` を使う。これは `Option<&mut HashMap<Entity, T>>` を返す。
-            //    ダウンキャストが成功すれば (つまり、Box の中身が本当に HashMap<Entity, T> なら) Some が返る。
-            if let Some(storage) = storage_any.downcast_mut::<HashMap<Entity, T>>() {
+            if let Some(storage) = entry.storage.downcast_mut::<HashMap<Entity, T>>() {
                 // 3. ダウンキャスト成功！ ストレージ (HashMap) にエンティティとコンポーネントを挿入する。
-                //    `insert` は、もしキーが既に存在していたら古い値を返す (今回は使わない)。
-                storage.insert(entity, component);
+                //    `insert` は、もしキーが既に存在していたら古い値 (Some(T)) を返す。
+                let _old_component = storage.insert(entity, component);
+                // if old_component.is_some() {
+                //     println!("World: Replaced existing component {:?} for entity {}", type_id, entity.0);
+                // }
             } else {
-                // ダウンキャスト失敗。これは通常、プログラムのロジックエラー (型の不一致など)。
-                // 例えば、TypeId::of::<T>() で取得した ID なのに、中身が HashMap<Entity, T> じゃなかった場合。ありえないはず。
-                panic!("World: Component storage downcast failed for TypeId {:?}. This should not happen!", type_id);
+                // ダウンキャスト失敗。これは register_component で登録した型と違う型で add_component を呼んでるなど、
+                // プログラムのロジックエラーの可能性が高い。register_component の実装ミスかも？
+                panic!(
+                    "World: Component storage downcast failed when adding component for TypeId {:?} ({}). This should not happen!",
+                    type_id, std::any::type_name::<T>()
+                );
             }
         } else {
-            // `component_stores` に `TypeId` が存在しない場合。`register_component<T>()` を呼び忘れている可能性が高い。
-            panic!("World: Component type {:?} not registered! Call register_component<{}>() first.", type_id, std::any::type_name::<T>());
+            // `component_stores` に `TypeId` が存在しない場合。`register_component<T>()` を呼び忘れている。
+            panic!(
+                "World: Component type {:?} ({}) not registered! Call register_component::<{}>() first.",
+                type_id, std::any::type_name::<T>(), std::any::type_name::<T>()
+            );
         }
     }
 
@@ -200,26 +275,19 @@ impl World {
     /// その型のコンポーネントが登録されていない、エンティティがそのコンポーネントを持っていない場合など) `None`。
     pub fn get_component<T: Component + Any + 'static>(&self, entity: Entity) -> Option<&T> {
         // エンティティが生きてるか軽くチェック (必須ではないが、無駄な検索を省けるかも)
-        if !self.is_entity_alive(entity) {
-            return None;
-        }
+        // ここでチェックしない場合、下の storage.get で結局 None が返るだけなので、なくても動作はする。
+        // if !self.is_entity_alive(entity) {
+        //     return None;
+        // }
 
         let type_id = TypeId::of::<T>();
-        // 1. `component_stores` から `TypeId` に対応する `Box<dyn Any>` を取得。
+        // 1. `component_stores` から `TypeId` に対応する `ComponentStoreEntry` を取得。
         self.component_stores.get(&type_id)
-            // 2. Option 型のメソッド `and_then` を使って、`Box<dyn Any>` があればダウンキャストを試みる。
-            //    `and_then` は Some(v) ならクロージャを実行し、その結果 (Option) を返し、None なら None を返す。
-            .and_then(|storage_any| {
-                // 3. `Box<dyn Any>` から `HashMap<Entity, T>` への参照を取得。
-                storage_any.downcast_ref::<HashMap<Entity, T>>()
-            })
-            // 4. Option 型のメソッド `and_then` をさらに使って、ストレージがあれば `get` を試みる。
-            .and_then(|storage| {
-                // 5. `HashMap` から `entity` キーに対応するコンポーネントへの参照 (`&T`) を取得する。
-                //    `storage.get(&entity)` は `Option<&T>` を返す。
-                storage.get(&entity)
-            })
-            // `and_then` を連鎖させることで、途中で None になったら最終結果も None になる、綺麗なコードになる！
+            // 2. `and_then` を使って、`ComponentStoreEntry` があればその中の `storage` (Box<dyn Any>) のダウンキャストを試みる。
+            .and_then(|entry| entry.storage.downcast_ref::<HashMap<Entity, T>>())
+            // 3. `and_then` をさらに使って、ダウンキャスト成功 (ストレージが得られた) なら `HashMap::get` を試みる。
+            .and_then(|storage| storage.get(&entity))
+            // これで、途中で失敗 (型が登録されてない、ダウンキャスト失敗、エンティティにコンポーネントがない) したら None が返る！美しい！✨
     }
 
     /// 指定されたエンティティから、指定された型のコンポーネントへの **書き込み可能** 参照を取得する。
@@ -233,165 +301,158 @@ impl World {
     /// # 戻り値
     /// コンポーネントが見つかれば `Some(&mut T)`、見つからなければ `None`。
     pub fn get_component_mut<T: Component + Any + 'static>(&mut self, entity: Entity) -> Option<&mut T> {
-        // 可変参照を返すので、エンティティ生存チェックはここでするのが適切かも
+        // 可変参照を返すので、エンティティ生存チェックはここでやった方が安全かも？🤔
+        // (死んだエンティティのコンポーネントを書き換えようとするのを防げる)
         if !self.is_entity_alive(entity) {
             return None;
         }
 
         let type_id = TypeId::of::<T>();
-        // 1. `component_stores` から可変参照を取得。
+        // 1. `component_stores` から可変参照で `ComponentStoreEntry` を取得。
         self.component_stores.get_mut(&type_id)
-            // 2. `and_then` でダウンキャスト (可変参照版 `downcast_mut`)。
-            .and_then(|storage_any| {
-                storage_any.downcast_mut::<HashMap<Entity, T>>()
-            })
+            // 2. `and_then` で `entry.storage` のダウンキャスト (可変参照版 `downcast_mut`)。
+            .and_then(|entry| entry.storage.downcast_mut::<HashMap<Entity, T>>())
             // 3. `and_then` で `HashMap` から可変参照を取得 (`get_mut`)。
-            .and_then(|storage| {
-                storage.get_mut(&entity)
-            })
+            .and_then(|storage| storage.get_mut(&entity))
+            // これも None 安全！👍
     }
 
-    /// 指定されたエンティティから、指定された型のコンポーネントを削除する。
+    /// 指定されたエンティティから、指定された型のコンポーネントを **削除** する。
+    /// 削除されたコンポーネントの値そのものを返すよ！(もし存在すればね！)
     ///
     /// # 型パラメータ
-    /// * `T` - 削除したいコンポーネントの型。`Component` トレイトと `Any` トレイトを実装し、`'static` ライフタイムを持つ。
+    /// * `T` - 削除するコンポーネントの型。`Component` トレイトと `Any` トレイトを実装し、`'static` ライフタイムを持つ。
     ///
     /// # 引数
-    /// * `entity` - コンポーネントを削除したいエンティティ。
+    /// * `entity` - コンポーネントを削除する対象のエンティティ。
     ///
     /// # 戻り値
-    /// コンポーネントが存在し、正常に削除された場合は `Some(T)` (削除されたコンポーネントの値)。
-    /// 見つからなかった場合 (エンティティが存在しない、型が登録されていない、
+    /// コンポーネントが存在し、削除された場合は `Some(T)` (削除されたコンポーネントの値)。
+    /// コンポーネントが存在しなかった場合 (エンティティが存在しない、型が登録されていない、
     /// エンティティがそのコンポーネントを持っていない場合など) は `None`。
     pub fn remove_component<T: Component + Any + 'static>(&mut self, entity: Entity) -> Option<T> {
-        // エンティティ生存チェック
-        if !self.is_entity_alive(entity) {
-            return None;
-        }
+        // エンティティ生存チェックは必須ではない (get_mut で None が返るため) が、
+        // パフォーマンスのために先にするのもアリ。どっちがいいかな？🤔 うーん、今回はシンプルに省略！
+        // if !self.is_entity_alive(entity) {
+        //     return None;
+        // }
 
         let type_id = TypeId::of::<T>();
-        // 1. 可変参照でストレージを取得。
+        // 1. `component_stores` から可変参照で `ComponentStoreEntry` を取得。
         self.component_stores.get_mut(&type_id)
-            // 2. 可変参照でダウンキャスト。
-            .and_then(|storage_any| {
-                storage_any.downcast_mut::<HashMap<Entity, T>>()
-            })
-            // 3. `and_then` ではなく `and_then` を使う (HashMap::remove は Option<T> を返すので、ネストしない)。
-            //    `HashMap` から `entity` をキーとしてコンポーネントを削除し、その値を取得する。
-            .and_then(|storage| {
-                // `remove(&entity)` は `Option<T>` を返す。
-                storage.remove(&entity)
-            })
+            // 2. `and_then` で `entry.storage` を `HashMap<Entity, T>` にダウンキャスト (可変参照)。
+            .and_then(|entry| entry.storage.downcast_mut::<HashMap<Entity, T>>())
+            // 3. `and_then` で `HashMap` から `remove` を呼び出す！
+            //    `remove(&entity)` は `Option<T>` を返す。これがまさに欲しい戻り値！✨
+            .and_then(|storage| storage.remove(&entity))
+            // これで完了！シンプル！👍
     }
 
-    /// 指定された型のコンポーネントを持つ全ての **生存している** エンティティのリスト (`Vec<Entity>`) を返す。
-    /// パフォーマンス: この操作は、該当するコンポーネントストレージ内の全てのキーを調べるため、
-    ///              コンポーネントを持つエンティティ数に比例したコストがかかる。
+    /// 指定された型のコンポーネントを持つ **全ての生存しているエンティティ** のリストを取得する。
     ///
     /// # 型パラメータ
     /// * `T` - 検索対象のコンポーネントの型。`Component` トレイトと `Any` トレイトを実装し、`'static` ライフタイムを持つ。
     ///
     /// # 戻り値
-    /// 指定されたコンポーネントを持つエンティティの `Vec<Entity>`。
-    /// その型のコンポーネントが登録されていない場合は空の `Vec` を返す。
+    /// 指定された型のコンポーネントを持つエンティティの `Vec<Entity>`。
+    /// その型のコンポーネントが登録されていない場合や、誰も持っていない場合は空の `Vec` を返す。
     pub fn get_all_entities_with_component<T: Component + Any + 'static>(&self) -> Vec<Entity> {
         let type_id = TypeId::of::<T>();
-
-        // 1. `component_stores` からストレージ (Box<dyn Any>) を取得。
-        if let Some(storage_any) = self.component_stores.get(&type_id) {
-            // 2. `HashMap<Entity, T>` にダウンキャスト。
-            if let Some(storage) = storage_any.downcast_ref::<HashMap<Entity, T>>() {
-                // 3. ストレージ (HashMap) のキー (Entity) をイテレートする。
-                //    `keys()` はイテレータ `Keys<'_, Entity, T>` を返す。
-                // 4. `filter` を使って、生存しているエンティティのみを抽出する。
-                //    `self.is_entity_alive(*entity)` でチェック。`entity` は `&Entity` なので `*` でデリファレンス。
-                // 5. `copied()` または `cloned()` を使って、参照 (`&Entity`) から値 (`Entity`) に変換する。
-                //    `Entity` が `Copy` トレイトを実装していれば `copied()` が効率的。
-                //    (entity.rs で `#[derive(Copy, Clone, ...)]` としている前提)
-                // 6. `collect()` を使って、イテレータから `Vec<Entity>` を生成する。
-                storage.keys()
-                    .filter(|entity| self.is_entity_alive(**entity)) // 生存チェック
-                    .copied() // Entity が Copy なら copied(), そうでなければ cloned()
-                    .collect()
+        // 1. `component_stores` から `ComponentStoreEntry` を取得。
+        if let Some(entry) = self.component_stores.get(&type_id) {
+            // 2. `entry.storage` を `HashMap<Entity, T>` にダウンキャスト。
+            if let Some(storage) = entry.storage.downcast_ref::<HashMap<Entity, T>>() {
+                // 3. ダウンキャスト成功！ ストレージ (HashMap) のキー (つまり Entity) を全て取得する。
+                //    `keys()` はイテレータ (&Entity のイテレータ) を返す。
+                // 4. `copied()` で &Entity から Entity に変換 (Entity は Copy トレイトを実装してるはず)。
+                // 5. `filter()` で、生存しているエンティティだけを残す！ (重要！ dead entity を返さないように！)
+                // 6. `collect()` でイテレータの結果を `Vec<Entity>` に集める。
+                storage.keys().copied().filter(|e| self.is_entity_alive(*e)).collect()
             } else {
-                // ダウンキャスト失敗 (通常ありえない)
-                Vec::new() // 空の Vec を返す
+                // ダウンキャスト失敗！プログラムのエラー。空の Vec を返す。
+                eprintln!(
+                    "World: Component storage downcast failed when getting all entities for TypeId {:?} ({}). Returning empty Vec.",
+                    type_id, std::any::type_name::<T>()
+                );
+                Vec::new()
             }
         } else {
-            // 型が登録されていない
-            Vec::new() // 空の Vec を返す
+            // 型が登録されていない場合。空の Vec を返す。
+            // eprintln!("World: Component type {:?} not registered when getting all entities. Returning empty Vec.", type_id); // これはエラーじゃないのでコメントアウト
+            Vec::new()
         }
+        // .map_or(Vec::new(), |entry| { // map_or を使って書くこともできるけど、ちょっと読みにくい？🤔
+        //     entry.storage.downcast_ref::<HashMap<Entity, T>>()
+        //         .map_or(Vec::new(), |storage| {
+        //             storage.keys().copied().filter(|e| self.is_entity_alive(*e)).collect()
+        //         })
+        // })
     }
 
-    // === system.rs など、他のモジュールから必要とされる可能性のあるヘルパーメソッド ===
-    // これらは直接コンポーネントを操作するのではなく、ストレージ自体へのアクセスを提供する。
-    // より高度なクエリやシステムの実装で役立つかもしれない。
+    // --- 以下、テストコード用のヘルパーメソッド (外部公開はしない想定) ---
 
-    /// 特定の型のコンポーネントストレージへの **読み取り専用** 参照 (`&dyn Any`) を返す。
-    /// 呼び出し側でダウンキャストして使う必要がある。
-    ///
-    /// # 型パラメータ
-    /// * `T` - アクセスしたいストレージのコンポーネント型。
-    ///
-    /// # 戻り値
-    /// ストレージが見つかれば `Some(&dyn Any)`、なければ `None`。
-    pub fn storage<T: Component + Any + 'static>(&self) -> Option<&dyn Any> {
+    /// 特定の型のコンポーネントストレージ (`HashMap<Entity, T>` が入った `Box<dyn Any>`) への
+    /// **読み取り専用** 参照を取得する。（テストやデバッグ用）
+    #[allow(dead_code)] // テスト以外で使わないので警告抑制
+    pub(crate) fn storage<T: Component + Any + 'static>(&self) -> Option<&dyn Any> {
         let type_id = TypeId::of::<T>();
-        // `map` を使って `&Box<dyn Any>` を `&dyn Any` に変換する。
-        // `as_ref()` は `Box<T>` から `&T` を得る標準的な方法。
-        // `&*bx` のようにデリファレンスを使うこともできる。
-        self.component_stores.get(&type_id).map(|bx| bx.as_ref())
-        // self.component_stores.get(&type_id).map(|bx| &**bx) // これでも同じ
+        self.component_stores.get(&type_id)
+            .map(|entry| &*entry.storage) // ComponentStoreEntry から中の Box<dyn Any> をデリファレンスして &dyn Any を返す！
     }
 
-    /// 特定の型のコンポーネントストレージへの **書き込み可能** 参照 (`&mut dyn Any`) を返す。
-    /// 呼び出し側でダウンキャストして使う必要がある。
-    ///
-    /// # 型パラメータ
-    /// * `T` - アクセスしたいストレージのコンポーネント型。
-    ///
-    /// # 戻り値
-    /// ストレージが見つかれば `Some(&mut dyn Any)`、なければ `None`。
-    pub fn storage_mut<T: Component + Any + 'static>(&mut self) -> Option<&mut dyn Any> {
+    /// 特定の型のコンポーネントストレージ (`HashMap<Entity, T>` が入った `Box<dyn Any>`) への
+    /// **書き込み可能** 参照を取得する。（テストやデバッグ用）
+    #[allow(dead_code)] // テスト以外で使わないので警告抑制
+    pub(crate) fn storage_mut<T: Component + Any + 'static>(&mut self) -> Option<&mut dyn Any> {
         let type_id = TypeId::of::<T>();
-        // `map` を使って `&mut Box<dyn Any>` を `&mut dyn Any` に変換する。
-        // `as_mut()` は `Box<T>` から `&mut T` を得る標準的な方法。
-        self.component_stores.get_mut(&type_id).map(|bx| bx.as_mut())
-        // self.component_stores.get_mut(&type_id).map(|bx| &mut **bx) // これでも同じ
+        self.component_stores.get_mut(&type_id)
+            .map(|entry| &mut *entry.storage) // ComponentStoreEntry から中の Box<dyn Any> をデリファレンスして &mut dyn Any を返す！
     }
-}
 
-// === テストモジュール ===
-// `#[cfg(test)]` は、`cargo test` を実行した時だけコンパイルされるコードブロックを示す。
+} // impl World の終わり
+
+
+// === World のユニットテスト ===
+// `#[cfg(test)]` は、`cargo test` を実行した時だけコンパイルされるコードブロックを示すよ！
 #[cfg(test)]
 mod tests {
-    // テストに必要なものを親モジュール (このファイルの上部) からインポート
-    use super::*; // `World`, `Entity`, `Component` など
-    use crate::component::Component; // Component トレイトを再度 use
+    // 親モジュール (World の定義がある場所) のアイテムを全部インポート！ `*` はワイルドカードだよ。
+    use super::*;
+    // テストで使う標準ライブラリもインポート！
+    use std::any::TypeId;
 
-    // --- テスト用のコンポーネントをいくつか定義 ---
-    // derive(...) は、Rustコンパイラに特定のトレイトの実装を自動生成させる指示。
-    // Debug: println! や assert_eq! で表示できるようにする。
-    // Clone: 値をコピーできるようにする (.clone() メソッド)。テストで便利。
-    // Copy: Clone より軽量なコピー (代入時にムーブでなくコピーされる)。単純な型なら可能。
-    // PartialEq: `==` 演算子で比較できるようにする。アサーションで使う。
-    // Eq: PartialEq とセットで、`a == a` が常に true であることを示すマーカー。
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    // --- テスト用のダミーコンポーネントを定義 ---
+
+    // 位置情報を表すシンプルなコンポーネント
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)] // テストで比較したり表示したりコピーしたりするので必要なトレイトを derive！
     struct Position {
         x: i32,
         y: i32,
     }
-    // Component トレイトを実装 (マーカーなので中身は空)
+    // Position がコンポーネントであることを示すマーカー実装！
     impl Component for Position {}
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    // 速度情報を表すシンプルなコンポーネント
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct Velocity {
         dx: i32,
         dy: i32,
     }
+    // Velocity がコンポーネントであることを示すマーカー実装！
     impl Component for Velocity {}
 
-    // --- テストケース ---
+    // --- テスト関数たち ---
+    // 各テスト関数には `#[test]` アトリビュートを付けるよ！
+
+    #[test]
+    fn test_new_world_is_empty() {
+        let world = World::new();
+        assert!(world.entities.is_empty(), "New world should have no entities");
+        assert_eq!(world.next_entity_id, 0, "Next entity ID should start at 0");
+        assert!(world.component_stores.is_empty(), "New world should have no component stores");
+        // assert!(world.free_list.is_empty(), "New world should have an empty free list"); // free_list を使う場合はこれも
+        println!("test_new_world_is_empty: PASSED ✅");
+    }
 
     #[test]
     fn test_create_entity() {
@@ -399,89 +460,99 @@ mod tests {
         let entity1 = world.create_entity();
         let entity2 = world.create_entity();
 
-        assert_eq!(entity1.0, 0); // 最初の ID は 0
-        assert_eq!(entity2.0, 1); // 次の ID は 1
-        assert_eq!(world.next_entity_id, 2); // カウンタは 2 に進んでいる
-        assert!(world.is_entity_alive(entity1)); // entity1 は生存している
-        assert!(world.is_entity_alive(entity2)); // entity2 は生存している
-        assert_eq!(world.entities.len(), 2); // 生存エンティティ数は 2
+        assert_eq!(entity1, Entity(0), "First entity ID should be 0");
+        assert_eq!(entity2, Entity(1), "Second entity ID should be 1");
+        assert_eq!(world.next_entity_id, 2, "Next entity ID should be 2");
+        assert_eq!(world.entities.len(), 2, "World should contain 2 entities");
+        assert!(world.entities.contains(&entity1), "World should contain entity1");
+        assert!(world.entities.contains(&entity2), "World should contain entity2");
+        println!("test_create_entity: PASSED ✅");
     }
 
     #[test]
     fn test_create_entity_with_id() {
         let mut world = World::new();
         let entity5 = Entity(5);
+        let entity2 = Entity(2);
+
         world.create_entity_with_id(entity5);
+        assert!(world.is_entity_alive(entity5), "Entity 5 should be alive");
+        assert_eq!(world.next_entity_id, 6, "Next ID should be 6 after adding entity 5");
+        assert_eq!(world.entities.len(), 1, "World should have 1 entity");
 
-        assert!(world.is_entity_alive(entity5));
-        assert_eq!(world.entities.len(), 1);
-        assert_eq!(world.next_entity_id, 6); // next_entity_id が更新されることを確認
+        world.create_entity_with_id(entity2);
+        assert!(world.is_entity_alive(entity2), "Entity 2 should be alive");
+        assert_eq!(world.next_entity_id, 6, "Next ID should still be 6 after adding entity 2");
+        assert_eq!(world.entities.len(), 2, "World should have 2 entities");
 
-        let entity3 = Entity(3);
-        world.create_entity_with_id(entity3);
-        assert!(world.is_entity_alive(entity3));
-        assert_eq!(world.entities.len(), 2);
-        assert_eq!(world.next_entity_id, 6); // next_entity_id は小さい ID を追加しても変わらない
+        // 通常の create_entity を呼ぶと、next_entity_id から新しい ID が使われる
+        let entity6 = world.create_entity();
+        assert_eq!(entity6, Entity(6), "Next created entity should have ID 6");
+        assert_eq!(world.next_entity_id, 7, "Next ID should become 7");
+        assert_eq!(world.entities.len(), 3, "World should have 3 entities");
 
-        let entity8 = Entity(8);
-        world.create_entity_with_id(entity8);
-        assert!(world.is_entity_alive(entity8));
-        assert_eq!(world.entities.len(), 3);
-        assert_eq!(world.next_entity_id, 9); // 再度 next_entity_id が更新される
+        println!("test_create_entity_with_id: PASSED ✅");
     }
 
+    #[test]
+    fn test_is_entity_alive() {
+        let mut world = World::new();
+        let entity0 = world.create_entity();
+        let entity1 = Entity(1); // まだ作ってない
+
+        assert!(world.is_entity_alive(entity0), "Entity 0 should be alive");
+        assert!(!world.is_entity_alive(entity1), "Entity 1 should not be alive yet");
+
+        world.create_entity_with_id(entity1);
+        assert!(world.is_entity_alive(entity1), "Entity 1 should be alive now");
+
+        println!("test_is_entity_alive: PASSED ✅");
+    }
 
     #[test]
     fn test_register_and_add_component() {
         let mut world = World::new();
-        // コンポーネントを登録！ これを忘れると add_component でパニックする
-        world.register_component::<Position>();
-        world.register_component::<Velocity>();
+        world.register_component::<Position>(); // Position 型のコンポーネントを使えるように登録！
 
         let entity1 = world.create_entity();
-        let entity2 = world.create_entity();
-
         let pos1 = Position { x: 10, y: 20 };
-        let vel1 = Velocity { dx: 1, dy: 0 };
-        let pos2 = Position { x: -5, y: 15 };
+        world.add_component(entity1, pos1); // entity1 に Position コンポーネントを追加！
 
-        // entity1 に Position と Velocity を追加
-        world.add_component(entity1, pos1); // pos1 はここでムーブされる (Copy じゃなければ)
-        world.add_component(entity1, vel1); // vel1 もムーブ
+        // ComponentStoreEntry と remover の存在を確認 (内部的なテスト)
+        let type_id_pos = TypeId::of::<Position>();
+        assert!(world.component_stores.contains_key(&type_id_pos), "Position store should exist");
+        let entry = world.component_stores.get(&type_id_pos).unwrap();
+        assert!(entry.storage.is::<HashMap<Entity, Position>>(), "Storage should be HashMap<Entity, Position>");
+        // entry.remover のテストは難しいので、destroy_entity のテストで間接的に確認する
 
-        // entity2 に Position を追加
-        world.add_component(entity2, pos2); // pos2 もムーブ
+        // ストレージから直接値を確認 (テスト用の storage メソッドを使う)
+        let storage_any = world.storage::<Position>().expect("Position storage should exist");
+        let storage_map = storage_any.downcast_ref::<HashMap<Entity, Position>>().expect("Should downcast to HashMap<Entity, Position>");
 
-        // --- component_stores の中身を直接確認 (テスト目的) ---
-        // Position 用のストレージがあるか確認
-        let pos_type_id = TypeId::of::<Position>();
-        assert!(world.component_stores.contains_key(&pos_type_id));
-        // Velocity 用のストレージがあるか確認
-        let vel_type_id = TypeId::of::<Velocity>();
-        assert!(world.component_stores.contains_key(&vel_type_id));
+        assert_eq!(storage_map.len(), 1, "Position storage should have 1 entry");
+        assert_eq!(storage_map.get(&entity1), Some(&pos1), "Stored position should match");
 
-        // Position ストレージの中身を確認 (ダウンキャストが必要)
-        if let Some(pos_storage_any) = world.component_stores.get(&pos_type_id) {
-            if let Some(pos_storage) = pos_storage_any.downcast_ref::<HashMap<Entity, Position>>() {
-                assert_eq!(pos_storage.len(), 2); // 2つのエンティティが Position を持つ
-                assert!(pos_storage.contains_key(&entity1));
-                assert!(pos_storage.contains_key(&entity2));
-            } else {
-                panic!("Position storage downcast failed in test!");
-            }
-        } else {
-            panic!("Position storage not found in test!");
-        }
+        // get_component で取得できるか確認
+        assert_eq!(world.get_component::<Position>(entity1), Some(&pos1));
+
+        // 存在しないエンティティに追加しようとしても何も起こらないはず
+        let non_existent_entity = Entity(99);
+        world.add_component(non_existent_entity, Position { x: 0, y: 0 });
+        assert_eq!(world.get_component::<Position>(non_existent_entity), None);
+        assert_eq!(storage_map.len(), 1, "Storage size should remain 1");
+
+        println!("test_register_and_add_component: PASSED ✅");
     }
 
+
     #[test]
-    #[should_panic] // このテストはパニックすることを期待する
+    #[should_panic] // このテストはパニックすることを期待してる！
     fn test_add_component_unregistered() {
         let mut world = World::new();
-        let entity = world.create_entity();
-        let pos = Position { x: 0, y: 0 };
+        let entity1 = world.create_entity();
         // Position を register せずに add しようとするとパニックするはず！
-        world.add_component(entity, pos);
+        world.add_component(entity1, Position { x: 0, y: 0 });
+        // ここに到達したらテスト失敗！
     }
 
     #[test]
@@ -491,38 +562,33 @@ mod tests {
         world.register_component::<Velocity>();
 
         let entity1 = world.create_entity();
-        let entity2 = world.create_entity(); // PositionもVelocityも持たないエンティティ
+        let entity2 = world.create_entity();
 
-        let pos1_val = Position { x: 10, y: 20 };
-        let vel1_val = Velocity { dx: 1, dy: 0 };
-        world.add_component(entity1, pos1_val); // Position は Copy なので値はコピーされる
-        world.add_component(entity1, vel1_val.clone()); // Velocity は Clone なので .clone() が必要
+        let pos1 = Position { x: 1, y: 2 };
+        let vel1 = Velocity { dx: 3, dy: 4 };
+        let pos2 = Position { x: 5, y: 6 };
 
-        // entity1 から Position を取得 (成功するはず)
-        let retrieved_pos1 = world.get_component::<Position>(entity1);
-        assert!(retrieved_pos1.is_some()); // Option が Some であることを確認
-        assert_eq!(retrieved_pos1.unwrap(), &pos1_val); // 中身が正しいか確認 (unwrap は Some であることが確実な場合のみ使う)
+        world.add_component(entity1, pos1);
+        world.add_component(entity1, vel1); // 同じエンティティに複数のコンポーネントを追加
+        world.add_component(entity2, pos2);
 
-        // entity1 から Velocity を取得 (成功するはず)
-        let retrieved_vel1 = world.get_component::<Velocity>(entity1);
-        assert!(retrieved_vel1.is_some());
-        assert_eq!(retrieved_vel1.unwrap(), &vel1_val);
+        // 正しく取得できるか
+        assert_eq!(world.get_component::<Position>(entity1), Some(&pos1));
+        assert_eq!(world.get_component::<Velocity>(entity1), Some(&vel1));
+        assert_eq!(world.get_component::<Position>(entity2), Some(&pos2));
 
-        // entity2 から Position を取得 (失敗するはず -> None)
-        let retrieved_pos2 = world.get_component::<Position>(entity2);
-        assert!(retrieved_pos2.is_none());
+        // 持っていないコンポーネントは None
+        assert_eq!(world.get_component::<Velocity>(entity2), None);
 
-        // 存在しないエンティティから取得 (失敗するはず -> None)
-        let non_existent_entity = Entity(999);
-        let retrieved_pos_non_existent = world.get_component::<Position>(non_existent_entity);
-        assert!(retrieved_pos_non_existent.is_none());
+        // 存在しないエンティティは None
+        assert_eq!(world.get_component::<Position>(Entity(99)), None);
 
-        // 登録されていないコンポーネント型を取得 (失敗するはず -> None)
-        // テスト用にダミーの Component を定義
+        // 登録されていないコンポーネント型は None (パニックしない！)
         #[derive(Debug, Clone, Copy, PartialEq, Eq)] struct UnregisteredComponent;
         impl Component for UnregisteredComponent {}
-        let retrieved_unregistered = world.get_component::<UnregisteredComponent>(entity1);
-        assert!(retrieved_unregistered.is_none());
+        assert_eq!(world.get_component::<UnregisteredComponent>(entity1), None);
+
+        println!("test_get_component: PASSED ✅");
     }
 
     #[test]
@@ -531,64 +597,63 @@ mod tests {
         world.register_component::<Position>();
 
         let entity1 = world.create_entity();
-        let pos1_initial = Position { x: 10, y: 20 };
-        world.add_component(entity1, pos1_initial);
+        let pos1 = Position { x: 1, y: 2 };
+        world.add_component(entity1, pos1);
 
-        // entity1 から Position の可変参照を取得
-        let retrieved_pos1_mut = world.get_component_mut::<Position>(entity1);
-        assert!(retrieved_pos1_mut.is_some());
+        // 可変参照を取得して値を変更
+        { // スコープを作って可変参照の寿命を制限する (Rust警察👮‍♀️対策！)
+            let pos_mut = world.get_component_mut::<Position>(entity1).expect("Should get mutable position");
+            pos_mut.x += 10;
+            pos_mut.y += 20;
+        } // ここで pos_mut の可変借用が終わる
 
-        // 取得した可変参照を使って値を変更！
-        if let Some(pos_mut) = retrieved_pos1_mut {
-            pos_mut.x += 5;
-            pos_mut.y = 0;
-        }
+        // 変更が反映されているか確認
+        let expected_pos = Position { x: 11, y: 22 };
+        assert_eq!(world.get_component::<Position>(entity1), Some(&expected_pos));
 
-        // 再度、読み取り専用で取得して、値が変更されたか確認
-        let retrieved_pos1_after = world.get_component::<Position>(entity1);
-        assert!(retrieved_pos1_after.is_some());
-        assert_eq!(retrieved_pos1_after.unwrap(), &Position { x: 15, y: 0 });
+        // 持っていない、存在しない、登録されていない場合は None
+        assert!(world.get_component_mut::<Velocity>(entity1).is_none());
+        assert!(world.get_component_mut::<Position>(Entity(99)).is_none());
+        #[derive(Debug)] struct Unregistered; impl Component for Unregistered {}
+        assert!(world.get_component_mut::<Unregistered>(entity1).is_none());
 
-        // コンポーネントを持たないエンティティから可変参照を取得 (None になるはず)
-        let entity2 = world.create_entity();
-        let retrieved_pos2_mut = world.get_component_mut::<Position>(entity2);
-        assert!(retrieved_pos2_mut.is_none());
+        println!("test_get_component_mut: PASSED ✅");
     }
 
     #[test]
     fn test_remove_component() {
         let mut world = World::new();
         world.register_component::<Position>();
-        world.register_component::<Velocity>();
 
         let entity1 = world.create_entity();
-        let pos1_val = Position { x: 10, y: 20 };
-        let vel1_val = Velocity { dx: 1, dy: 0 };
-        world.add_component(entity1, pos1_val);
-        world.add_component(entity1, vel1_val.clone());
+        let pos1 = Position { x: 1, y: 2 };
+        world.add_component(entity1, pos1);
 
-        // Position を削除
-        let removed_pos = world.remove_component::<Position>(entity1);
-        assert!(removed_pos.is_some()); // 削除成功 -> Some
-        assert_eq!(removed_pos.unwrap(), pos1_val); // 削除された値が正しいか
+        // 存在するコンポーネントを削除
+        let removed = world.remove_component::<Position>(entity1);
+        assert_eq!(removed, Some(pos1), "Should return the removed component");
+        // 削除後は取得できないはず
+        assert_eq!(world.get_component::<Position>(entity1), None);
 
-        // 再度 Position を get してみる -> None になるはず
-        let retrieved_pos_after_remove = world.get_component::<Position>(entity1);
-        assert!(retrieved_pos_after_remove.is_none());
+        // ストレージからも消えているはず (内部的な確認)
+        let storage_map = world.storage::<Position>().unwrap().downcast_ref::<HashMap<Entity, Position>>().unwrap();
+        assert!(storage_map.get(&entity1).is_none(), "Component should be gone from storage");
+        // ストレージ自体は残っている
+        assert!(world.storage::<Position>().is_some());
 
-        // Velocity はまだ存在しているはず
-        let retrieved_vel_after_remove = world.get_component::<Velocity>(entity1);
-        assert!(retrieved_vel_after_remove.is_some());
-        assert_eq!(retrieved_vel_after_remove.unwrap(), &vel1_val);
 
-        // 存在しないコンポーネントを削除しようとする -> None
-        let removed_pos_again = world.remove_component::<Position>(entity1);
-        assert!(removed_pos_again.is_none());
+        // 存在しないコンポーネントを削除しようとしても None が返る
+        let removed_again = world.remove_component::<Position>(entity1);
+        assert_eq!(removed_again, None, "Removing again should return None");
 
-        // 存在しないエンティティから削除しようとする -> None
-        let non_existent_entity = Entity(999);
-        let removed_pos_non_existent = world.remove_component::<Position>(non_existent_entity);
-        assert!(removed_pos_non_existent.is_none());
+        // 存在しないエンティティから削除しようとしても None
+        assert_eq!(world.remove_component::<Position>(Entity(99)), None);
+
+        // 登録されていない型を削除しようとしても None (パニックしない！)
+        #[derive(Debug, PartialEq)] struct Unregistered; impl Component for Unregistered {}
+        assert_eq!(world.remove_component::<Unregistered>(entity1), None);
+
+        println!("test_remove_component: PASSED ✅");
     }
 
 
@@ -599,77 +664,103 @@ mod tests {
         world.register_component::<Velocity>();
 
         let e1 = world.create_entity(); // Pos, Vel
-        let e2 = world.create_entity(); // Pos only
-        let e3 = world.create_entity(); // Vel only
-        let e4 = world.create_entity(); // No components
-        let e5 = world.create_entity(); // Pos, Vel (but will be destroyed)
+        let e2 = world.create_entity(); // Pos
+        let e3 = world.create_entity(); // Vel
+        let e4 = world.create_entity(); // なし
+        let e5 = world.create_entity(); // Pos (後で消す)
 
         world.add_component(e1, Position { x: 0, y: 0 });
         world.add_component(e1, Velocity { dx: 1, dy: 1 });
         world.add_component(e2, Position { x: 1, y: 1 });
         world.add_component(e3, Velocity { dx: 2, dy: 2 });
-        world.add_component(e5, Position { x: 5, y: 5 });
-        world.add_component(e5, Velocity { dx: 5, dy: 5 });
+        world.add_component(e5, Position { x: 0, y: 0 });
 
-        // Position を持つエンティティを取得 (e1, e2, e5 のはず)
+        // Position を持つエンティティを取得
         let mut pos_entities = world.get_all_entities_with_component::<Position>();
-        pos_entities.sort_by_key(|e| e.0); // 順序を保証するためにソート
+        pos_entities.sort_by_key(|e| e.0); // 順番を保証するためにソート
         assert_eq!(pos_entities, vec![e1, e2, e5]);
 
-        // Velocity を持つエンティティを取得 (e1, e3, e5 のはず)
+        // Velocity を持つエンティティを取得
         let mut vel_entities = world.get_all_entities_with_component::<Velocity>();
-        vel_entities.sort_by_key(|e| e.0); // ソート
-        assert_eq!(vel_entities, vec![e1, e3, e5]);
+        vel_entities.sort_by_key(|e| e.0);
+        assert_eq!(vel_entities, vec![e1, e3]);
 
-        // 登録されていないコンポーネントで検索 -> 空のはず
+        // 登録されていない型は空リスト
         #[derive(Debug)] struct Unregistered; impl Component for Unregistered {}
         let unregistered_entities = world.get_all_entities_with_component::<Unregistered>();
         assert!(unregistered_entities.is_empty());
 
         // e5 を削除してみる
-        // TODO: destroy_entity がコンポーネントも削除するようになったら、このテストを有効化する
-        // world.destroy_entity(e5);
+        world.destroy_entity(e5); // e5 を削除
+        let mut pos_entities_after_destroy = world.get_all_entities_with_component::<Position>();
+        pos_entities_after_destroy.sort_by_key(|e| e.0);
+        assert_eq!(pos_entities_after_destroy, vec![e1, e2], "Destroyed entity e5 should not be included");
 
-        // 再度 Position を持つエンティティを取得 (e1, e2 のはず)
-        // TODO: 上記 destroy_entity が実装されたら、以下のアサーションを有効化する
-        // let mut pos_entities_after_destroy = world.get_all_entities_with_component::<Position>();
-        // pos_entities_after_destroy.sort_by_key(|e| e.0);
-        // assert_eq!(pos_entities_after_destroy, vec![e1, e2]);
+        // コンポーネントを削除した場合
+        world.remove_component::<Position>(e1);
+        let mut pos_entities_after_remove = world.get_all_entities_with_component::<Position>();
+        pos_entities_after_remove.sort_by_key(|e| e.0);
+        assert_eq!(pos_entities_after_remove, vec![e2], "Entity e1 should not be included after removing Position");
+
+        println!("test_get_all_entities_with_component: PASSED ✅");
     }
 
-    // TODO: destroy_entity のテストケースを追加する (コンポーネントがちゃんと消えるか)
+    /// これが今回のメインディッシュ！ destroy_entity がちゃんとコンポーネントを消すかテスト！🍽️
     #[test]
-    #[ignore] // destroy_entity のコンポーネント削除が未実装なので無視
     fn test_destroy_entity_removes_components() {
         let mut world = World::new();
         world.register_component::<Position>();
         world.register_component::<Velocity>();
 
-        let entity = world.create_entity();
-        world.add_component(entity, Position { x: 0, y: 0 });
-        world.add_component(entity, Velocity { dx: 1, dy: 1 });
+        let entity_to_destroy = world.create_entity(); // ID 0
+        let other_entity = world.create_entity();    // ID 1
 
-        assert!(world.get_component::<Position>(entity).is_some());
-        assert!(world.get_component::<Velocity>(entity).is_some());
+        // 削除対象のエンティティにコンポーネントを追加
+        world.add_component(entity_to_destroy, Position { x: 1, y: 1 });
+        world.add_component(entity_to_destroy, Velocity { dx: 1, dy: 1 });
 
-        // エンティティを削除
-        let destroyed = world.destroy_entity(entity);
-        assert!(destroyed); // 削除が成功したか
-        assert!(!world.is_entity_alive(entity)); // 生存リストから消えたか
+        // 別のエンティティにもコンポーネントを追加 (こっちは消えないはず！)
+        world.add_component(other_entity, Position { x: 2, y: 2 });
 
-        // 削除後、コンポーネントも取得できなくなっているはず！
-        // *** ここが現状の実装では失敗する！ ***
-        assert!(world.get_component::<Position>(entity).is_none());
-        assert!(world.get_component::<Velocity>(entity).is_none());
+        // --- いざ、削除！ ---
+        let destroyed = world.destroy_entity(entity_to_destroy);
+        assert!(destroyed, "destroy_entity should return true for existing entity");
 
-        // ストレージ自体からも消えているか確認 (より詳細なチェック)
-        // Position ストレージを取得
-        let pos_type_id = TypeId::of::<Position>();
-        if let Some(storage_any) = world.component_stores.get(&pos_type_id) {
-            if let Some(storage) = storage_any.downcast_ref::<HashMap<Entity, Position>>() {
-                assert!(!storage.contains_key(&entity)); // entity のキーが存在しないはず
-            } else { panic!("Downcast failed"); }
-        } else { panic!("Storage not found"); }
-        // Velocity ストレージも同様にチェック...
+        // --- 検証！ ---
+        // 1. エンティティ自体が消えているか？
+        assert!(!world.is_entity_alive(entity_to_destroy), "Destroyed entity should not be alive");
+        assert!(world.is_entity_alive(other_entity), "Other entity should still be alive");
+
+        // 2. 削除されたエンティティのコンポーネントが消えているか？ (get_component で確認)
+        assert!(world.get_component::<Position>(entity_to_destroy).is_none(), "Position for destroyed entity should be None");
+        assert!(world.get_component::<Velocity>(entity_to_destroy).is_none(), "Velocity for destroyed entity should be None");
+
+        // 3. 他のエンティティのコンポーネントは残っているか？
+        assert!(world.get_component::<Position>(other_entity).is_some(), "Position for other entity should remain");
+        assert_eq!(world.get_component::<Position>(other_entity).unwrap(), &Position{ x: 2, y: 2 });
+
+        // 4. 内部ストレージからも消えているか？ (テスト用ヘルパーで確認)
+        let pos_storage_map = world.storage::<Position>().unwrap().downcast_ref::<HashMap<Entity, Position>>().unwrap();
+        assert!(pos_storage_map.get(&entity_to_destroy).is_none(), "Position should be removed from storage map");
+        assert!(pos_storage_map.get(&other_entity).is_some(), "Other entity's position should remain in storage map");
+        assert_eq!(pos_storage_map.len(), 1, "Position storage should contain only other_entity's component");
+
+        let vel_storage_map = world.storage::<Velocity>().unwrap().downcast_ref::<HashMap<Entity, Velocity>>().unwrap();
+        assert!(vel_storage_map.get(&entity_to_destroy).is_none(), "Velocity should be removed from storage map");
+        assert!(vel_storage_map.is_empty(), "Velocity storage should be empty as only destroyed entity had it");
+
+        // 存在しないエンティティを削除しようとしても false が返る
+        let destroyed_again = world.destroy_entity(entity_to_destroy);
+        assert!(!destroyed_again, "Destroying already destroyed entity should return false");
+
+        let destroyed_non_existent = world.destroy_entity(Entity(99));
+        assert!(!destroyed_non_existent, "Destroying non-existent entity should return false");
+
+
+        println!("test_destroy_entity_removes_components: PASSED! Component removal works! 🎉🧹");
     }
+
+    // TODO: free_list を使うようになったら、そのテストも追加する
+    // #[test]
+    // fn test_entity_id_reuse() { ... }
 } 
