@@ -18,7 +18,7 @@ use crate::component::{Component, ComponentStorage};
 #[derive(Default)] // `World::default()` で簡単に初期化できるようにする。
 pub struct World {
     // エンティティを管理する EntityManager を持つ。
-    entity_manager: EntityManager,
+    // entity_manager: EntityManager,
 
     // ComponentStorage を管理するための HashMap。
     // キー: コンポーネントの型を示す TypeId。これで「どの型のストレージか」を区別する。
@@ -28,7 +28,9 @@ pub struct World {
     //     - `dyn Any`: 任意の型を格納できる「トレイトオブジェクト」。これで、`ComponentStorage<Position>` や
     //                  `ComponentStorage<Velocity>` など、色々な型のストレージを一つの HashMap に
     //                  まとめて格納できるんだ！すごいテクニックでしょ？😎
-    component_storages: HashMap<TypeId, Box<dyn Any>>,
+    pub(crate) components: HashMap<TypeId, Box<dyn Any>>,
+    // next_entity_id を World が直接持つ
+    pub(crate) next_entity_id: usize,
     // TODO: 将来的には、削除されたエンティティを追跡する仕組みもここに必要になるかも？🤔
     //       (例えば、エンティティが削除されたら、関連するコンポーネントも全ストレージから削除するとか)
 }
@@ -37,8 +39,9 @@ impl World {
     /// 新しい空の World を作成するよ。
     pub fn new() -> Self {
         World {
-            entity_manager: EntityManager::default(), // EntityManager を初期化
-            component_storages: HashMap::new(),      // ComponentStorage を管理する HashMap を初期化
+            // entity_manager: EntityManager::default(), // EntityManager は使わない
+            components: HashMap::new(),      // ComponentStorage を管理する HashMap を初期化
+            next_entity_id: 0, // World が直接持つ ID を初期化
         }
     }
 
@@ -47,8 +50,13 @@ impl World {
     /// 新しいエンティティを作成するよ。
     ///
     /// EntityManager に処理を委譲（お願い）するだけ！簡単！👍
-    pub fn create_entity(&self) -> Entity {
-        self.entity_manager.create_entity()
+    pub fn create_entity(&mut self) -> Entity {
+        // World が持つ next_entity_id を使う
+        let entity_id = self.next_entity_id;
+        self.next_entity_id += 1;
+        // ... (rest of create_entity as before, e.g., resizing storage implicitly in add_component)
+        println!("World: Entity {} created.", entity_id);
+        Entity(entity_id)
     }
 
     // TODO: エンティティを削除するメソッドも後で追加しよう！
@@ -77,7 +85,7 @@ impl World {
         // 1. 型 T の TypeId を取得する。
         let type_id = TypeId::of::<T>();
         // 2. HashMap から TypeId をキーにして Box<dyn Any> を取得する。
-        self.component_storages.get(&type_id)
+        self.components.get(&type_id)
             // 3. `and_then` で、取得できた場合にのみ次の処理に進む。
             .and_then(|storage_any| {
                 // 4. `downcast_ref::<ComponentStorage<T>>()` を試みる！
@@ -97,7 +105,7 @@ impl World {
     /// - `None`: ストレージが存在しなければ、None を返す。
     fn get_storage_mut<T: Component>(&mut self) -> Option<&mut ComponentStorage<T>> {
         let type_id = TypeId::of::<T>();
-        self.component_storages.get_mut(&type_id)
+        self.components.get_mut(&type_id)
             .and_then(|storage_any| {
                 // `downcast_mut` を使うところが `get_storage` との違いだよ！
                 storage_any.downcast_mut::<ComponentStorage<T>>()
@@ -123,7 +131,7 @@ impl World {
         // 存在しなければ新しいエントリーを作るための便利なメソッドだよ。
         // `or_insert_with` は、存在しなかった場合にのみ、クロージャ（`|| { ... }` の部分）を実行して、
         // その結果を HashMap に挿入するんだ。
-        self.component_storages.entry(type_id).or_insert_with(|| {
+        self.components.entry(type_id).or_insert_with(|| {
             // 新しい ComponentStorage<T> を作る。
             let storage = ComponentStorage::<T>::new();
             // それを Box で包んで、型情報を隠蔽 (dyn Any に変換) して HashMap に格納！
@@ -226,7 +234,9 @@ impl World {
     /// # 実装について
     /// 今は単純に、エンティティIDが次に割り振られるID (`next_entity_id`) より小さいかで判断してるよ。
     pub fn entity_exists(&self, entity: Entity) -> bool {
-        entity.0 < self.entity_manager.next_entity_id
+        // self.entity_manager.next_entity_id ではなく、
+        // World 自身の next_entity_id を参照する！
+        entity.0 < self.next_entity_id
     }
 }
 
