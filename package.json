@@ -1,0 +1,22 @@
+{
+  "name": "ecs_wasm_game5",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:http": "http-server www -p 8001 --cors -o",
+    "start:ws": "cargo run --manifest-path ../solitaire_server/Cargo.toml",
+    "dev": "concurrently \"npm:start:http\" \"npm:start:ws\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "http-server": "^14.1.1"
+  }
+}
