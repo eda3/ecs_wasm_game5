@@ -301,25 +301,53 @@ impl GameApp {
     #[wasm_bindgen]
     pub fn deal_initial_cards(&self) {
         log("GameApp: deal_initial_cards() called.");
-        match self.world.lock() {
-            Ok(mut locked_world) => {
-                log("  Executing DealInitialCardsSystem...");
-                self.deal_system.execute(&mut locked_world);
-                log("  DealInitialCardsSystem executed successfully.");
-                // ★追加: カード配布が終わったら、初期状態をサーバーに送信！
-                self.send_initial_state();
-            }
-            Err(e) => {
-                log(&format!("GameApp: Failed to lock world for dealing cards: {:?}", e));
-            }
-        }
+
+        // ステップ1: 書き込み可能ロックを取得して DealSystem を実行
+        { // スコープを区切ってロックの生存期間を明確にする
+            log("  Acquiring mutable lock for DealInitialCardsSystem...");
+            let mut mutable_world_guard = match self.world.lock() {
+                 Ok(guard) => guard,
+                 Err(poisoned) => {
+                     log(&format!("GameApp: World mutex was poisoned! Attempting recovery. Error: {:?}", poisoned));
+                     // poison エラーからデータを復旧（あるいはデフォルト値を使うなど）
+                     // ここでは単純に復旧を試みる
+                     poisoned.into_inner()
+                 }
+            };
+            // let mut mutable_world_guard = self.world.lock().expect("Failed mutable lock 1");
+            log("  Executing DealInitialCardsSystem...");
+            self.deal_system.execute(&mut mutable_world_guard);
+            log("  DealInitialCardsSystem executed successfully.");
+            // スコープの終わりで mutable_world_guard が drop され、ロックが解放される！
+            log("  Released mutable lock.");
+        } // <-- ここで書き込みロック解放！🔓
+
+        // ステップ2: 読み取り専用ロックを取得して初期状態データを取得
+        let initial_state_data = { // スコープを区切る
+            log("  Acquiring immutable lock for get_initial_state_data...");
+            let immutable_world_guard = match self.world.lock() {
+                 Ok(guard) => guard,
+                 Err(poisoned) => {
+                     log(&format!("GameApp: World mutex was poisoned (read lock)! Attempting recovery. Error: {:?}", poisoned));
+                     poisoned.into_inner()
+                 }
+            };
+            // let immutable_world_guard = self.world.lock().expect("Failed immutable lock");
+            log("  Getting initial state data...");
+            let data = self.get_initial_state_data(&immutable_world_guard);
+            log("  Initial state data prepared.");
+            // スコープの終わりで immutable_world_guard が drop され、ロックが解放される！
+            log("  Released immutable lock.");
+            data // スコープの結果としてデータを返す
+        }; // <-- ここで読み取りロック解放！🔓
+
+        // ステップ3: 状態データを送信 (ロックは不要)
+        self.send_initial_state(initial_state_data);
     }
 
-    /// 現在の World の状態から GameStateData を作成する (さっき追加したやつ)
-    fn get_initial_state_data(&self) -> GameStateData {
-        // ... (実装は省略) ...
+    /// 現在の World の状態から GameStateData を作成する
+    fn get_initial_state_data(&self, world: &World) -> GameStateData {
         log("GameApp: get_initial_state_data called.");
-        let world = self.world.lock().expect("Failed to lock world for get_initial_state_data");
         let card_entities = world.get_all_entities_with_component::<Card>();
         let mut card_data_list = Vec::with_capacity(card_entities.len());
         log(&format!("  Found {} card entities. Creating CardData list...", card_entities.len()));
@@ -340,11 +368,8 @@ impl GameApp {
     }
 
     // 初期ゲーム状態をサーバーに送信するメソッド
-    // #[wasm_bindgen] // 内部呼び出しのみになったので削除！
-    fn send_initial_state(&self) {
+    fn send_initial_state(&self, initial_state_data: GameStateData) {
         log("GameApp: send_initial_state called.");
-        let initial_state_data = self.get_initial_state_data();
-        log("  Initial game state data prepared.");
         let message = ClientMessage::ProvideInitialState { initial_state: initial_state_data, };
         log(&format!("  Sending ProvideInitialState message..."));
         if let Err(e) = self.send_message(message) {
