@@ -69,7 +69,7 @@
 - [x] ルール実装(Rust): ゲームクリア判定ロジック (全カードがファンデーションにあるか？) // `check_win_condition` を実装！✅
 - [x] UIインタラクション(JS): カードクリックによる選択状態表示 (`.selected` クラス) // bootstrap.js と style.css で実装！🖱️
 - [x] UIインタラクション(JS): カードダブルクリックイベントの検知とログ出力 // bootstrap.js で実装！🖱️🖱️
-- [ ] UIインタラクション(JS): カードダブルクリック時にRust側の自動移動ロジックを呼び出す (`GameApp` にメソッド追加)
+- [x] UIインタラクション(JS): カードダブルクリック時にRust側の自動移動ロジックを呼び出す (`GameApp` にメソッド追加) // `handle_double_click` を実装し JS から呼び出し！✅
 - [ ] UIインタラクション(JS): カードのドラッグ開始 (`mousedown` or `dragstart`)
 - [ ] UIインタラクション(JS): カードのドラッグ中 (`mousemove` or `drag`) のカード追従表示
 - [ ] UIインタラクション(JS): カードのドロップ (`mouseup` or `drop`)

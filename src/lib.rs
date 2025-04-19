@@ -413,6 +413,50 @@ impl GameApp {
         // Option<PlayerId> を Option<u32> に変換する
         self.my_player_id.lock().expect("Failed to lock my_player_id").map(|id| id)
     }
+
+    /// カードがダブルクリックされた時の処理 (JSから呼び出される)
+    #[wasm_bindgen]
+    pub fn handle_double_click(&self, entity_id: usize) {
+        log(&format!("GameApp: handle_double_click called for entity_id: {}", entity_id));
+        let entity = Entity(entity_id);
+
+        // World をロックして、必要な情報を取得
+        let world = match self.world.lock() {
+            Ok(w) => w,
+            Err(e) => {
+                log(&format!("Error locking world in handle_double_click: {}", e));
+                return;
+            }
+        };
+
+        // ダブルクリックされたカードを取得
+        let card_to_move = match world.get_component::<Card>(entity) {
+            Some(card) => card,
+            None => {
+                log(&format!("Card component not found for entity {:?} in handle_double_click", entity));
+                return;
+            }
+        };
+
+        // 自動移動先を探す！🔍
+        match rules::find_automatic_foundation_move(card_to_move, &world) {
+            Some(target_stack) => {
+                // 移動先が見つかった！🎉 MakeMove メッセージを送信！🚀
+                log(&format!("  Found automatic move target: {:?} for card {:?}", target_stack, card_to_move));
+                let message = ClientMessage::MakeMove { moved_entity: entity, target_stack };
+                if let Err(e) = self.send_message(message) {
+                    log(&format!("  Failed to send MakeMove message for automatic move: {}", e));
+                } else {
+                    log("  MakeMove message sent successfully for automatic move.");
+                }
+            }
+            None => {
+                // 移動先は見つからなかった...😢 (ログ出すだけでいいかな？)
+                log("  No automatic foundation move found for this card.");
+            }
+        }
+        // World のロックはスコープを抜ける時に自動で解除されるよ
+    }
 }
 
 // GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)

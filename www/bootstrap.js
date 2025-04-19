@@ -262,13 +262,28 @@ function handleCardClick(cardData, cardElement) {
 function handleCardDoubleClick(cardData, cardElement) {
     console.log(`🖱️🖱️ Card double-clicked! Entity ID: ${cardData.entity_id}`, cardData);
 
-    // TODO: ダブルクリックされたカードに応じたゲームロジックを呼び出す
-    //       - 表向きのカードか？
-    //       - どこにあるカードか？ (Tableau? Waste?)
-    //       - Foundation に移動できるか Rust 側に問い合わせる？
-    // 例: if (cardData.is_face_up) { gameApp.try_auto_move_to_foundation(cardData.entity_id); }
+    // gameApp が存在するかチェック
+    if (!gameApp) {
+        console.error("GameApp is not initialized. Cannot handle double click.");
+        return;
+    }
 
-    // とりあえずログ出力だけ！
+    // 表向きのカードだけ自動移動の対象にする（ソリティアのルール的に）
+    if (cardData.is_face_up) {
+        try {
+            // Rust側の handle_double_click を呼び出す！ Entity ID を渡すよ！
+            console.log(`  Calling gameApp.handle_double_click with entity ID: ${cardData.entity_id}`);
+            gameApp.handle_double_click(cardData.entity_id);
+            console.log("  gameApp.handle_double_click called successfully.");
+            // 注: Rust側でメッセージが送信された後、サーバーからの GameStateUpdate を待って
+            //     renderGame() が呼ばれることで画面が更新されるはず！なので、ここでは描画しない。
+        } catch (error) {
+            console.error("Error calling gameApp.handle_double_click:", error);
+            // 必要ならユーザーにエラー表示
+        }
+    } else {
+        console.log("  Card is face down, ignoring double click for auto-move.");
+    }
 }
 
 // --- ヘルパー関数: カードの表示位置を計算 --- (超簡易版！)
