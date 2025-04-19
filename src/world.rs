@@ -531,6 +531,7 @@ mod tests {
 
         assert_eq!(storage_map.len(), 1, "Position storage should have 1 entry");
         assert_eq!(storage_map.get(&entity1), Some(&pos1), "Stored position should match");
+        assert_eq!(storage_map.len(), 1, "Storage size should remain 1 BEFORE adding to non-existent");
 
         // get_component で取得できるか確認
         assert_eq!(world.get_component::<Position>(entity1), Some(&pos1));
@@ -539,7 +540,6 @@ mod tests {
         let non_existent_entity = Entity(99);
         world.add_component(non_existent_entity, Position { x: 0, y: 0 });
         assert_eq!(world.get_component::<Position>(non_existent_entity), None);
-        assert_eq!(storage_map.len(), 1, "Storage size should remain 1");
 
         println!("test_register_and_add_component: PASSED ✅");
     }

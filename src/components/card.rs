@@ -56,7 +56,7 @@ pub enum Rank {
 /// - `is_face_up`: カードが表向きか裏向きかを示すフラグ (trueなら表向き)
 ///
 /// Component トレイトを実装するのを忘れないでね！ これがないと World に登録できない！🙅‍♀️
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)] // Copy は外したよ。カードの状態は変わる可能性があるからね。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)] // Copy は外したよ。カードの状態は変わる可能性があるからね。
 pub struct Card {
     pub suit: Suit,
     pub rank: Rank,

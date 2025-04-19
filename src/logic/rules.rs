@@ -403,7 +403,7 @@ fn get_top_card_entity(world: &World, target_stack: StackType) -> Option<Entity>
 #[cfg(test)]
 mod tests {
     use super::*; // 親モジュールの要素を使う
-    use crate::component::Rank; // Rank も使う
+    use crate::components::card::Rank; // こっちが正しいパス！
     use crate::world::World; // 自作Worldを使う
     use crate::entity::Entity; // 自作Entityを使う
     use crate::components::card::{Card, Suit}; // Card, Suit 追加

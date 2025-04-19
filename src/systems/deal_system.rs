@@ -228,7 +228,7 @@ mod tests {
 
         // --- 検証 (Assert) ---
         // 5. カードエンティティがちゃんと52個作られたか？
-        let all_card_entities: Vec<Entity> = world.get_all_entities_with_component::<Card>().collect();
+        let all_card_entities: Vec<Entity> = world.get_all_entities_with_component::<Card>().into_iter().collect();
         assert_eq!(all_card_entities.len(), 52, "カードエンティティの総数が52個であるべきですが、{}個でした", all_card_entities.len());
         println!("✔️ カード総数 (52): OK");
 

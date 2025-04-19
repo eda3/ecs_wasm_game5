@@ -2,6 +2,8 @@
 
 // これまで作った World を使うからインポートするよ。
 use crate::world::World;
+use std::collections::HashMap;
+use crate::entity::Entity;
 
 /// System（システム）トレイトだよ！
 ///
@@ -39,13 +41,15 @@ mod tests {
     use super::*; // 親モジュールの System トレイトを使う
     use crate::component::Component; // テスト用にダミーコンポーネントを作る
     use crate::world::World; // World を使う
+    use crate::entity::Entity; // ★★★ Entity をインポート！ ★★★
+    use std::collections::HashMap; // HashMap も使う
 
     // --- テスト用のダミーコンポーネント ---
     #[derive(Debug, Clone, PartialEq)]
     struct Position { x: i32, y: i32 }
     impl Component for Position {}
 
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     struct Velocity { dx: i32, dy: i32 }
     impl Component for Velocity {}
 
@@ -56,28 +60,47 @@ mod tests {
     // System トレイトを実装！
     impl System for MovementSystem {
         fn run(&mut self, world: &mut World) {
-            println!("MovementSystem 実行中... 🏃💨");
+            println!("MovementSystem 実行中... 🏃");
 
-            // Position と Velocity 両方のストレージへの可変参照を取得する。
-            // Option<T> を unwrap() してるけど、テストだからOK！ 本番コードではちゃんとエラー処理しようね！🙏
-            // `.expect()` を使った方が、エラーメッセージが出て親切かもね！
-            let pos_storage = world.storage_mut::<Position>().expect("Position storage not found!");
-            let vel_storage = world.storage::<Velocity>().expect("Velocity storage not found!"); // Velocityは読み取り専用でOK
-
-            // Position ストレージをイテレートして、各エンティティの Position を更新！
-            // iter_mut() を使って、Position を直接変更できるようにするよ。
-            for (entity, pos) in pos_storage.iter_mut() {
-                // 同じエンティティに対応する Velocity があるか確認する。
-                if let Some(vel) = vel_storage.get(*entity) {
-                    // Velocity があれば、Position に加算！
-                    println!("  Entity {:?}: ({}, {}) + ({}, {}) -> ({}, {})",
-                             entity, pos.x, pos.y, vel.dx, vel.dy, pos.x + vel.dx, pos.y + vel.dy);
-                    pos.x += vel.dx;
-                    pos.y += vel.dy;
+            // ★★★ エラー回避策: Velocity 情報を先に集める (不変借用) ★★★
+            let mut velocities = HashMap::new();
+            if let Some(vel_storage_any) = world.storage::<Velocity>() {
+                if let Some(vel_storage) = vel_storage_any.downcast_ref::<HashMap<Entity, Velocity>>() {
+                    // 生きている Entity の Velocity だけをコピー
+                    for (entity, vel) in vel_storage.iter() {
+                        if world.is_entity_alive(*entity) { // Entity が生きているかチェック
+                            velocities.insert(*entity, *vel); // Velocity は Copy なのでコピー
+                        }
+                    }
                 } else {
-                    println!("  Entity {:?}: Velocity がないので移動しません。", entity);
+                    panic!("Failed to downcast velocity storage!");
                 }
+            } else {
+                // Velocity ストレージがない場合もある (テストによっては)
+                println!("Velocity storage not found, skipping velocity collection.");
             }
+
+            // ★★★ Position を更新する (可変借用) ★★★
+            if let Some(pos_storage_any) = world.storage_mut::<Position>() {
+                if let Some(pos_storage) = pos_storage_any.downcast_mut::<HashMap<Entity, Position>>() {
+                    for (entity, pos) in pos_storage.iter_mut() {
+                        // 先ほど集めた Velocity 情報を参照
+                        if let Some(vel) = velocities.get(entity) {
+                            println!("  Entity {:?}: ({}, {}) + ({}, {}) -> ({}, {})",
+                                     entity, pos.x, pos.y, vel.dx, vel.dy, pos.x + vel.dx, pos.y + vel.dy);
+                            pos.x += vel.dx;
+                            pos.y += vel.dy;
+                        } else {
+                            println!("  Entity {:?}: Velocity がないので移動しません。", entity);
+                        }
+                    }
+                } else {
+                    panic!("Failed to downcast position storage!");
+                }
+            } else {
+                println!("Position storage not found, skipping position update.");
+            }
+
             println!("MovementSystem 実行完了！✨");
         }
     }
