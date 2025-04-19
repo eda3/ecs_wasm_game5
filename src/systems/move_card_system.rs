@@ -1,6 +1,5 @@
 use crate::{ // 必要なモジュールや型をインポート
-    component::Component,
-    components::{card::{Card, Suit, Rank}, position::Position, player::Player, game_state::{GameState, GameStatus}, stack::{StackInfo, StackType}},
+    components::{card::{Card, Suit, Rank}, position::Position, game_state::{GameState, GameStatus}, stack::{StackInfo, StackType}},
     entity::Entity,
     system::System,
     world::World,
@@ -44,14 +43,14 @@ impl MoveCardSystem {
         println!("MoveCardSystem: カード移動リクエストを処理します: {:?} -> {:?}", moved_entity, target_entity);
 
         // --- 2. 必要なコンポーネントの取得 ---
-        let moved_card_opt = world.get_component::<Card>(moved_entity).cloned();
-        let target_card_opt = world.get_component::<Card>(target_entity).cloned();
-        let target_pos_opt = world.get_component::<Position>(target_entity).cloned();
-        let source_stack_info_opt = world.get_component::<StackInfo>(moved_entity).cloned();
-        let target_stack_info_opt = world.get_component::<StackInfo>(target_entity).cloned();
+        let moved_card_opt = world.get_component::<Card>(moved_entity);
+        let target_card_opt = world.get_component::<Card>(target_entity);
+        let target_pos_opt = world.get_component::<Position>(target_entity);
+        let source_stack_info_opt = world.get_component::<StackInfo>(moved_entity);
+        let target_stack_info_opt = world.get_component::<StackInfo>(target_entity);
 
         // --- 3. ルールチェック＆状態更新 ---
-        if let (Some(moved_card), Some(source_stack_info)) = (moved_card_opt, source_stack_info_opt) {
+        if let (Some(moved_card), Some(source_stack_info)) = (moved_card_opt.cloned(), source_stack_info_opt.cloned()) {
             let target_type = target_stack_info_opt.map(|info| info.stack_type).or_else(|| {
                 println!("WARN: Target entity {:?} has no StackInfo, assuming Foundation(0)!", target_entity);
                 Some(StackType::Foundation(0))
@@ -60,8 +59,8 @@ impl MoveCardSystem {
             if let Some(target_type) = target_type {
                 let foundation_top_card = self.get_foundation_top_card(world, target_type);
 
-                if self.check_move_validity(&moved_card, target_card_opt.as_ref(), source_stack_info.stack_type, target_type, foundation_top_card) {
-                    self.apply_move(world, moved_entity, target_entity, target_pos_opt, target_type);
+                if self.check_move_validity(&moved_card, target_card_opt, source_stack_info.stack_type, target_type, foundation_top_card) {
+                    self.apply_move(world, moved_entity, target_entity, target_pos_opt.cloned(), target_type);
                 } else {
                     println!("  ルール違反！移動できませんでした。🙅‍♀️");
                 }
@@ -160,10 +159,8 @@ impl MoveCardSystem {
     ) {
         println!("  カード {:?} を {:?} ({:?}) へ移動します！", moved_entity, target_entity, target_type);
 
-        // --- 移動前の情報を一時保存 ---
-        let old_stack_info = world.get_component::<StackInfo>(moved_entity).cloned(); // 移動前の StackInfo を複製して取っておく
+        let old_stack_info = world.get_component::<StackInfo>(moved_entity).cloned();
 
-        // --- position_in_stack の計算 ---
         let max_pos_in_target_stack = world
             .get_all_entities_with_component::<StackInfo>()
             .iter()
@@ -199,17 +196,14 @@ impl MoveCardSystem {
 
         // 2. 移動するカードの StackInfo コンポーネントを更新
         if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) {
-             // 古い情報は old_stack_info から取得するように変更
-
              stack_info.stack_type = target_type;
              stack_info.position_in_stack = new_position_in_stack;
 
-             if let Some(ref old_info) = old_stack_info { // old_stack_info がちゃんと取れてたら
+             if let Some(ref old_info) = old_stack_info { 
                 println!("    {:?} の StackInfo を {:?} (元: {:?}) に更新しました。", moved_entity, stack_info, old_info);
              } else {
                  println!("    {:?} の StackInfo を {:?} (元情報なし) に更新しました。", moved_entity, stack_info);
              }
-             // ここで stack_info の mutable borrow は一旦終了！
         } else {
             eprintln!("MoveCardSystem: 移動元 {:?} の StackInfo が見つかりません！ 更新できませんでした。", moved_entity);
             // StackInfo が更新できない場合でも、is_face_up 処理は試みる
@@ -222,26 +216,24 @@ impl MoveCardSystem {
                     let position_to_reveal = old_info.position_in_stack - 1;
                     println!("    移動元 ({:?}) の位置 {} にあったカードを表にするかチェックします...", old_info.stack_type, position_to_reveal);
 
-                    // World から該当するエンティティを検索 (find_map を使う！)
-                    let entity_to_reveal: Option<Entity> = world // 型を明記 (Option<Entity> になる)
+                    let entity_to_reveal: Option<Entity> = world
                         .get_all_entities_with_component::<StackInfo>()
                         .iter()
-                        .find_map(|&entity| { // find から find_map に変更！
-                            if entity == moved_entity { return None; } // 自分自身はスキップ
+                        .find_map(|&entity| { 
+                            if entity == moved_entity { return None; } 
                             if world.get_component::<StackInfo>(entity)
                                 .map_or(false, |info| {
                                     info.stack_type == old_info.stack_type &&
                                     info.position_in_stack == position_to_reveal
                                 })
                             {
-                                Some(entity) // 条件に合ったら参照(&entity)じゃなくて値(entity)を Some で返す！
+                                Some(entity) 
                             } else {
-                                None // 合わなければ None
+                                None 
                             }
                         });
 
-                    // find_map の結果 (Option<Entity>) を使う
-                    if let Some(found_entity) = entity_to_reveal { // & を削除！
+                    if let Some(found_entity) = entity_to_reveal { 
                         println!("      -> 位置 {} にエンティティ {:?} を発見！", position_to_reveal, found_entity);
                         if let Some(card_to_reveal) = world.get_component_mut::<Card>(found_entity) {
                             if !card_to_reveal.is_face_up {
