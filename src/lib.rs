@@ -22,7 +22,7 @@ pub mod protocol; // protocol モジュールを宣言
 // 各モジュールから必要な型をインポート！
 use crate::world::World;
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId, PositionData}; // protocol から主要な型をインポート
+use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId}; // protocol から主要な型をインポート
 use crate::components::{card::Card, position::Position, stack::StackInfo, player::Player};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
