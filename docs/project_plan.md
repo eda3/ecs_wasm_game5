@@ -61,10 +61,10 @@
 ## フェーズ 4: ソリティアのルールとインタラクション実装 🃏👆 (Canvasへ移行中！一部進行可能に)
 
 - [/] ルール実装(Rust): `StackType` ごとのカード移動可否判定ヘルパー関数 (`logic/rules.rs`) - **`get_top_card_entity` ヘルパー実装＆バグ修正完了！ World 依存部分の基礎OK！** 🛠️✅🐞✨
-- [/] ルール実装(Rust): タブローからタブローへの移動ルール実装 (`logic/rules.rs` の `can_move_to_tableau`) - **World 依存版に改造＆コメント追加完了！テストはTODO！** 🛠️✅📝
-- [/] ルール実装(Rust): タブローからファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_to_foundation`) - **World 依存版に改造＆コメント追加完了！ `get_foundation_suit` ヘルパー復活！テストはTODO！** 🛠️✅📝✨
+- [x] ルール実装(Rust): タブローからタブローへの移動ルール実装 (`logic/rules.rs` の `can_move_to_tableau`) - **World 依存版に改造＆コメント追加完了！Worldを使ったテストも追加！** 🛠️✅📝✔️
+- [x] ルール実装(Rust): タブローからファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_to_foundation`) - **World 依存版に改造＆コメント追加完了！ `get_foundation_suit` ヘルパー復活！Worldを使ったテストも追加！** 🛠️✅📝✨✔️
 - [x] ルール実装(Rust): ストックからウェストへの移動ルール実装 (`logic/rules.rs` の `can_deal_from_stock`, `can_reset_stock_from_waste`) ✅ (World状態を見ない単純版)
-- [/] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation`) - **両方とも World 依存版に改造＆コメント追加完了！テストはTODO！** 🛠️✅📝✨
+- [/] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation`) - **両方とも World 依存版に改造＆コメント追加完了！テストはTODO！(それぞれの呼び出し元関数のテストでカバーされるはず)** 🛠️✅📝✨
 - [/] ルール実装(Rust): (任意) カード自動移動ロジック (`logic/auto_move.rs` の `find_automatic_foundation_move`) - **World 依存版に改造＆コメント・テスト修正完了！** ✨🤖✅📝
 - [/] ルール実装(Rust): ゲームクリア判定ロジック (`logic/rules.rs` の `check_win_condition`) ✅ (`WinConditionSystem` は **`World` 実装済、次は修正・動作確認！** 🛠️)
 
