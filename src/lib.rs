@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 // 自分で作ったモジュールたち！ これでコードを整理してるんだ。
 pub mod entity;
 pub mod component;
-pub mod world;
+pub mod world; // この world モジュールは自作ECSのコアになるかも？
 pub mod system;
 pub mod components; // components モジュールを宣言
 pub mod systems;
@@ -26,20 +26,23 @@ pub mod protocol; // protocol モジュールを宣言
 pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 
 // 各モジュールから必要な型をインポート！
-use crate::world::World;
+// use crate::world::World; // <-- これも不要 (自作Worldを使う想定)
+// use hecs::World; // <-- これを削除！
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
 use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
-use crate::entity::Entity; // send_make_move で使う Entity も use しておく！
+use crate::entity::Entity; // send_make_move で使う Entity も use しておく！ (自作Entityを使う)
 use serde_json; // serde_json を使う
 use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
 use crate::systems::deal_system::DealInitialCardsSystem;
 use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
-use crate::component::{Card, Position, StackInfo, DraggingInfo}; // Position を追加
+use crate::component::{Card, Position, StackInfo, DraggingInfo}; // Position を追加 (自作Componentを使う)
 use crate::protocol::*;
 use crate::rules::*;
 use crate::component::{Rank, Suit}; // Add this line
+use crate::world::World; // <<< これを追加！
+use crate::component::{Component, ComponentStorage}; // ComponentStorage も追加しておく
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -545,7 +548,7 @@ impl GameApp {
         let entity = Entity(entity_id);
 
         // World をロックして、必要な情報を取得
-        let world = match world_arc.lock() {
+        let world_guard = match world_arc.lock() {
             Ok(w) => w,
             Err(e) => {
                 error(&format!("Error locking world in handle_double_click_logic: {}", e));
@@ -554,7 +557,7 @@ impl GameApp {
         };
 
         // ダブルクリックされたカードを取得
-        let card_to_move = match world.get_component::<crate::component::Card>(entity) {
+        let card_to_move = match world_guard.get_component::<crate::component::Card>(entity) {
             Some(card) => card.clone(), // Clone する!
             None => {
                 error(&format!("Card component not found for entity {:?} in handle_double_click_logic", entity));
@@ -563,9 +566,9 @@ impl GameApp {
         };
 
         // 自動移動先を探す！🔍 (World の参照を渡す)
-        let target_stack_opt = rules::find_automatic_foundation_move(&card_to_move, &world);
+        let target_stack_opt = rules::find_automatic_foundation_move(&card_to_move, &*world_guard);
         // World のロックを早めに解除！
-        drop(world);
+        drop(world_guard);
 
         match target_stack_opt {
             Some(target_stack) => {
