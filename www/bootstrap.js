@@ -98,7 +98,7 @@ function setupEventListeners() {
         try {
             gameApp.deal_initial_cards(); // Rust 側の deal_initial_cards() を呼び出す！
             console.log("🃏 Cards dealt on Rust side.");
-            renderGame(); // カードを配った後に画面を再描画！✨
+            gameApp.render_game_rust();
         } catch (e) {
             console.error("カード配布または描画中にエラー:", e);
         }
@@ -112,7 +112,7 @@ function setupEventListeners() {
             console.log("--- World State (JSON) ---");
             console.log(JSON.parse(stateJson)); // JSON 文字列をパースしてオブジェクトとして表示
             console.log("-------------------------");
-            renderGame(); // 状態取得後にも画面を描画！✨
+            gameApp.render_game_rust();
         } catch (e) {
             console.error("状態の取得、JSONパース、または描画中にエラー: ", e);
         }
