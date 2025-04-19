@@ -35,7 +35,6 @@ use crate::entity::Entity; // send_make_move で使う Entity も use してお�
 use serde_json; // serde_json を使う
 use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 use する！
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
-use crate::systems::deal_system::DealInitialCardsSystem;
 use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
 use crate::component::{Card, Position, StackInfo, DraggingInfo}; // Position を追加 (自作Componentを使う)
 use crate::protocol::*;
@@ -43,6 +42,7 @@ use crate::rules::*;
 use crate::component::{Rank, Suit}; // Add this line
 use crate::world::World; // <<< これを追加！
 use crate::component::{Component, ComponentStorage}; // ComponentStorage も追加しておく
+use crate::systems::deal_system::DealInitialCardsSystem;
 
 // components/ 以下の主要なコンポーネントを use 宣言！
 // (ここで use したものは、このファイル内では直接型名で参照できる！)
@@ -56,7 +56,6 @@ use crate::components::{
 
 // systems/ 以下のシステムを use 宣言！
 use crate::systems::{ 
-    deal_system::DealInitialCardsSystem,
     // move_card_system::MoveCardSystem,
     // win_condition_system::WinConditionSystem,
 };
