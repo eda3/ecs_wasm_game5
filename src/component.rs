@@ -255,6 +255,21 @@ pub enum StackType {
     Hand,      // 手札 (ドラッグ中のカード)
 }
 
+impl From<crate::components::stack::StackType> for StackType {
+    fn from(other_stack_type: crate::components::stack::StackType) -> Self {
+        match other_stack_type {
+            // インデックス情報は無視して、種類だけをマッピングする
+            crate::components::stack::StackType::Tableau(_) => StackType::Tableau,
+            crate::components::stack::StackType::Foundation(_) => StackType::Foundation,
+            crate::components::stack::StackType::Stock => StackType::Stock,
+            crate::components::stack::StackType::Waste => StackType::Waste,
+            // components::stack::StackType に Hand がない可能性も考慮
+            // 必要に応じて Hand のマッピングも追加 (もし Hand が存在する場合)
+            // crate::components::stack::StackType::Hand => StackType::Hand,
+        }
+    }
+}
+
 /// スタック情報を表すコンポーネントだよ。カードの山に関する情報！⛰️
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[wasm_bindgen(getter_with_clone)]
