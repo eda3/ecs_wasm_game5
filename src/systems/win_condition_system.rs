@@ -44,7 +44,7 @@ impl System for WinConditionSystem {
         // --- 0. ゲーム状態の確認 ---
         let game_state_entity = Entity(0); // 仮のID
         let game_status = world.get_component::<GameState>(game_state_entity)
-            .map(|gs| gs.status);
+            .map(|gs| gs.status.clone());
 
         // すでにゲームが終了しているか、GameState がなければ何もしない
         if game_status != Some(GameStatus::Playing) {
