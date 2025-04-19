@@ -1,10 +1,8 @@
 // src/components/stack.rs
-use serde::{Serialize, Deserialize}; // シリアライズ/デシリアライズのために追加
-use crate::components::card::Suit; // Suit を使うためにインポート
 
 /// カードが存在する場所の種類を示す Enum だよ。
 /// これを使って、カードが山札にあるのか、場札の何列目にあるのか、などを区別するよ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackType {
     Stock,       // 山札 (まだ配られていないカード)
     Waste,       // 山札からめくられたカード置き場 (クロンダイク固有)
@@ -16,7 +14,7 @@ pub enum StackType {
 /// カードのスタックに関する情報を持つコンポーネントだよ。
 /// カードエンティティにこれを持たせることで、そのカードがどこにあるか、
 /// そのスタックの中で何番目か、などを管理するよ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StackInfo {
     /// カードが現在属しているスタックの種類。
     pub stack_type: StackType,
