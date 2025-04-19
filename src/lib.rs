@@ -44,6 +44,33 @@ use crate::component::{Rank, Suit}; // Add this line
 use crate::world::World; // <<< これを追加！
 use crate::component::{Component, ComponentStorage}; // ComponentStorage も追加しておく
 
+// components/ 以下の主要なコンポーネントを use 宣言！
+use crate::components::{ // Note the 's'
+    card::{Card, Rank, Suit, create_standard_deck}, // Import specifics from card module
+    position::Position,
+    player::Player, // Import Player from components
+    game_state::{GameState as GameLogicState, GameStatus}, // Import GameState/Status from components
+    stack::{StackInfo, StackType}, // Import StackInfo/StackType from components
+};
+// DraggingInfo comes from crate::component
+use crate::component::DraggingInfo;
+
+// systems/ 以下のシステムを use 宣言！
+use crate::systems::{
+    deal_system::DealInitialCardsSystem,
+    // move_card_system::MoveCardSystem,
+    // win_condition_system::WinConditionSystem,
+};
+
+// network と protocol 関連
+use crate::network::{NetworkManager, ConnectionStatus};
+// Import specifics from protocol instead of wildcard
+use crate::protocol::{ClientMessage, ServerMessage, GameStateData, PlayerId, CardData, PositionData};
+// rules::* is likely not needed directly in lib.rs
+
+// Wasm specific types from crate::component
+use crate::component::{Suit as WasmSuit, Rank as WasmRank, StackType as WasmStackType, GameState as WasmGameState};
+
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
 extern "C" {
@@ -327,23 +354,24 @@ impl GameApp {
         // --- 1. 既存のプレイヤーとカード情報をクリア --- 
         did_change = true; // クリアしたら変更ありとみなす
         log("  Clearing existing player and card entities...");
-        let player_entities: Vec<Entity> = world
-            .get_all_entities_with_component::<crate::component::Player>()
-            .into_iter()
-            .collect();
-        for entity in player_entities {
-            world.remove_component::<crate::component::Player>(entity);
-            // log(&format!("    Removed Player component from {:?}", entity));
+        let existing_player_entities: Vec<Entity> =
+            world.get_all_entities_with_component::<Player>() // ここを Player に！
+                .into_iter()
+                .collect();
+        for entity in existing_player_entities {
+            // Player コンポーネントだけ削除 (他のコンポーネントは残すかもしれない)
+            world.remove_component::<Player>(entity); // ここも Player に！
         }
-        let card_entities: Vec<Entity> = world
-            .get_all_entities_with_component::<crate::component::Card>()
+        let existing_card_entities: Vec<Entity> = world
+            .get_all_entities_with_component::<Card>() // ここを Card に！
             .into_iter()
             .collect();
-        for entity in card_entities {
-            world.remove_component::<crate::component::Card>(entity);
-            world.remove_component::<crate::component::Position>(entity);
-            world.remove_component::<crate::component::StackInfo>(entity);
-            // log(&format!("    Removed Card related components from {:?}", entity));
+        for entity in existing_card_entities {
+            world.remove_component::<Card>(entity); // ここも Card に！
+            world.remove_component::<Position>(entity); // ここも Position に！
+            world.remove_component::<StackInfo>(entity); // ここも StackInfo に！
+            // DraggingInfo もクリアすべき？ ゲーム状態受信時にドラッグ中はおかしいのでクリアする
+            world.remove_component::<DraggingInfo>(entity);
         }
 
         // --- 2. 新しいプレイヤー情報を反映 --- 
@@ -360,25 +388,37 @@ impl GameApp {
         for card_data in game_state.cards {
             let entity = card_data.entity;
             world.create_entity_with_id(entity); // 存在保証
-            let card_component = crate::component::Card {
-                suit: card_data.suit.into(), // card::Suit -> component::Suit
-                rank: card_data.rank.into(), // card::Rank -> component::Rank
+            let card_component = crate::components::card::Card {
+                suit: card_data.suit.into(), // protocol::Suit -> components::card::Suit
+                rank: card_data.rank.into(), // protocol::Rank -> components::card::Rank
                 is_face_up: card_data.is_face_up,
             };
             world.add_component(entity, card_component);
-            let stack_info_component = crate::component::StackInfo {
-                stack_type: card_data.stack_type.into(), // stack::StackType -> component::StackType
-                stack_index: match card_data.stack_type {
-                    crate::components::stack::StackType::Foundation(idx) => idx,
-                    crate::components::stack::StackType::Tableau(idx) => idx,
-                    _ => 0, // Stock, Waste などは index 0 (あるいは適切な値) とする
+
+            // StackInfo コンポーネントを作成 (components::stack::StackInfo を使う)
+            let stack_info_component = StackInfo {
+                // TODO: protocol::StackType から components::stack::StackType への変換が必要！
+                //       現状は From トレイトがないので、手動でマッチさせるか、From を実装する。
+                //       一旦、仮で Tableau(0) を使う。
+                stack_type: match card_data.stack_type {
+                    protocol::StackType::Tableau => StackType::Tableau(0), // 仮インデックス！要修正！
+                    protocol::StackType::Foundation => StackType::Foundation(0), // 仮インデックス！要修正！
+                    protocol::StackType::Stock => StackType::Stock,
+                    protocol::StackType::Waste => StackType::Waste,
+                    protocol::StackType::Hand => StackType::Hand,
+                    // _ => StackType::Stock, // Default case?
                 },
-                position_in_stack: card_data.position_in_stack, // u8
+                // TODO: card_data に position_in_stack が String で入ってる？要確認！
+                //       u8 にパースする必要があるかも。
+                position_in_stack: card_data.position_in_stack, //.parse::<u8>().unwrap_or(0), // 仮！
+                // stack_index: card_data.stack_index, // CardData に stack_index はない
             };
             world.add_component(entity, stack_info_component);
-            let position_component = crate::component::Position {
-                x: card_data.position.x as f64, // f32 to f64
-                y: card_data.position.y as f64, // f32 to f64
+
+            // Position コンポーネントを作成 (components::position::Position を使う)
+            let position_component = Position {
+                x: card_data.position.x as f32, // protocol::PositionData (f64?) -> components::position::Position (f32)
+                y: card_data.position.y as f32,
             };
             world.add_component(entity, position_component);
         }
