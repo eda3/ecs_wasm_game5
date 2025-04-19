@@ -23,9 +23,9 @@
 ## フェーズ 2: 基本ゲームロジック & 画面表示 (クライアント単体) 🃏🖼️ (完了)
 
 - [x] ゲーム初期化: カードデッキ生成ロジック // create_standard_deck in card.rs
-- [x] ゲーム初期化: 初期カード配置 (ディール) システムの実装 // deal_system.rs & lib.rs に deal_initial_cards() を実装！✨
+- [x] ゲーム初期化: 初期カード配置 (ディール) システムの実装 // deal_system.rs & lib.rs に deal_initial_cards() を実装！✨ & Position追加済！
 - [x] レンダリング準備: `GameApp` (WASM側メイン構造体) の実装 (`src/lib.rs`)
-- [x] レンダリング準備: `GameApp` から World の状態を取得するメソッド実装 // get_world_state_json() を実装！🦴→✅
+- [x] レンダリング準備: `GameApp` から World の状態を取得するメソッド実装 // get_world_state_json() を実装！🦴→✅ & Position追加済！
 - [x] レンダリング準備: JS側でWASMをロードし、`GameApp` インスタンスを作成 // www/bootstrap.js で実装！🚀
 - [x] レンダリング準備: 基本的なHTML/CSS構造の作成 (`index.html`, `style.css`) // www/ に作成！🎨
 - [x] レンダリング準備: JSから定期的にWASMのゲーム状態を取得し、コンソール等に表示 (デバッグ用) // bootstrap.js のボタンと定期更新で部分的に実装！⚙️
@@ -33,7 +33,7 @@
 
 ## フェーズ 3: ネットワーク実装 🌐🤝 (ほぼ完了)
 
-- [x] 通信プロトコル定義: `ClientMessage` (クライアント → サーバー) の定義 (JoinGame, MakeMove など)
+- [x] 通信プロトコル定義: `ClientMessage` (クライアント → サーバー) の定義 (JoinGame, MakeMove など) // ProvideInitialState追加済！✅
 - [x] 通信プロトコル定義: `ServerMessage` (サーバー → クライアント) の定義 (GameJoined, GameStateUpdate, MoveRejected など)
 - [x] 通信プロトコル定義: メッセージ共通で使うデータ構造 (PlayerId, CardData, GameStateData など) の定義
 - [x] 通信プロトコル定義: `serde` を使ったシリアライズ/デシリアライズ設定
@@ -46,13 +46,14 @@
 - [x] クライアント側ネットワーク処理: `connect()` メソッド
 - [x] クライアント側ネットワーク処理: `send_message()` ヘルパーメソッド
 - [x] クライアント側ネットワーク処理: `send_join_game()`, `send_make_move()` などWASM公開メソッド
+- [x] クライアント側ネットワーク処理: `send_initial_state()` メソッド追加 (`deal_initial_cards` 内で呼び出し) ✅
 - [x] クライアント側ネットワーク処理: `process_received_messages()` で受信キューを処理
 - [x] クライアント側ネットワーク処理: `apply_game_state()` で受信データ (`GameStateData`) を `World` に反映 // 基本実装済
-- [x] サーバー側(JS): WebSocketサーバー起動 (`localhost:8101`) // ws_server.js と npm script で実装！🔌
-- [x] サーバー側(JS): クライアント接続/切断管理 // ws_server.js で簡易実装！🤝
-- [x] サーバー側(JS): `JoinGame` メッセージ受信処理と `GameJoined` 応答実装 // ws_server.js で実装！📥
-- [x] サーバー側(JS): プレイヤーリストの管理と `PlayerJoined`/`PlayerLeft` のブロードキャスト実装 // ws_server.js で実装！💾
-- [ ] サーバー側(JS): ゲーム状態管理: カード情報 (`gameState.cards`) の保持と初期化 (例: `initializeCards` 関数を実装 or `deal_initial_cards` の結果を反映？)
+- [x] サーバー側(JS): WebSocketサーバー起動 (`localhost:8101`) // server/ws_server.js と npm script で実装！🔌 & ファイル移動済！✅
+- [x] サーバー側(JS): クライアント接続/切断管理 // server/ws_server.js で簡易実装！🤝
+- [x] サーバー側(JS): `JoinGame` メッセージ受信処理と `GameJoined` 応答実装 // server/ws_server.js で実装！📥 & gameState.cards 送信するように修正！✅
+- [x] サーバー側(JS): プレイヤーリストの管理と `PlayerJoined`/`PlayerLeft` のブロードキャスト実装 // server/ws_server.js で実装！💾
+- [x] サーバー側(JS): ゲーム状態管理: カード情報 (`gameState.cards`) の保持と初期化 // server/ws_server.js で `ProvideInitialState` 受信時に設定するように変更！✅
 - [ ] サーバー側(JS): `MakeMove` メッセージ受信処理 (今は無視)
 - [ ] サーバー側(JS): カード移動を `gameState.cards` に反映させるロジック
 - [ ] サーバー側(JS): ゲーム状態の変更を全クライアントに通知する `GameStateUpdate` メッセージのブロードキャスト実装
