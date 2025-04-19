@@ -66,7 +66,7 @@
 - [x] ルール実装(Rust): ストックからウェストへの移動ルール実装 (山札クリック時の処理) // `can_deal_from_stock`, `can_reset_stock_from_waste` を実装！✅
 - [x] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 // `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation` を実装！✅
 - [ ] ルール実装(Rust): (任意) カード自動移動ロジック (ダブルクリック時、ファンデーションへ移動できるか判定して `MakeMove` を生成？)
-- [ ] ルール実装(Rust): ゲームクリア判定ロジック (全カードがファンデーションにあるか？)
+- [x] ルール実装(Rust): ゲームクリア判定ロジック (全カードがファンデーションにあるか？) // `check_win_condition` を実装！✅
 - [x] UIインタラクション(JS): カードクリックによる選択状態表示 (`.selected` クラス) // bootstrap.js と style.css で実装！🖱️
 - [x] UIインタラクション(JS): カードダブルクリックイベントの検知とログ出力 // bootstrap.js で実装！🖱️🖱️
 - [ ] UIインタラクション(JS): カードダブルクリック時にRust側の自動移動ロジックを呼び出す (`GameApp` にメソッド追加)

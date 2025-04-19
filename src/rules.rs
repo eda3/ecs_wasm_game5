@@ -162,6 +162,17 @@ pub fn can_move_from_waste_to_foundation(
     can_move_to_foundation(waste_top_card, foundation_top_card, foundation_suit)
 }
 
+/// ゲームのクリア条件（全てのカードが組札にあるか）を判定する。
+///
+/// # 引数
+/// * `foundation_card_count`: 現在、全ての組札（Foundation）にあるカードの合計枚数。
+///
+/// # 戻り値
+/// * クリア条件を満たしていれば `true`、そうでなければ `false`。
+pub fn check_win_condition(foundation_card_count: usize) -> bool {
+    foundation_card_count == 52 // 標準的な52枚デッキの場合
+}
+
 // TODO: 他の移動パターン (Stock -> Waste, Waste -> Tableau/Foundation など) の
 //       ルールチェック関数も必要に応じて追加していく！💪
 
@@ -283,5 +294,13 @@ mod tests {
         assert!(!can_move_from_waste_to_foundation(&two_hearts, Some(&ace_clubs), Suit::Club), "Waste(2❤️) から Club Foundation(A♣️) へは移動できないはず (スート違い)");
 
         println!("Waste からの移動ルールテスト、成功！🎉");
+    }
+
+    #[test]
+    fn test_win_condition() {
+        assert!(check_win_condition(52), "カードが52枚あればクリアなはず！🏆");
+        assert!(!check_win_condition(51), "カードが51枚ではクリアじゃないはず！🙅");
+        assert!(!check_win_condition(0), "カードが0枚ではクリアじゃないはず！🙅");
+        println!("ゲームクリア判定テスト、成功！🎉");
     }
 } 
