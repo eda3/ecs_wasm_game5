@@ -309,10 +309,11 @@ impl GameApp {
     // 初期ゲーム状態をサーバーに送信するメソッド
     fn send_initial_state(&self, initial_state_data: GameStateData) {
         log("GameApp: send_initial_state called.");
-        let message = ClientMessage::ProvideInitialState { initial_state: initial_state_data, };
+        let message = ClientMessage::ProvideInitialState { initial_state: initial_state_data };
         log(&format!("  Sending ProvideInitialState message..."));
-        if let Err(e) = self.send_message(message) {
-            log(&format!("GameApp: Failed to send ProvideInitialState message: {}", e));
+        // ★修正: app::network_handler::send_serialized_message を使う！★
+        if let Err(e) = app::network_handler::send_serialized_message(&self.network_manager, message) {
+            error(&format!("GameApp: Failed to send ProvideInitialState message: {}", e)); // error マクロを使うのが適切かも
         } else {
             log("  ProvideInitialState message sent successfully.");
         }
