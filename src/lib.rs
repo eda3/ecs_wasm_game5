@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 // ★修正: web-sys から window と、HtmlElement を使う！ Element は削除！★
-use web_sys::{window, HtmlElement, Event, EventTarget, MouseEvent, HtmlSpanElement};
+use web_sys::{window, HtmlElement, Event, EventTarget, HtmlSpanElement};
 
 // 標準ライブラリから、スレッドセーフな共有ポインタとミューテックスを使うよ。
 // 非同期のコールバック関数からでも安全にデータを共有・変更するために必要！
@@ -89,6 +89,15 @@ fn get_suit_symbol(suit: &Suit) -> String {
     }
 }
 
+// --- ★追加: ドラッグ情報保持用構造体 --- ★
+// (Wasm外部には公開しないので #[wasm_bindgen] は不要)
+#[derive(Clone, Debug)] // Clone できるようにしておく
+struct DraggingInfo {
+    entity_id: Entity,
+    offset_x: i32,
+    offset_y: i32,
+}
+
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
 pub struct GameApp {
@@ -102,6 +111,12 @@ pub struct GameApp {
     // Arc<Mutex<>> で囲むことで、&self からでも変更可能にし、
     // スレッドセーフにする (Wasm は基本シングルスレッドだが作法として)
     event_closures: Arc<Mutex<Vec<Closure<dyn FnMut(Event)>>>>,
+    // ★追加: ドラッグ状態 (現在ドラッグ中のカード情報)★
+    dragging_state: Arc<Mutex<Option<DraggingInfo>>>,
+    // ★追加: Window にアタッチする MouseMove/MouseUp リスナー★
+    // (ドラッグ中のみ Some になる)
+    window_mousemove_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    window_mouseup_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
 }
 
 // GameApp 構造体のメソッドを実装していくよ！
@@ -137,6 +152,10 @@ impl GameApp {
 
         // ★ event_closures を初期化 ★
         let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
+        // ★追加: 新しいフィールドの初期化★
+        let dragging_state_arc = Arc::new(Mutex::new(None));
+        let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
+        let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
 
         log("GameApp: Initialization complete.");
         Self {
@@ -146,6 +165,9 @@ impl GameApp {
             my_player_id: my_player_id_arc,
             deal_system, // deal_system を GameApp に追加！
             event_closures: event_closures_arc, // ★初期化したものをセット★
+            dragging_state: dragging_state_arc,
+            window_mousemove_closure: window_mousemove_closure_arc,
+            window_mouseup_closure: window_mouseup_closure_arc,
         }
     }
 
