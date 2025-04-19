@@ -238,6 +238,28 @@ impl World {
         // World 自身の next_entity_id を参照する！
         entity.0 < self.next_entity_id
     }
+
+    /// 指定されたIDでエンティティを作成（または予約）するよ。
+    /// 主にテストや特定のエンティティ（GameState用など）を固定IDで扱うために使う想定。
+    ///
+    /// # 引数
+    /// * `entity` - 作成したいエンティティのID。
+    ///
+    /// # 注意点
+    /// - もし指定された `entity.0` が現在の `next_entity_id` より大きい場合、
+    ///   `next_entity_id` が更新され、間のIDがスキップされることになるよ。
+    /// - このメソッドはコンポーネントストレージのリサイズは行わないので、
+    ///   実際にコンポーネントを追加する際に `add_component` でリサイズされるよ。
+    pub fn create_entity_with_id(&mut self, entity: Entity) {
+        let id = entity.0;
+        // 指定されたIDが現在の次のID以上なら、次のIDを指定IDの次まで進める
+        if id >= self.next_entity_id {
+            self.next_entity_id = id + 1;
+        }
+        // TODO: 将来的には、指定IDが既に存在するかどうかのチェックや、
+        //       より厳密なエンティティ管理が必要になるかも。
+        println!("World: Entity {:?} created/reserved with specific ID.", entity);
+    }
 }
 
 
