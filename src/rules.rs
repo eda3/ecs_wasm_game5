@@ -230,7 +230,7 @@ pub fn find_automatic_foundation_move<'a>(
     log(&format!("[Rules] Finding automatic foundation move for {:?}...", card_to_move));
 
     // 移動元カードが A (エース) の場合
-    if card_to_move.rank == Rank::Ace {
+    if card_to_move.rank == crate::component::Rank::Ace {
         // 空の Foundation を探す
         for i in 0..4u8 { // 4つの Foundation をチェック
             let target_stack = StackType::Foundation(i);
