@@ -6,7 +6,7 @@
 use std::any::{Any, TypeId};
 // HashMap: キーと値のペアを効率的に格納するデータ構造。ComponentStorage を管理するのに使う！
 use std::collections::HashMap;
-use std::rc::Rc;
+// use std::rc::Rc; // 未使用なので削除！
 
 // 自作の entity モジュールから Entity を使う。
 use crate::entity::Entity;
