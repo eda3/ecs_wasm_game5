@@ -262,13 +262,10 @@ impl GameApp {
         for card_data in game_state.cards {
             let entity = card_data.entity; // サーバー指定のエンティティID
 
-            // TODO: World にこのエンティティIDが存在しない場合の処理。
-            //       world.create_entity_with_id(entity) のような機能が必要。
-            //       一旦、存在するものとして進める (DealSystemで事前に作られている想定？)
-            //       あるいは、create_entity() で新しいIDを割り当てて、
-            //       サーバーのIDとクライアントのIDのマッピングを持つ？複雑になる…。
-            //       ここでは、world.add_component が存在しない Entity に
-            //       対しても内部でよしなにしてくれる…という期待で進める (実際は要確認！)
+            // ★追加: Worldにエンティティが存在しない可能性があるので、IDを指定して作成(or 予約)
+            // これで、以降の add_component が安全に実行できるはず！
+            world.create_entity_with_id(entity);
+            // log(&format!("    Ensured entity {:?} exists.", entity)); // 必要ならログ出力
 
             // Card コンポーネントを追加 (or 更新)
             let card_component = Card {

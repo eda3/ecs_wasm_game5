@@ -8,28 +8,95 @@ const wss = new WebSocket.Server({ port: 8101 });
 
 console.log('🚀 WebSocket Server is running on ws://localhost:8101');
 
-// --- ゲーム状態管理 (簡易版) --- ★ここから追加★
-// サーバー側で保持するゲーム状態オブジェクト
-// protocol.rs の GameStateData に対応する感じ！
+// --- ゲーム状態管理 (簡易版) ---
 let gameState = {
     players: [], // { id: PlayerId, name: String }
-    cards: [],   // { entity: Entity(usize), suit: Suit, rank: Rank, is_face_up: bool, stack_type: StackType, position_in_stack: usize, position: {x:f32, y:f32} }
-    // TODO: 他に必要な状態 (例: Waste の枚数、ゲームのステータスなど)
+    cards: [],   // CardData オブジェクトの配列
+    // TODO: 他に必要な状態
 };
 
-// カードの初期配置を行う関数 (今は使わないけど、サーバー主導にするならここに書く)
-function initializeCards() {
-    // Rust側の deal_system.rs に相当するロジックをここに実装？
-    // gameState.cards = ...;
-    console.log("🃏 (Server-side card dealing not implemented yet)");
-    // とりあえず空のまま
-    gameState.cards = [];
+// --- カード初期化ロジック --- ★ここから実装★
+const SUITS = ['Heart', 'Diamond', 'Club', 'Spade'];
+const RANKS = ['Ace', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King'];
+
+// Fisher-Yates (aka Knuth) Shuffle アルゴリズム
+function shuffle(array) {
+    let currentIndex = array.length, randomIndex;
+    // While there remain elements to shuffle.
+    while (currentIndex !== 0) {
+        // Pick a remaining element.
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        // And swap it with the current element.
+        [array[currentIndex], array[randomIndex]] = [
+            array[randomIndex], array[currentIndex]];
+    }
+    return array;
 }
 
-initializeCards(); // サーバー起動時にカード状態を初期化 (今は空だけど)
-// --- ★追加ここまで★
+function initializeCards() {
+    console.log("🃏 Initializing card deck on server...");
+    let deck = [];
+    let entityIdCounter = 1; // エンティティIDは1から始める
 
-const clients = new Map(); // 変更: クライアントを PlayerId と WebSocket オブジェクトのペアで管理！
+    // 1. デッキ作成
+    for (const suit of SUITS) {
+        for (const rank of RANKS) {
+            deck.push({ suit, rank });
+        }
+    }
+
+    // 2. デッキシャッフル
+    deck = shuffle(deck);
+    console.log(`  Deck shuffled (${deck.length} cards).`);
+
+    // 3. カードデータ配列を初期化
+    gameState.cards = [];
+
+    // 4. 場札 (Tableau) に配る
+    let cardIndex = 0;
+    for (let i = 0; i < 7; i++) { // 7つの場札の山
+        for (let j = 0; j <= i; j++) { // 各山に i+1 枚配る
+            if (cardIndex >= deck.length) break;
+            const cardInfo = deck[cardIndex++];
+            gameState.cards.push({
+                entity: entityIdCounter++, // Rust側のEntity型に合わせる (usizeだけどJSではnumber)
+                suit: cardInfo.suit,
+                rank: cardInfo.rank,
+                is_face_up: (j === i), // 各山の最後のカードだけ表向き
+                stack_type: 'Tableau',
+                stack_index: i,
+                position_in_stack: j,
+                position: { x: 0, y: 0 } // 位置はクライアントで計算するけど初期値設定
+            });
+        }
+    }
+    console.log(`  Dealt cards to Tableau piles. ${cardIndex} cards used.`);
+
+    // 5. 残りを山札 (Stock) に配る
+    let stockPosition = 0;
+    while (cardIndex < deck.length) {
+        const cardInfo = deck[cardIndex++];
+        gameState.cards.push({
+            entity: entityIdCounter++,
+            suit: cardInfo.suit,
+            rank: cardInfo.rank,
+            is_face_up: false, // 山札は裏向き
+            stack_type: 'Stock',
+            stack_index: null, // Stock には index はない
+            position_in_stack: stockPosition++,
+            position: { x: 0, y: 0 }
+        });
+    }
+    console.log(`  Dealt remaining ${stockPosition} cards to Stock pile.`);
+    console.log(`  Total cards in gameState: ${gameState.cards.length}`);
+    // console.log("Initial GameState Cards:", JSON.stringify(gameState.cards, null, 2)); // デバッグ用に詳細表示が必要なら
+}
+
+initializeCards(); // サーバー起動時にカード状態を初期化
+// --- ★実装ここまで★
+
+const clients = new Map();
 let nextPlayerId = 1;
 
 // --- ヘルパー関数: 全クライアントにメッセージを送信 (ブロードキャスト) --- ★追加★
