@@ -2,7 +2,6 @@
 
 // serde を使うためにインポート！Serialize と Deserialize トレイトを使うよ。
 use serde::{Serialize, Deserialize};
-use wasm_bindgen::prelude::*;
 
 /// カードが存在する場所の種類を示す Enum だよ。
 /// これを使って、カードが山札にあるのか、場札の何列目にあるのか、などを区別するよ。

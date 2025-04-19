@@ -29,7 +29,7 @@ pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 // use crate::world::World; // <-- これも不要 (自作Worldを使う想定)
 // use hecs::World; // <-- これを削除！
 use crate::network::NetworkManager; // NetworkManager をインポート (ConnectionStatusは不要なので削除)
-use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PlayerData, PositionData, PlayerId};
+use crate::protocol::{ClientMessage, ServerMessage, GameStateData, CardData, PositionData, PlayerId};
 use crate::components::stack::StackType; // components::stack から StackType を直接インポート！
 use crate::entity::Entity; // send_make_move で使う Entity も use しておく！ (自作Entityを使う)
 use serde_json; // serde_json を使う
@@ -37,20 +37,17 @@ use crate::network::ConnectionStatus; // ↓↓↓ ConnectionStatus を再度 us
 // systems モジュールと、その中の DealInitialCardsSystem を使う宣言！
 use wasm_bindgen::closure::Closure; // ★追加: イベント関連の型と Closure を use★
 use crate::component::DraggingInfo; // Position を追加 (自作Componentを使う)
-use crate::protocol::*;
-use crate::rules::*;
+use crate::rules::find_automatic_foundation_move;
 use crate::component::{Rank, Suit}; // Add this line
 use crate::world::World; // <<< これを追加！
-use crate::component::{Component, ComponentStorage}; // ComponentStorage も追加しておく
 use crate::systems::deal_system::DealInitialCardsSystem;
 
 // components/ 以下の主要なコンポーネントを use 宣言！
 // (ここで use したものは、このファイル内では直接型名で参照できる！)
 use crate::components::{ 
-    card::{Card, create_standard_deck}, // Import specifics from card module
+    card::Card, // Import specifics from card module
     position::Position,
     player::Player, // Import Player from components
-    game_state::{GameState as GameLogicState, GameStatus}, // Import GameState/Status from components
     stack::{StackInfo}, // Import StackInfo/StackType from components
 };
 
@@ -61,10 +58,6 @@ use crate::systems::{
 };
 
 // network と protocol 関連
-
-// Wasm specific types from crate::component
-// (DraggingInfo は component にしかないのでここで use する)
-use crate::component::{Suit as WasmSuit, Rank as WasmRank, StackType as WasmStackType, GameState as WasmGameState};
 
 // JavaScript の console.log を Rust から呼び出すための準備 (extern ブロック)。
 #[wasm_bindgen]
@@ -87,34 +80,6 @@ pub fn set_panic_hook() {
 #[wasm_bindgen]
 pub fn greet(name: &str) {
     log(&format!("Hello from Rust, {}!", name));
-}
-
-// --- ★追加: ヘルパー関数 --- ★
-fn get_rank_text(rank: &Rank) -> String {
-    match rank {
-        Rank::Ace => "A".to_string(),
-        Rank::King => "K".to_string(),
-        Rank::Queen => "Q".to_string(),
-        Rank::Jack => "J".to_string(),
-        Rank::Ten => "10".to_string(),
-        Rank::Nine => "9".to_string(),
-        Rank::Eight => "8".to_string(),
-        Rank::Seven => "7".to_string(),
-        Rank::Six => "6".to_string(),
-        Rank::Five => "5".to_string(),
-        Rank::Four => "4".to_string(),
-        Rank::Three => "3".to_string(),
-        Rank::Two => "2".to_string(),
-    }
-}
-
-fn get_suit_symbol(suit: &Suit) -> String {
-    match suit {
-        Suit::Heart => "♥".to_string(),
-        Suit::Diamond => "♦".to_string(),
-        Suit::Club => "♣".to_string(),
-        Suit::Spade => "♠".to_string(),
-    }
 }
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
@@ -344,10 +309,10 @@ impl GameApp {
         };
 
         // ★状態変更があったかどうかのフラグ (今は単純に常に true を返す)
-        let mut did_change = false;
+        // ★ did_change は未使用なので削除 ★
 
         // --- 1. 既存のプレイヤーとカード情報をクリア --- 
-        did_change = true; // クリアしたら変更ありとみなす
+        // ★ クリアしたら変更ありとみなす (did_change 削除のため、直接 true を返す方向で検討) ★
         log("  Clearing existing player and card entities...");
         let existing_player_entities: Vec<Entity> =
             world.get_all_entities_with_component::<Player>() // ここを Player に！
@@ -370,7 +335,7 @@ impl GameApp {
         }
 
         // --- 2. 新しいプレイヤー情報を反映 --- 
-        if !game_state.players.is_empty() { did_change = true; }
+        if !game_state.players.is_empty() { true; }
         log(&format!("  Applying {} players...", game_state.players.len()));
         for player_data in game_state.players {
             log(&format!("    Player ID: {}, Name: {}", player_data.id, player_data.name));
@@ -378,7 +343,7 @@ impl GameApp {
         }
 
         // --- 3. 新しいカード情報を反映 --- 
-        if !game_state.cards.is_empty() { did_change = true; }
+        if !game_state.cards.is_empty() { true; }
         log(&format!("  Applying {} cards...", game_state.cards.len()));
         for card_data in game_state.cards {
             let entity = card_data.entity;
@@ -419,7 +384,7 @@ impl GameApp {
         }
 
         log("GameApp: Game state update applied.");
-        did_change // ★ 変更があったかどうかを返す！
+        true // ★ 変更があったかどうかを返す！
     }
 
     // JSから初期カード配置を実行するためのメソッド

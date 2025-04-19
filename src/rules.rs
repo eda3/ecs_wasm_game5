@@ -5,7 +5,7 @@
 
 // 必要な型をインポートしておくよ！
 use crate::components::card::{Card, Suit, Rank}; // components の Card, Suit, Rank を使う！
-use crate::components::stack::{StackInfo, StackType}; // components の StackInfo, StackType を使う！
+use crate::components::stack::{StackType}; // components の StackInfo, StackType を使う！
 // use crate::world::World;                        // ゲーム世界の全体像 <-- これは使わない！
 use crate::entity::Entity;                      // エンティティID (これは crate::entity のもの)
 use crate::log;
