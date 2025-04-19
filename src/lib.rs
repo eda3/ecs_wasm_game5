@@ -25,6 +25,7 @@ pub mod network; // network モジュールを宣言
 pub mod protocol; // protocol モジュールを宣言
 pub mod rules; // ★追加: 新しい rules モジュールを宣言！
 pub mod logic; // ← これを追加！
+pub mod app; // ★追加: 新しい app モジュールを宣言
 
 // 各モジュールから必要な型をインポート！
 // use crate::world::World; // <-- これも不要 (自作Worldを使う想定)
@@ -560,66 +561,12 @@ impl GameApp {
     #[wasm_bindgen]
     pub fn handle_double_click(&self, entity_id: usize) {
         log(&format!("GameApp: handle_double_click called for entity_id: {}", entity_id));
-        // ★新しいロジック関数を呼び出すように変更！★
-        Self::handle_double_click_logic(entity_id, Arc::clone(&self.world), Arc::clone(&self.network_manager));
-    }
-
-    /// ★追加: ダブルクリック時の実際のロジック (static メソッドっぽく)★
-    fn handle_double_click_logic(entity_id: usize, world_arc: Arc<Mutex<World>>, network_manager_arc: Arc<Mutex<NetworkManager>>) {
-        log(&format!("  Executing double-click logic for entity_id: {}", entity_id));
-        let entity = Entity(entity_id);
-
-        // World をロックして、必要な情報を取得
-        let world_guard = match world_arc.lock() {
-            Ok(w) => w,
-            Err(e) => {
-                error(&format!("Error locking world in handle_double_click_logic: {}", e));
-                return;
-            }
-        };
-
-        // ダブルクリックされたカードを取得
-        let card_to_move = match world_guard.get_component::<Card>(entity) {
-            Some(card) => card.clone(), // Clone する!
-            None => {
-                error(&format!("Card component not found for entity {:?} in handle_double_click_logic", entity));
-                return;
-            }
-        };
-
-        // 自動移動先を探す！🔍 (World の参照を渡す)
-        let target_stack_opt = find_automatic_foundation_move(&card_to_move, &*world_guard);
-        // World のロックを早めに解除！
-        drop(world_guard);
-
-        match target_stack_opt {
-            Some(target_stack) => {
-                // 移動先が見つかった！🎉 MakeMove メッセージを送信！🚀
-                log(&format!("  Found automatic move target: {:?} for card {:?}", target_stack, card_to_move));
-                let message = ClientMessage::MakeMove { moved_entity: entity, target_stack: target_stack.into() };
-
-                // メッセージ送信 (send_message ヘルパーが使えないので、ここで直接行う)
-                match serde_json::to_string(&message) {
-                    Ok(json_message) => {
-                         match network_manager_arc.lock() {
-                             Ok(nm) => {
-                                 if let Err(e) = nm.send_message(&json_message) {
-                                     error(&format!("  Failed to send MakeMove message from logic: {}", e));
-                                 } else {
-                                     log("  MakeMove message sent successfully from logic.");
-                                 }
-                             },
-                             Err(e) => error(&format!("Failed to lock NetworkManager in logic: {}", e))
-                         }
-                    }
-                    Err(e) => error(&format!("Failed to serialize MakeMove message in logic: {}", e))
-                }
-            }
-            None => {
-                // 移動先は見つからなかった...😢
-                log("  No automatic foundation move found for this card (logic).");
-            }
-        }
+        // ★修正: app::event_handler の関数を呼び出す！★
+        app::event_handler::handle_double_click_logic(
+            entity_id,
+            Arc::clone(&self.world),
+            Arc::clone(&self.network_manager)
+        );
     }
 
     /// Rust側で Canvas にゲーム画面を描画する関数
