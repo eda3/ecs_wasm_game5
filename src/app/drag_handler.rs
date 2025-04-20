@@ -39,6 +39,21 @@ pub fn handle_drag_start(
             return;
         }
     };
+
+    let clicked_entity = Entity(entity_usize);
+
+    // ★★★ Tableau の裏向きカードはドラッグ不可にするチェック ★★★
+    if let (Some(stack_info), Some(card)) = (
+        world_guard.get_component::<StackInfo>(clicked_entity),
+        world_guard.get_component::<Card>(clicked_entity)
+    ) {
+        if matches!(stack_info.stack_type, StackType::Tableau(_)) && !card.is_face_up {
+            log(&format!("Attempted to drag face-down card {:?} from Tableau. Drag cancelled.", clicked_entity));
+            return; // ドラッグ処理をせずに終了
+        }
+    }
+    // ★★★ チェックここまで ★★★
+
     // try_lock で得たガードは読み取り専用なので、コンポーネント追加のために可変にする必要がある場合、
     // ここで drop するか、最初から lock() を使う。
     // DraggingInfo 追加のために後で可変参照が必要なので、ここでは一旦 drop し、後で lock() する。
@@ -54,7 +69,6 @@ pub fn handle_drag_start(
         }
     };
 
-    let clicked_entity = Entity(entity_usize);
     let position_opt = world.get_component::<Position>(clicked_entity).cloned(); // Clone して後で使う
     let stack_info_opt = world.get_component::<StackInfo>(clicked_entity).cloned(); // Clone して後で使う
     let card_opt = world.get_component::<Card>(clicked_entity).cloned(); // Clone して後で使う
