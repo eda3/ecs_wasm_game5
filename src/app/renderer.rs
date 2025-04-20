@@ -64,21 +64,12 @@ pub fn render_game_rust(
     // ★★★ 新しいステップ: 2.5 スタックのプレースホルダーを描画 ★★★
     // ★削除★ ログ不要
     // log("  Drawing stack placeholders...");
+    context.begin_path();
+    context.rect(STOCK_POS_X as f64, STOCK_POS_Y as f64, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT);
     context.set_stroke_style(&JsValue::from_str(COLOR_PLACEHOLDER_BORDER));
     context.set_line_width(1.0);
-
-    // 2.5.1: 山札 (Stock) のプレースホルダーを描画
-    // ★削除★ ログ不要
-    // log("    Attempting to draw Stock placeholder...");
-    draw_rounded_rect(
-        context,
-        STOCK_POS_X as f64,
-        STOCK_POS_Y as f64,
-        RENDER_CARD_WIDTH,
-        RENDER_CARD_HEIGHT,
-        RENDER_CARD_CORNER_RADIUS,
-    )?;
     context.stroke();
+    context.set_line_dash(&JsValue::from(js_sys::Array::new())).unwrap();
     // ★削除★ ログ不要
     // log(&format!("    Drew Stock placeholder at ({}, {})", STOCK_POS_X, STOCK_POS_Y));
 
@@ -256,7 +247,6 @@ pub fn render_game_rust(
             context.fill();
             context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
             context.stroke();
-            context.restore();
             let (text_color, suit_char) = match card.suit {
                 Suit::Heart | Suit::Diamond => (COLOR_TEXT_RED, get_suit_text(card.suit)),
                 Suit::Club | Suit::Spade => (COLOR_TEXT_BLACK, get_suit_text(card.suit)),
