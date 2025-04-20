@@ -10,12 +10,15 @@ import init, { GameApp } from '/pkg/ecs_wasm_game5.js';
 // 最初は null (まだ無い状態) にしておく。
 let gameApp = null;
 
-// --- ドラッグ＆ドロップの状態管理変数 --- ★追加★
+// --- ドラッグ＆ドロップの状態管理変数 ---
 let isDragging = false;
-let draggedCardElement = null;
+// let draggedCardElement = null; // Canvas 描画なので DOM 要素は不要
 let draggedEntityId = null;
-let offsetX = 0;
-let offsetY = 0;
+// let offsetX = 0; // オフセットは Rust 側の DraggingInfo に持たせる
+// let offsetY = 0;
+
+// --- ★追加: requestAnimationFrame のループID --- ★
+let animationFrameId = null;
 
 // --- DOM 要素を取得 --- (後でイベントリスナーを設定するために先に取っておく！)
 const connectButton = document.getElementById('connect-button');
@@ -51,8 +54,10 @@ async function main() {
         setupEventListeners();
         console.log("🎧 イベントリスナー設定完了！");
 
-        // 定期的に接続状態をチェックして表示を更新する (例)
-        setInterval(updateStatusDisplay, 1000); // 1秒ごとに更新
+        // --- ★修正: 定期実行を setInterval から requestAnimationFrame ループに変更 --- ★
+        // setInterval(updateStatusDisplay, 1000); // ← これを削除！
+        console.log("🎨 ゲームループ (requestAnimationFrame) を開始します...");
+        gameLoop(); // 新しいゲームループ関数を呼び出す！
 
     } catch (error) {
         console.error("❌ WASM モジュールの初期化または GameApp の作成に失敗しました:", error);
@@ -63,6 +68,39 @@ async function main() {
         joinButton.disabled = true;
         dealButton.disabled = true;
         getStateButton.disabled = true;
+        // ★ エラー時にループを止める処理も追加 ★
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+            console.log("🛑 エラー発生のためゲームループを停止しました。");
+        }
+    }
+}
+
+// --- ★新しい関数: ゲームループ --- ★
+function gameLoop() {
+    // まず、次のフレームで再度 gameLoop を呼び出すように予約！
+    // これでループが継続するよ。
+    animationFrameId = requestAnimationFrame(gameLoop);
+
+    // --- ループ内で行う処理 --- //
+    // 1. 接続状態などの表示を更新 (これは頻繁じゃなくていいかもだけど、一旦入れる)
+    updateStatusDisplay();
+
+    // 2. Rust 側のゲーム状態に基づいて Canvas を再描画！
+    //    update_dragged_position で Position が更新されていれば、
+    //    ここでドラッグ中のカードが新しい位置に描画される！✨
+    if (gameApp) {
+        try {
+            // ★ render_game_rust の呼び出しをここに移動 ★
+            // console.log("🎨 Rendering game state..."); // ログが多すぎる場合はコメントアウト
+            gameApp.render_game_rust();
+        } catch (e) {
+            console.error("💥 Rust レンダリング中にエラー:", e);
+            // エラーが起きたらループを止める？ (とりあえず止めないでおく)
+            // cancelAnimationFrame(animationFrameId);
+            // animationFrameId = null;
+        }
     }
 }
 
@@ -197,8 +235,8 @@ function setupEventListeners() {
             console.log(`  ✅ カード発見！ Entity ID: ${clickedEntityId}。ドラッグ開始します...`);
             isDragging = true;
             draggedEntityId = clickedEntityId;
-            offsetX = coords.x; // ドラッグ開始時のオフセットを記録 (描画用だが一旦保存)
-            offsetY = coords.y;
+            // offsetX = coords.x; // ドラッグ開始時のオフセットを記録 (描画用だが一旦保存)
+            // offsetY = coords.y;
 
             try {
                 console.log(`  🚀 Rust 呼び出し中: gameApp.handle_drag_start(${draggedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
@@ -246,7 +284,7 @@ function getCanvasCoordinates(event) {
 
 // --- 接続状態などを表示する関数 ---
 function updateStatusDisplay() {
-    if (!gameApp) return; // gameApp がまだなければ何もしない
+    if (!gameApp) return;
 
     let status = 'Disconnected'; // ★ 変数 status を try の外で定義
 
@@ -282,55 +320,51 @@ function updateStatusDisplay() {
         dealButton.disabled = true;
     }
 
-    // 受信メッセージを処理し、状態が変わった場合のみ Rust側のレンダリング関数を呼ぶ
+    // --- ★削除: メッセージ処理と描画呼び出しを gameLoop に移動 --- ★
+    // try {
+    //     const stateDidChange = gameApp.process_received_messages();
+    //     console.log(`[デバッグ] stateDidChange: ${stateDidChange}`);
+    //     console.log("常に Rust の描画関数を呼び出します...");
+    //     gameApp.render_game_rust(); // ← gameLoop に移動！
+    //     console.log("  render_game_rust 呼び出し完了。");
+    // } catch (e) {
+    //     console.error("メッセージ処理またはRustレンダリング呼び出し中にエラー:", e);
+    // }
+
+    // ★追加: メッセージ処理はここで行う (描画とは別タイミング) ★
+    //     描画は毎フレームやるけど、メッセージ処理はここ (1秒ごと) でいいかも？
+    //     もっと頻繁にしたいなら gameLoop に移してもOK
     try {
-        // Rust側のメッセージ処理関数を呼び出し、状態が変わったかどうか(true/false)を受け取る
-        const stateDidChange = gameApp.process_received_messages();
-        // ★デバッグログ追加★ 状態が変わったか、renderを呼ぶか出力
-        console.log(`[デバッグ] stateDidChange: ${stateDidChange}`);
-
-        // if (stateDidChange) { // ★★★ 条件分岐をコメントアウト ★★★
-        //     console.log("Rust によると状態が変更されました。Rust の描画関数を呼び出します...");
-        //     // ★修正: renderGame() の代わりに render_game_rust() を呼び出す！★
-        //     gameApp.render_game_rust();
-        //     console.log("  render_game_rust 呼び出し完了。"); // ★デバッグログ追加★
-        // } else {
-        //     // console.log("状態変更なし。再描画はスキップします。"); // 必要ならコメント解除
-        // }
-
-        // ★★★ 常に再描画するように変更 ★★★
-        console.log("常に Rust の描画関数を呼び出します...");
-        gameApp.render_game_rust();
-        console.log("  render_game_rust 呼び出し完了。");
-
+        gameApp.process_received_messages();
     } catch (e) {
-        console.error("メッセージ処理またはRustレンダリング呼び出し中にエラー:", e);
+        console.error("メッセージ処理中にエラー:", e);
     }
 }
 
 // --- マウスムーブハンドラー (ドラッグ中) ---
 function handleMouseMove(event) {
-    // isDragging フラグが false なら何もしない (ドラッグ中じゃない)
     if (!isDragging) {
         return;
     }
-
-    // 重要: ドラッグ中にテキスト選択などが起こらないようにデフォルト動作を抑制
     event.preventDefault();
-
-    // 現在のマウス座標 (Canvas ローカル座標) を取得
     const coords = getCanvasCoordinates(event);
     if (!coords) return;
 
-    // デバッグ用に座標とドラッグ中の ID をログ出力
-    // console.log(`-- ドラッグ中 -- ID: ${draggedEntityId}, x: ${coords.x.toFixed(2)}, y: ${coords.y.toFixed(2)}`);
+    // --- ★Rust の update_dragged_position を呼び出す！★ ---
+    if (gameApp && draggedEntityId !== null) {
+        try {
+            // マウス座標をそのまま Rust に渡す！
+            // Rust 側でオフセットを考慮して Position を更新してくれるはず！
+            // console.log(`🚀 Calling update_dragged_position: ID=${draggedEntityId}, x=${coords.x}, y=${coords.y}`); // デバッグ用
+            gameApp.update_dragged_position(draggedEntityId, coords.x, coords.y);
+        } catch (error) {
+            console.error("💥 gameApp.update_dragged_position 呼び出しエラー:", error);
+            // エラーが起きてもドラッグは継続する？ それとも止める？ 一旦継続。
+        }
+    }
 
-    // --- TODO: ドラッグ中の描画更新 --- ★将来の課題★
-    // ここで、ドラッグされているカード (draggedEntityId) の Position を
-    // Rust 側で更新し (例: `gameApp.update_dragged_position(draggedEntityId, coords.x, coords.y);`)
-    // その後、`gameApp.render_game_rust()` を呼び出して画面を再描画する、
-    // という処理が必要になります。
-    // Rust 側に `update_dragged_position` のような関数を実装する必要があります。
+    // --- TODO: ドラッグ中の描画更新 --- ★削除★
+    // 描画は gameLoop 内の render_game_rust で行われるようになったので、ここでの描画処理は不要！
 }
 
 // --- マウスアップハンドラー (ドラッグ終了) ---

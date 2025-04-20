@@ -860,6 +860,64 @@ impl GameApp {
         Position { x: base_x, y: base_y }
     }
 
+    /// JavaScript から呼び出される、ドラッグ中のカードの位置を一時的に更新するためのメソッドだよ！
+    /// マウスの動きに合わせてカードの見た目を追従させるために使うんだ。
+    /// ⚠️ 注意: この関数は表示上の Position を更新するだけで、
+    ///         カードの所属スタック (StackInfo) やゲームの論理的な状態は変更しないよ！
+    ///         最終的な移動処理は handle_drag_end で行われる。
+    #[wasm_bindgen]
+    pub fn update_dragged_position(&mut self, entity_id: usize, mouse_x: f32, mouse_y: f32) {
+        // デバッグ用に、どのエンティティがどの座標に更新されようとしているかログ出力！
+        // console::log_3(&JsValue::from_str("update_dragged_position: entity="), &JsValue::from(entity_id), &JsValue::from(format!("mouse=({}, {})", mouse_x, mouse_y)));
+
+        let entity = Entity(entity_id);
+
+        // World のロックを取得 (Position と DraggingInfo を読み書きするから可変で)
+        let mut world_guard = match self.world.try_lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                // ロック失敗！エラーログを出して何もしない。
+                log::error!("Failed to lock world in update_dragged_position: {}", e);
+                return;
+            }
+        };
+
+        // --- ドラッグ情報 (オフセット) を取得 --- //
+        // ドラッグされているカードの DraggingInfo コンポーネントを取得する。
+        // これには、ドラッグ開始時のマウスカーソルとカード左上のズレ (オフセット) が記録されてるはず！
+        let dragging_info_opt = world_guard.get_component::<DraggingInfo>(entity);
+
+        if let Some(dragging_info) = dragging_info_opt {
+            // DraggingInfo が見つかった！ オフセットを使ってカードの新しい左上座標を計算するよ。
+            // カードの左上 X = マウスの X - オフセット X
+            // カードの左上 Y = マウスの Y - オフセット Y
+            // DraggingInfo のオフセットは f64 だけど、Position は f32 なのでキャストが必要だよ！
+            let new_card_x = mouse_x - dragging_info.offset_x as f32;
+            let new_card_y = mouse_y - dragging_info.offset_y as f32;
+
+            // --- Position コンポーネントを更新 --- //
+            // 移動させるカードの Position コンポーネントを可変 (mut) で取得する。
+            if let Some(position_component) = world_guard.get_component_mut::<Position>(entity) {
+                // Position コンポーネントの x と y を、計算した新しい座標で上書き！
+                position_component.x = new_card_x;
+                position_component.y = new_card_y;
+                // ログで更新後の座標を確認！ (コメントアウトしてもOK)
+                // log::info!("  Updated dragged Position for {:?} to ({}, {})", entity, new_card_x, new_card_y);
+            } else {
+                // Position コンポーネントが見つからないのはおかしい… エラーログ！
+                log::error!("  Failed to get Position component for dragged entity {:?} during update", entity);
+            }
+        } else {
+            // DraggingInfo が見つからないってことは、もうドラッグが終わってるか、何かおかしい。
+            // エラーログを出しておく。
+            log::error!("  DraggingInfo component not found for entity {:?} in update_dragged_position", entity);
+            // この場合、位置の更新は行わない。
+        }
+
+        // World のロックはこの関数のスコープを抜けるときに自動的に解除されるよ。
+        // drop(world_guard); // 明示的に書いてもOK！
+    }
+
 } // impl GameApp の終わり
 
 // GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)
