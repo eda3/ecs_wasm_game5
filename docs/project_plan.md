@@ -69,7 +69,7 @@
 - [/] ルール実装(Rust): ゲームクリア判定ロジック (`logic/rules.rs` の `check_win_condition`) ✅ (`WinConditionSystem` は **`World` 実装済、次は修正・動作確認！** 🛠️)
 
 // --- UIインタラクション(JS) - Canvas ベース ---
-- [ ] UIインタラクション(JS): Canvas クリックイベントの検知とログ出力
+- [x] UIインタラクション(JS): Canvas クリックイベントの検知とログ出力 - **JS で実装完了！手動適用で確認！座標をコンソールに出力！** ✅🖱️📊👍
 - [ ] UIインタラクション(JS): クリック座標からカード/スタックを特定するロジック (Rust側で実装中？ 要確認)
 - [ ] UIインタラクション(JS): ダブルクリックイベントの検知 (Canvas 上で)
 - [ ] UIインタラクション(JS): ダブルクリック時にRust側の自動移動ロジック (`app/game_app.rs` の `handle_double_click`) を呼び出す
