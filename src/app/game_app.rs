@@ -170,18 +170,63 @@ impl GameApp {
             // closure.forget(); // drop で解除するので forget しない！
         }
 
-        // --- DblClick Listener --- (同様に実装)
+        // --- DblClick Listener --- ★★★ 実装 ★★★
         {
-            // TODO: ダブルクリックリスナーの実装
-            // クロージャ作成、canvas.add_event_listener_with_callback("dblclick", ...)?;
-            // *game_app_rc.borrow_mut().canvas_dblclick_closure... = Some(closure);
+            let game_app_clone = Rc::clone(&game_app_rc);
+            let canvas_clone = canvas.clone(); // 座標取得用に canvas も clone
+            let closure = Closure::<dyn FnMut(_)>::new(move |event: Event| {
+                if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
+                    let coords = Self::get_canvas_coordinates_from_event(&canvas_clone, &mouse_event);
+                    if let Some((x, y)) = coords {
+                        // ダブルクリックされた場所の Entity ID を取得
+                        let entity_id_opt = game_app_clone.borrow().get_entity_id_at(x, y);
+                        if let Some(entity_id) = entity_id_opt {
+                            // Entity があれば handle_double_click を呼び出す
+                            game_app_clone.borrow().handle_double_click(entity_id);
+                        } else {
+                            // カードがない場所でのダブルクリックは無視
+                             println!("DblClick on empty area ignored.");
+                        }
+                    }
+                } else {
+                     println!("Failed to cast to MouseEvent in dblclick listener");
+                }
+            });
+            canvas.add_event_listener_with_callback("dblclick", closure.as_ref().unchecked_ref())?;
+            *game_app_rc.borrow_mut().canvas_dblclick_closure.lock().unwrap() = Some(closure);
         }
 
-        // --- MouseDown Listener --- (同様に実装)
+        // --- MouseDown Listener --- ★★★ 実装 ★★★
         {
-            // TODO: マウスダウンリスナーの実装
-            // クロージャ作成、canvas.add_event_listener_with_callback("mousedown", ...)?;
-            // *game_app_rc.borrow_mut().canvas_mousedown_closure... = Some(closure);
+            let game_app_clone = Rc::clone(&game_app_rc);
+            let canvas_clone = canvas.clone(); // 座標取得用に canvas も clone
+            let closure = Closure::<dyn FnMut(_)>::new(move |event: Event| {
+                if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
+                    // 左クリック (button 0) 以外は無視
+                    if mouse_event.button() != 0 {
+                         println!("Ignoring non-left mousedown event.");
+                        return;
+                    }
+
+                    let coords = Self::get_canvas_coordinates_from_event(&canvas_clone, &mouse_event);
+                    if let Some((x, y)) = coords {
+                        // マウスダウンされた場所の Entity ID を取得
+                        let entity_id_opt = game_app_clone.borrow().get_entity_id_at(x, y);
+                        if let Some(entity_id) = entity_id_opt {
+                            // Entity があれば handle_drag_start を呼び出す
+                            // handle_drag_start は &mut self だけど、Rc<RefCell<>> 経由で呼べる！
+                            game_app_clone.borrow_mut().handle_drag_start(entity_id, x, y);
+                        } else {
+                            // カードがない場所でのマウスダウンは無視 (ドラッグ開始しない)
+                            println!("Mousedown on empty area ignored.");
+                        }
+                    }
+                } else {
+                     println!("Failed to cast to MouseEvent in mousedown listener");
+                }
+            });
+            canvas.add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())?;
+            *game_app_rc.borrow_mut().canvas_mousedown_closure.lock().unwrap() = Some(closure);
         }
 
         println!("Canvas listeners set up.");
