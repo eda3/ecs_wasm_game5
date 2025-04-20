@@ -43,7 +43,7 @@ use super::drag_handler;
 use crate::app::state_getter;
 
 // ★追加: browser_event_manager モジュールを use する★
-use crate::app::browser_event_manager;
+use crate::app::browser_event_manager; // ★ 警告修正: 未使用のため削除 ★ ← 元に戻す！
 
 // ★修正: Result を返すように変更 (listener attach のエラーハンドル)
 use wasm_bindgen::JsValue;
@@ -270,13 +270,13 @@ impl GameApp {
                     Ok(json_message) => {
                          match self.network_manager.lock() {
                              Ok(nm) => {
-                                 if let Err(e) = nm.send_message(&json_message) {
-                                     // error!("Failed to send MakeMove message: {}", e);
+                                 if let Err(_e) = nm.send_message(&json_message) {
+                                     // error!("Failed to send MakeMove message: {}", _e);
                                  } else {
                                      // info!("MakeMove message sent: {:?}", message);
                                  }
                              },
-                             Err(e) => {} // error!("Failed to lock NetworkManager to send MakeMove: {}", e)
+                             Err(_e) => {} // error!("Failed to lock NetworkManager to send MakeMove: {}", _e)
                          }
                     }
                     Err(e) => {} // error!("Failed to serialize MakeMove message: {}", e)
