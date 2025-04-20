@@ -3,6 +3,7 @@
 
 use crate::ecs::world::World; // World が必要
 use crate::components::{Position, StackType};
+use crate::config::layout;
 use crate::config::layout::{
     STACK_PADDING,
     TABLEAU_START_X, TABLEAU_START_Y,
@@ -30,11 +31,11 @@ pub fn calculate_card_position(
         StackType::Stock => Position { x: STOCK_POS_X, y: STOCK_POS_Y },
         StackType::Waste => Position { x: WASTE_POS_X, y: WASTE_POS_Y },
         StackType::Foundation(index) => {
-            let base_x = FOUNDATION_START_X + (TABLEAU_X_OFFSET + STACK_PADDING) * index as f32;
+            let base_x = FOUNDATION_START_X + layout::FOUNDATION_X_OFFSET * index as f32;
             Position { x: base_x, y: FOUNDATION_START_Y }
         }
         StackType::Tableau(index) => {
-            let base_x = TABLEAU_START_X + (TABLEAU_X_OFFSET + STACK_PADDING) * index as f32;
+            let base_x = TABLEAU_START_X + layout::TABLEAU_X_OFFSET * index as f32;
             let mut current_y = TABLEAU_START_Y;
 
             // position_in_stack までにあるカードの is_face_up 状態を見て Y座標を計算

@@ -196,7 +196,7 @@ pub fn find_topmost_clicked_card(world: &World, x: f32, y: f32, dragged_entity_t
 /// カードがクリックされなかった場合に呼び出されることを想定しているよ。
 ///
 /// # 引数
-/// * `_world`: ゲーム世界の現在の状態 (`World`)。(現状未使用だけど、将来的に使うかも？例えば空のスタックのみ判定対象にするとか)
+/// * `world`: ゲーム世界の現在の状態 (`World`)。(現状未使用だけど、将来的に使うかも？例えば空のスタックのみ判定対象にするとか)
 /// * `x`: クリックされた画面上の X 座標。
 /// * `y`: クリックされた画面上の Y 座標。
 ///
@@ -215,10 +215,88 @@ pub fn find_topmost_clicked_card(world: &World, x: f32, y: f32, dragged_entity_t
 /// # 注意点
 /// - この関数は `find_topmost_clicked_card` の後に呼ばれる前提だよ。
 /// - そのため、ここでの判定は「カード以外のスタックのพื้นฐาน的な場所」をクリックしたかどうかのチェックが主になるよ。
-pub fn find_clicked_stack_area(_world: &World, _x: f32, _y: f32) -> Option<ClickTarget> {
-    // TODO: 各スタックタイプの領域を計算し、(x, y) が含まれるかチェックするロジックを実装
-    //       現状は仮実装として常に None を返す
+pub fn find_clicked_stack_area(_world: &World, x: f32, y: f32) -> Option<ClickTarget> {
     log("  Checking for clicked stack area...");
-    // ここにスタック領域判定のロジックが入るはず...
-    None // 仮実装: どのスタックにもヒットしなかったことにする
+
+    // カードのサイズを取得 (定数)
+    let card_width = RENDER_CARD_WIDTH as f32;
+    let card_height = RENDER_CARD_HEIGHT as f32;
+
+    // 1. Stock エリアの判定
+    let stock_left = layout::STOCK_POS_X;
+    let stock_top = layout::STOCK_POS_Y;
+    let stock_right = stock_left + card_width;
+    let stock_bottom = stock_top + card_height;
+    if x >= stock_left && x < stock_right && y >= stock_top && y < stock_bottom {
+        log("    -> Hit Stock area.");
+        return Some(ClickTarget::Stack(StackType::Stock));
+    }
+
+    // 2. Waste エリアの判定
+    let waste_left = layout::WASTE_POS_X;
+    let waste_top = layout::WASTE_POS_Y;
+    let waste_right = waste_left + card_width;
+    let waste_bottom = waste_top + card_height;
+    if x >= waste_left && x < waste_right && y >= waste_top && y < waste_bottom {
+        // Waste エリアは、上にカードがなくてもクリックターゲットになりうる
+        // (Waste の一番上のカードをクリックする場合は find_topmost_clicked_card で判定される)
+        // ここでは Waste のベースエリアをクリックしたと判断する
+        log("    -> Hit Waste area.");
+        return Some(ClickTarget::Stack(StackType::Waste));
+    }
+
+    // 3. Foundation エリア (0-3) の判定
+    for i in 0..4 {
+        let foundation_left = layout::FOUNDATION_START_X + (layout::FOUNDATION_X_OFFSET * i as f32);
+        let foundation_top = layout::FOUNDATION_START_Y;
+        let foundation_right = foundation_left + card_width;
+        let foundation_bottom = foundation_top + card_height;
+        if x >= foundation_left && x < foundation_right && y >= foundation_top && y < foundation_bottom {
+            // Foundation エリアは、カードがあってもなくてもクリック/ドロップターゲットになりうる
+            let stack_type = StackType::Foundation(i);
+            log(&format!("    -> Hit Foundation {} area.", i));
+            return Some(ClickTarget::Stack(stack_type));
+        }
+    }
+
+    // 4. Tableau エリア (0-6) の判定
+    for i in 0..7 {
+        let tableau_left = layout::TABLEAU_START_X + (layout::TABLEAU_X_OFFSET * i as f32);
+        let tableau_top = layout::TABLEAU_START_Y;
+        // Tableau の底 (クリック/ドロップ可能なエリアの下限) をどう定義するか？
+        // -> とりあえず、一番上のカード配置場所 (高さ card_height 分) のみを判定対象とする
+        //    (空の Tableau 列に K を置くケースを想定)
+        // -> TODO: より洗練された判定が必要かも (列全体の高さなど)
+        let tableau_right = tableau_left + card_width;
+        let tableau_bottom = tableau_top + card_height; // 最初のカード位置のみ
+
+        if x >= tableau_left && x < tableau_right && y >= tableau_top && y < tableau_bottom {
+            // 空の Tableau エリア (カードがない場所) をクリック/ドロップした場合
+            // (カードがある場合は find_topmost_clicked_card で処理されるはず)
+            let stack_type = StackType::Tableau(i);
+            log(&format!("    -> Hit empty Tableau {} base area.", i));
+            return Some(ClickTarget::Stack(stack_type));
+
+            // TODO: Tableau のカードが積まれた部分の下のエリアも判定するか？
+            // let cards_in_tableau = world.query::<(&Card, &Position, &StackMembership)>()
+            //     .filter(|(_, _, membership)| membership.stack_type == StackType::Tableau(i))
+            //     .collect::<Vec<_>>();
+            // let tableau_stack_height = if cards_in_tableau.is_empty() {
+            //     card_height
+            // } else {
+            //     // 一番下のカードの位置を見つける必要がある
+            //     // この実装は仮
+            //     tableau_top + card_height + (cards_in_tableau.len() as f32 * layout::TABLEAU_Y_OFFSET_FACE_UP)
+            // };
+            // let full_tableau_bottom = tableau_top + tableau_stack_height; // 仮
+            // if x >= tableau_left && x < tableau_right && y >= tableau_top && y < full_tableau_bottom {
+                 // ...
+            // }
+
+        }
+    }
+
+    // どのスタックエリアにもヒットしなかった場合
+    log("    -> No stack area hit.");
+    None
 }
