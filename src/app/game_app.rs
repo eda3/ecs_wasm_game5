@@ -403,8 +403,8 @@ impl GameApp {
 
         let mut world_guard = match self.world.try_lock() {
             Ok(guard) => guard,
-            Err(e) => {
-                // error!("Failed to lock world in handle_click: {}", e);
+            Err(_e) => {
+                // error!("Failed to lock world in handle_click: {}", _e);
                 return;
             }
         };
