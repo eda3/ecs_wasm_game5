@@ -453,7 +453,8 @@ impl GameApp {
     // ドラッグ開始時の処理
     // entity: ドラッグが開始されたカードの Entity ID (usize)
     // start_x, start_y: ドラッグが開始された Canvas 上の座標 (f32)
-    fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) { // usize 型を明示
+    #[wasm_bindgen]
+    pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) { // usize 型を明示
         // try_lock は Result を返すため、if let Ok で受ける
         if let Ok(mut world) = self.world.try_lock() {
             // Entity 型に変換
@@ -499,7 +500,8 @@ impl GameApp {
     }
 
     // ドラッグ終了時の処理
-    fn handle_drag_end(&mut self, entity_usize: usize, end_x: f32, end_y: f32) {
+    #[wasm_bindgen]
+    pub fn handle_drag_end(&mut self, entity_usize: usize, end_x: f32, end_y: f32) {
         log::info!("handle_drag_end: entity={}, end_x={}, end_y={}", entity_usize, end_x, end_y);
         let entity_to_move = Entity(entity_usize);
 
