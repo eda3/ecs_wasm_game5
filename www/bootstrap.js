@@ -209,56 +209,52 @@ function setupEventListeners() {
 
     // -- マウスダウンリスナー (ドラッグ開始) --
     canvas.addEventListener('mousedown', (event) => {
-        console.log("Canvas マウスダウン！ 🖱️ イベント:", event);
-        if (!gameApp) { console.error("GameApp 未初期化"); return; }
+        // ★ログ追加: 関数開始★
+        console.log("[DEBUG] mousedown リスナー開始");
 
-        // 左クリック以外は無視 (event.button === 0 が左クリック)
-        if (event.button !== 0) {
-            console.log("左クリックではないため無視します。");
-            return;
-        }
+        if (!gameApp) { console.error("GameApp 未初期化"); return; }
+        if (event.button !== 0) { console.log("左クリックではないため無視"); return; }
 
         const coords = getCanvasCoordinates(event);
-        if (!coords) return;
-
-        console.log(`>>> Canvas 内マウスダウン座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
+        if (!coords) { console.log("[DEBUG] mousedown: 座標取得失敗"); return; }
+        console.log(`[DEBUG] mousedown: 座標 (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
 
         let clickedEntityId = undefined;
         try {
+            // ★ログ追加: Rust 呼び出し直前★
+            console.log(`[DEBUG] mousedown: gameApp.get_entity_id_at(${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
             clickedEntityId = gameApp.get_entity_id_at(coords.x, coords.y);
+            console.log(`[DEBUG] mousedown: get_entity_id_at 応答: ${clickedEntityId}`);
         } catch (error) {
             console.error("💥 gameApp.get_entity_id_at 呼び出しエラー:", error);
             return;
         }
 
         if (clickedEntityId !== undefined) {
-            console.log(`  ✅ カード発見！ Entity ID: ${clickedEntityId}。ドラッグ開始します...`);
+            console.log(`[DEBUG] mousedown: カード発見 (ID: ${clickedEntityId})。ドラッグ開始処理へ`);
             isDragging = true;
             draggedEntityId = clickedEntityId;
-            // offsetX = coords.x; // ドラッグ開始時のオフセットを記録 (描画用だが一旦保存)
-            // offsetY = coords.y;
 
             try {
-                console.log(`  🚀 Rust 呼び出し中: gameApp.handle_drag_start(${draggedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
-                // Rust 側の handle_drag_start を呼び出す (現時点では内部的に DraggingInfo を追加するだけ)
+                // ★ログ追加: Rust 呼び出し直前★
+                console.log(`[DEBUG] mousedown: gameApp.handle_drag_start(${draggedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
                 gameApp.handle_drag_start(draggedEntityId, coords.x, coords.y);
-                console.log("  Rust の handle_drag_start 関数呼び出し成功！");
+                console.log("[DEBUG] mousedown: handle_drag_start 呼び出し成功");
 
-                // Window に mousemove と mouseup リスナーを追加
-                // 重要: リスナーには名前付き関数を渡すことで、後で removeEventListener できるようにする！
                 window.addEventListener('mousemove', handleMouseMove);
                 window.addEventListener('mouseup', handleMouseUp);
-                console.log("  Window に mousemove/mouseup リスナーを追加しました。");
+                console.log("[DEBUG] mousedown: Window リスナー追加完了");
 
             } catch (error) {
                 console.error("💥 gameApp.handle_drag_start 呼び出しエラー:", error);
-                // エラーが起きたらドラッグ状態をリセット
                 isDragging = false;
                 draggedEntityId = null;
             }
         } else {
-            console.log("  🤷 カードがない場所でマウスダウン。ドラッグは開始しません。");
+            console.log("[DEBUG] mousedown: カードが見つからず。ドラッグ開始せず");
         }
+        // ★ログ追加: 関数終了★
+        console.log("[DEBUG] mousedown リスナー終了");
     });
 
     console.log("🎧 イベントリスナー設定完了！");
@@ -343,77 +339,77 @@ function updateStatusDisplay() {
 
 // --- マウスムーブハンドラー (ドラッグ中) ---
 function handleMouseMove(event) {
+    // ★ログ追加: 関数開始★
+    // console.log("[DEBUG] handleMouseMove 開始"); // 頻繁すぎるのでコメントアウトしてもOK
+
     if (!isDragging) {
+        // console.log("[DEBUG] handleMouseMove: isDragging = false のため終了");
         return;
     }
     event.preventDefault();
     const coords = getCanvasCoordinates(event);
-    if (!coords) return;
+    if (!coords) { /*console.log("[DEBUG] handleMouseMove: 座標取得失敗");*/ return; }
+    // console.log(`[DEBUG] handleMouseMove: 座標 (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
 
-    // --- ★Rust の update_dragged_position を呼び出す！★ ---
     if (gameApp && draggedEntityId !== null) {
         try {
-            // マウス座標をそのまま Rust に渡す！
-            // Rust 側でオフセットを考慮して Position を更新してくれるはず！
-            // console.log(`🚀 Calling update_dragged_position: ID=${draggedEntityId}, x=${coords.x}, y=${coords.y}`); // デバッグ用
+            // ★ログ追加: Rust 呼び出し直前★
+            // console.log(`[DEBUG] handleMouseMove: gameApp.update_dragged_position(${draggedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`); // 頻繁すぎるのでコメントアウト
             gameApp.update_dragged_position(draggedEntityId, coords.x, coords.y);
         } catch (error) {
             console.error("💥 gameApp.update_dragged_position 呼び出しエラー:", error);
-            // エラーが起きてもドラッグは継続する？ それとも止める？ 一旦継続。
         }
     }
-
-    // --- TODO: ドラッグ中の描画更新 --- ★削除★
-    // 描画は gameLoop 内の render_game_rust で行われるようになったので、ここでの描画処理は不要！
+    // ★ログ追加: 関数終了★
+    // console.log("[DEBUG] handleMouseMove 終了");
 }
 
 // --- マウスアップハンドラー (ドラッグ終了) ---
 function handleMouseUp(event) {
-    // isDragging フラグが false なら何もしない (ドラッグ開始してないのに mouseup だけ発生した場合など)
+    // ★ログ追加: 関数開始★
+    console.log("[DEBUG] handleMouseUp 開始");
+
     if (!isDragging) {
+        console.log("[DEBUG] handleMouseUp: isDragging = false のため終了");
         return;
     }
+    console.log("[DEBUG] handleMouseUp: ドラッグ終了処理を実行します");
 
-    console.log("マウスアップ！ ドラッグ終了処理を開始します。 🖱️⬆️ イベント:", event);
-
-    // まず isDragging フラグを false にして、これ以上 mousemove が処理されないようにする
     isDragging = false;
-
-    // Window からリスナーを削除！ これを忘れると、ドラッグしてなくても mousemove や mouseup が発生し続けてしまう！
     window.removeEventListener('mousemove', handleMouseMove);
     window.removeEventListener('mouseup', handleMouseUp);
-    console.log("  Window から mousemove/mouseup リスナーを削除しました。");
+    console.log("[DEBUG] handleMouseUp: Window リスナー削除完了");
 
-    // マウスが離された座標を取得
-    const coords = getCanvasCoordinates(event);
+    let coords = getCanvasCoordinates(event); // ★ let に変更
     if (!coords) {
-        console.warn("マウスアップ座標が Canvas 外のようです。ドラッグ終了座標は (0, 0) として処理を試みます。");
-        //座標が取れない場合もドラッグ終了処理は呼び出す（エラーになるかもしれないが）
+        console.warn("[DEBUG] handleMouseUp: 座標取得失敗。デフォルト (0, 0) で続行");
         coords = { x: 0, y: 0 };
     }
+    console.log(`[DEBUG] handleMouseUp: 座標 (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
 
-    // ドラッグされていたカードの ID を取得 (null チェック)
     const entityIdToEnd = draggedEntityId;
-    draggedEntityId = null; // 状態をリセット
+    draggedEntityId = null;
+    console.log(`[DEBUG] handleMouseUp: ドラッグ対象エンティティ ID: ${entityIdToEnd}`);
 
     if (entityIdToEnd !== null && gameApp) {
-        console.log(`>>> マウスアップ座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
         try {
-            console.log(`  🚀 Rust 呼び出し中: gameApp.handle_drag_end(${entityIdToEnd}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
-            // Rust 側の handle_drag_end を呼び出す！
-            // これにより、移動ルールのチェック、World の更新、サーバーへの通知が行われるはず！
+            // ★ログ追加: Rust 呼び出し直前★
+            console.log(`[DEBUG] handleMouseUp: gameApp.handle_drag_end(${entityIdToEnd}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
             gameApp.handle_drag_end(entityIdToEnd, coords.x, coords.y);
-            console.log("  Rust の handle_drag_end 関数呼び出し成功！");
-            // 注意: ここでも画面更新は Rust 側 + サーバーからの応答で行われる想定。
+            console.log("[DEBUG] handleMouseUp: handle_drag_end 呼び出し成功");
         } catch (error) {
             console.error("💥 gameApp.handle_drag_end 呼び出しエラー:", error);
         }
     } else {
-        console.warn("ドラッグ終了処理をスキップ: entityIdToEnd が null または gameApp が未初期化です。");
+        console.warn("[DEBUG] handleMouseUp: スキップ (entityIdToEnd が null または gameApp が未初期化)");
     }
-
-    console.log("ドラッグ終了処理完了。");
+    // ★ログ追加: 関数終了★
+    console.log("[DEBUG] handleMouseUp 終了");
 }
 
-// --- 実行開始！ ---
-main(); 
+// --- 実行開始！ --- ★修正★
+// main(); // ← これを直接呼ぶのをやめる
+
+// HTML ドキュメントの読み込みと解析が完了したら main 関数を実行する
+document.addEventListener('DOMContentLoaded', main);
+console.log("⏳ DOMContentLoaded イベントリスナーを設定。DOM 準備完了後に main() を実行します。"); 

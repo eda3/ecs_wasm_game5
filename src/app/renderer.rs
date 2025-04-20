@@ -50,7 +50,8 @@ pub fn render_game_rust(
     canvas: &HtmlCanvasElement, // Canvas と Context への参照を受け取る
     context: &CanvasRenderingContext2d
 ) -> Result<(), JsValue> {
-    log("App::Renderer: render_game_rust() called!");
+    // ★削除★ ログ不要
+    // log("App::Renderer: render_game_rust() called!");
 
     // --- ステップ1: Canvas 寸法を取得 --- 
     let canvas_width = canvas.width() as f64;
@@ -61,12 +62,14 @@ pub fn render_game_rust(
     context.clear_rect(0.0, 0.0, canvas_width, canvas_height);
 
     // ★★★ 新しいステップ: 2.5 スタックのプレースホルダーを描画 ★★★
-    log("  Drawing stack placeholders...");
+    // ★削除★ ログ不要
+    // log("  Drawing stack placeholders...");
     context.set_stroke_style(&JsValue::from_str(COLOR_PLACEHOLDER_BORDER));
     context.set_line_width(1.0);
 
     // 2.5.1: 山札 (Stock) のプレースホルダーを描画
-    log("    Attempting to draw Stock placeholder...");
+    // ★削除★ ログ不要
+    // log("    Attempting to draw Stock placeholder...");
     draw_rounded_rect(
         context,
         STOCK_POS_X as f64,
@@ -76,19 +79,23 @@ pub fn render_game_rust(
         RENDER_CARD_CORNER_RADIUS,
     )?;
     context.stroke();
-    log(&format!("    Drew Stock placeholder at ({}, {})", STOCK_POS_X, STOCK_POS_Y));
+    // ★削除★ ログ不要
+    // log(&format!("    Drew Stock placeholder at ({}, {})", STOCK_POS_X, STOCK_POS_Y));
 
     // 2.5.2: 捨て札 (Waste) のプレースホルダーを描画
-    log("    Attempting to draw Waste placeholder..."); 
+    // ★削除★ ログ不要
+    // log("    Attempting to draw Waste placeholder..."); 
     // ★★★ デバッグ: draw_rounded_rect + stroke の代わりに stroke_rect を試す！ ★★★
-    log("      Calling context.stroke_rect() for Waste...");
+    // ★削除★ ログ不要
+    // log("      Calling context.stroke_rect() for Waste...");
     context.stroke_rect(
         WASTE_POS_X as f64,
         WASTE_POS_Y as f64,
         RENDER_CARD_WIDTH,
         RENDER_CARD_HEIGHT
     );
-    log("      context.stroke_rect() for Waste called (assuming success).");
+    // ★削除★ ログ不要
+    // log("      context.stroke_rect() for Waste called (assuming success).");
     /* --- 元のコード (コメントアウト) ---
     match draw_rounded_rect(
         context,
@@ -108,10 +115,12 @@ pub fn render_game_rust(
     context.stroke();
     log("      context.stroke() for Waste called (assuming success).");
     */
-    log(&format!("    Finished drawing Waste placeholder at ({}, {})", WASTE_POS_X, WASTE_POS_Y));
+    // ★削除★ ログ不要
+    // log(&format!("    Finished drawing Waste placeholder at ({}, {})", WASTE_POS_X, WASTE_POS_Y));
 
     // 2.5.3: 上がり札 (Foundation) のプレースホルダーを描画 (4つあるからループ！)
-    log("    Attempting to draw Foundation placeholders...");
+    // ★削除★ 念のためログ不要
+    // log("    Attempting to draw Foundation placeholders...");
     for i in 0..4 { 
         let foundation_x = FOUNDATION_START_X as f64 + i as f64 * FOUNDATION_X_OFFSET as f64;
         let foundation_y = FOUNDATION_START_Y as f64;
@@ -126,9 +135,11 @@ pub fn render_game_rust(
         context.stroke();
         // log(&format!("    Drew Foundation {} placeholder at ({}, {})", i, foundation_x, foundation_y)); // 毎回のログはうるさいのでコメントアウト
     }
-    log("    Finished drawing all 4 Foundation placeholders.");
+    // ★削除★ 念のためログ不要
+    // log("    Finished drawing all 4 Foundation placeholders.");
 
-    log("  Finished drawing placeholders.");
+    // ★削除★ ログ不要
+    // log("  Finished drawing placeholders.");
 
     // --- ステップ3: World からカード情報を取得 & ソート --- 
     let world = world_arc.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
@@ -167,11 +178,13 @@ pub fn render_game_rust(
     });
 
     // --- ステップ4: カードの描画処理 --- 
-    log(&format!("App::Renderer: Rendering {} sorted cards...", cards_to_render.len()));
+    // ★削除★ ログ不要
+    // log(&format!("App::Renderer: Rendering {} sorted cards...", cards_to_render.len()));
 
     // ソートされたカードリストをループで回して、1枚ずつ描画していくよ！
     for (entity, pos, card, _dragging_info_opt, _stack_info_opt) in cards_to_render {
-        log(&format!("  Rendering card {:?} at ({}, {})", entity, pos.x, pos.y));
+        // ★削除★ ログが多すぎるのでコメントアウト！
+        // log(&format!("  Rendering card {:?} at ({}, {})", entity, pos.x, pos.y));
 
         // --- 4.1: カードの基本の四角形を描画 --- 
         // 角丸の四角を描画するヘルパー関数を呼ぶ
@@ -191,7 +204,8 @@ pub fn render_game_rust(
         // --- 4.2: カードの内容を描画 (表向きか裏向きかで処理を分ける) ---
         if card.is_face_up {
             // --- 表向きのカード --- 
-            log(&format!("    Card {:?} is face up ({:?}, {:?})", entity, card.rank, card.suit));
+            // ★削除★ ログが多すぎるのでコメントアウト！
+            // log(&format!("    Card {:?} is face up ({:?}, {:?})", entity, card.rank, card.suit));
             // 4.2.1: スートに基づいて文字色を決定
             let text_color = match card.suit {
                 Suit::Heart | Suit::Diamond => COLOR_TEXT_RED,
@@ -219,22 +233,14 @@ pub fn render_game_rust(
 
         } else {
             // --- 裏向きのカード --- 
-            log(&format!("    Card {:?} is face down", entity));
-            // 裏面の色で塗りつぶす
-            draw_rounded_rect(
-                context,
-                pos.x as f64,
-                pos.y as f64,
-                RENDER_CARD_WIDTH,
-                RENDER_CARD_HEIGHT,
-                RENDER_CARD_CORNER_RADIUS,
-            )?;
+            // log(&format!("    Card {:?} is face down", entity)); // 必要ならこれもコメントアウト
             context.set_fill_style(&JsValue::from_str(COLOR_CARD_BACK));
             context.fill();
         }
     }
 
-    log("App::Renderer: Card rendering finished.");
+    // ★削除★ ログ不要
+    // log("App::Renderer: Card rendering finished.");
     Ok(())
 }
 
