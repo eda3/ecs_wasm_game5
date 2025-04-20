@@ -4,14 +4,33 @@
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use crate::network::NetworkManager;
-use crate::protocol::{ClientMessage, ServerMessage};
+use crate::protocol::{ClientMessage, ServerMessage, PlayerId, GameStateData};
 use crate::ecs::entity::Entity;
 use crate::components::stack::StackType;
 use crate::ecs::world::World; // process_received_messages が state_handler を呼ぶために必要
-use crate::protocol::PlayerId;
 use crate::app::state_handler; // apply_game_state を呼び出すために必要
 use crate::{log, error}; // log と error マクロを使う
 use serde_json;
+
+// --- ★★★ 新しい enum: メッセージ処理の結果を詳細に伝えるための型 ★★★ ---
+/// `process_received_messages` が返す結果の種類を表す enum だよ！
+/// これで、JS側がどんな重要なイベントが起きたかを知ることができるんだ ✨
+#[derive(Debug, Clone)] // JS には渡さないけど、デバッグ用に Debug/Clone はつけとく
+pub enum ProcessedMessageResult {
+    /// 特に何も重要なイベントは発生しなかったよ。
+    Nothing,
+    /// `GameStateUpdate` などで World の状態が更新されたよ。
+    /// (JS側で再描画が必要になるかも？)
+    StateChanged,
+    /// サーバーからカード移動が拒否されたよ！🙅‍♀️
+    MoveRejected { 
+        /// 拒否されたカードのエンティティID。
+        entity_id: Entity,
+        /// 拒否された理由。
+        reason: String,
+    },
+    // TODO: 必要なら他のイベント (例: PlayerJoined, PlayerLeft, GameWon など) も追加できるよ！
+}
 
 // --- WebSocket 接続 --- 
 
@@ -86,61 +105,87 @@ pub fn send_make_move(
 
 // --- 受信メッセージ処理 --- 
 
-/// 受信メッセージを処理する。
+/// 受信メッセージキューを処理して、発生した重要イベントのリストを返すよ！
 /// GameApp::process_received_messages のロジックを移動。
-/// 状態変更があったかどうかを bool で返す。
+/// ★戻り値を `bool` から `Vec<ProcessedMessageResult>` に変更！★
 pub fn process_received_messages(
     message_queue_arc: &Arc<Mutex<VecDeque<ServerMessage>>>,
     my_player_id_arc: &Arc<Mutex<Option<PlayerId>>>,
     world_arc: &Arc<Mutex<World>> // apply_game_state を呼ぶために必要
-) -> bool {
-    let mut state_changed = false;
+) -> Vec<ProcessedMessageResult> { // ★戻り値の型を変更！★
+    // 処理結果を格納するための空の Vec を用意するよ！
+    let mut results: Vec<ProcessedMessageResult> = Vec::new();
 
+    // メッセージキューから処理すべきメッセージを全部取り出すよ。
+    // キューのロックはここだけで済むように、スコープを区切る。
     let messages_to_process: Vec<ServerMessage> = {
         let mut queue = message_queue_arc.lock().expect("Failed to lock message queue");
-        queue.drain(..).collect()
+        queue.drain(..).collect() // drain でキューを空にして、要素を Vec に集める
     };
 
-    if !messages_to_process.is_empty() {
-        log(&format!("App::Network: Processing {} received messages...", messages_to_process.len()));
+    // 処理するメッセージがなければ、すぐに空の results を返す。
+    if messages_to_process.is_empty() {
+        return results;
     }
 
+    log(&format!("App::Network: Processing {} received messages...", messages_to_process.len()));
+
+    // 取り出したメッセージを1つずつループで処理していくよ！
     for message in messages_to_process {
         log(&format!("  Processing: {:?}", message));
+        // message の種類に応じて match で処理を分岐！
         match message {
             ServerMessage::GameJoined { your_player_id, initial_game_state } => {
+                // 自分のプレイヤーIDを保存！
                 *my_player_id_arc.lock().expect("Failed to lock my_player_id") = Some(your_player_id);
                 log(&format!("App::Network: Game joined! My Player ID: {}", your_player_id));
-                // state_handler の関数を呼び出す
+                // 受け取った初期ゲーム状態で World を更新！
+                // state_handler の apply_game_state を呼び出す。
                 if state_handler::apply_game_state(world_arc, initial_game_state) {
-                    state_changed = true;
+                    // 状態が変わったら、結果リストに StateChanged を追加！
+                    results.push(ProcessedMessageResult::StateChanged);
                 }
             }
             ServerMessage::GameStateUpdate { current_game_state } => {
                 log("App::Network: Received GameStateUpdate.");
-                // state_handler の関数を呼び出す
+                // 受け取ったゲーム状態で World を更新！
                 if state_handler::apply_game_state(world_arc, current_game_state) {
-                    state_changed = true;
+                    // 状態が変わったら、結果リストに StateChanged を追加！
+                    results.push(ProcessedMessageResult::StateChanged);
                 }
             }
-            ServerMessage::MoveRejected { reason } => {
-                log(&format!("App::Network: Move rejected by server: {}", reason));
+            // ★★★ MoveRejected の処理を変更！ ★★★
+            ServerMessage::MoveRejected { entity_id, reason } => {
+                // 移動が拒否されたことをログに出力。
+                log(&format!("App::Network: Move rejected by server for entity {:?}: {}", entity_id, reason));
+                // ★結果リストに MoveRejected イベントを追加！★
+                //   これで呼び出し元 (最終的には JS) が拒否されたことを知れる！
+                results.push(ProcessedMessageResult::MoveRejected { entity_id, reason });
             }
             ServerMessage::PlayerJoined { player_id, player_name } => {
                 log(&format!("App::Network: Player {} ({}) joined.", player_name, player_id));
-                // apply_game_state でプレイヤーは更新されるので、ここでは state_changed を true にしない
+                // PlayerJoined イベントを results に追加しても良いけど、
+                // GameStateUpdate でプレイヤーリストが更新されるはずなので、
+                // ここでは特に何もしなくてもいいかも？ (必要なら追加！)
+                // results.push(ProcessedMessageResult::PlayerJoined { player_id, player_name });
             }
             ServerMessage::PlayerLeft { player_id } => {
                 log(&format!("App::Network: Player {} left.", player_id));
-                // apply_game_state でプレイヤーはクリアされる？ TODO: PlayerLeft 専用の処理が必要かも
+                // PlayerLeft も同様。
+                // results.push(ProcessedMessageResult::PlayerLeft { player_id });
             }
             ServerMessage::Pong => {
                 log("App::Network: Received Pong from server.");
+                // Pong は特に重要なイベントじゃないので results には追加しない。
             }
             ServerMessage::Error { message } => {
+                // サーバーからのエラーメッセージはコンソールに出力。
                 error(&format!("App::Network: Received error from server: {}", message));
+                // results に Error イベントを追加してもいいかも？
+                // results.push(ProcessedMessageResult::ServerError { message });
             }
         }
     }
-    state_changed
+    // 処理が終わったら、収集した結果のリストを返す！
+    results
 } 

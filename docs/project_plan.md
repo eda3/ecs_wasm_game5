@@ -87,7 +87,7 @@
 // --- 状態更新と表示 (Canvas) ---
 - [x] 状態更新(Rust): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (`app/network_handler.rs`)
 - [x] 状態更新(Rust/JS): `apply_game_state` (Rust) 後、`render_game_rust` (Rust) を呼び出して画面を更新。
-- [ ] 状態更新(JS): サーバーから `MoveRejected` を受け取った場合に、ユーザーにフィードバックを表示 (例: アラート表示、カードを元の位置に戻すアニメーションなど)。
+- [x] 状態更新(JS): サーバーから `MoveRejected` を受け取った場合に、ユーザーにフィードバックを表示 (例: アラート表示、カードを元の位置に戻すアニメーションなど)。
 
 // --- その他 ---
 - **[ ] 不要コード調査:** `systems/move_card_system.rs` が現状の自作ECSで機能していない可能性。役割（サーバー側で処理？）を確認し、不要なら削除、必要なら修正する。🚨

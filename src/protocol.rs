@@ -79,6 +79,8 @@ pub enum ServerMessage {
 
     /// カード移動リクエストが不正だった場合に、サーバーが送ってくるよ。
     MoveRejected {
+        /// ★追加★ どのカードの移動が拒否されたかを示すエンティティID。
+        entity_id: Entity,
         /// 不正だった理由を示すメッセージ (デバッグ用とか？)
         reason: String,
     },

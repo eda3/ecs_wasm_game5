@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use crate::ecs::entity::Entity;
 // Component: 全てのコンポーネントが実装すべきマーカートレイト (中身は空でもOK)。ジェネリクスでコンポーネント型を制約するのに使う。
 use crate::ecs::component::Component;
+use crate::components::stack::{StackInfo, StackType};
 
 /// コンポーネントストレージとその操作をまとめた内部的な構造体だよ！✨
 /// これを使うことで、`World` の `component_stores` で型情報を隠蔽しつつも、
@@ -387,6 +388,41 @@ impl World {
         //             storage.keys().copied().filter(|e| self.is_entity_alive(*e)).collect()
         //         })
         // })
+    }
+
+    /// 指定された StackType を持つ最初のエンティティを探す。
+    /// StackInfo コンポーネントを持つ全エンティティを検索し、
+    /// stack_type が一致するものが見つかったらその Entity を返す。
+    ///
+    /// # 引数
+    /// * `stack_type`: 検索したいスタックの種類 (`StackType`)。
+    ///
+    /// # 戻り値
+    /// * `Some(Entity)`: 指定された `stack_type` を持つ最初のエンティティが見つかった場合。
+    /// * `None`: 見つからなかった場合。
+    pub fn find_entity_by_stack_type(&self, stack_type: StackType) -> Option<Entity> {
+        // 1. StackInfo コンポーネントを持つ全てのエンティティのリストを取得する。
+        let entities_with_stack_info = self.get_all_entities_with_component::<StackInfo>();
+
+        // 2. リスト内の各エンティティについてループ処理を行う。
+        for entity in entities_with_stack_info {
+            // 3. 各エンティティから StackInfo コンポーネントへの参照を取得する。
+            //    get_component は Option<&StackInfo> を返す。
+            if let Some(stack_info) = self.get_component::<StackInfo>(entity) {
+                // 4. StackInfo の stack_type フィールドが、引数で受け取った stack_type と一致するか比較する。
+                if stack_info.stack_type == stack_type {
+                    // 5. 一致したら、そのエンティティを Some でラップして返し、関数を終了する。
+                    println!("World: Found entity {:?} for stack type {:?}", entity, stack_type); // デバッグ用ログ
+                    return Some(entity);
+                }
+            }
+            // get_component が None を返した場合や、stack_type が一致しなかった場合は、
+            // ループの次のエンティティに進む。
+        }
+
+        // 6. ループが最後まで実行されても見つからなかった場合は、None を返す。
+        println!("World: No entity found for stack type {:?}", stack_type); // デバッグ用ログ
+        None
     }
 
     // --- 以下、テストコード用のヘルパーメソッド (外部公開はしない想定) ---

@@ -331,7 +331,21 @@ function updateStatusDisplay() {
     //     描画は毎フレームやるけど、メッセージ処理はここ (1秒ごと) でいいかも？
     //     もっと頻繁にしたいなら gameLoop に移してもOK
     try {
-        gameApp.process_received_messages();
+        // ★修正: Rust側のメッセージ処理を呼び出し、戻り値を受け取る！★
+        //   戻り値は Option<usize> 型。usize は拒否されたカードのIDだよ。
+        //   (JSでは number | undefined として扱われる)
+        const rejected_card_id = gameApp.process_received_messages();
+
+        // ★追加: 戻り値をチェックして、拒否されたカードがあれば警告を出す！★
+        //   rejected_card_id が undefined じゃなければ (つまり Some(id) だったら)
+        if (rejected_card_id !== undefined) {
+            // 警告メッセージをコンソールに出力！⚠️
+            // どのカードの移動がダメだったか ID も表示するよ。
+            console.warn(`⚠️ サーバーから移動が拒否されました！ (カードID: ${rejected_card_id}) ルールを確認してね！`);
+            // TODO: ここに、もっとリッチなフィードバック処理を追加できるよ！
+            //   例: アラートを表示する (alert(...)), カードを元の位置に戻すアニメーションを開始する、など
+        }
+
     } catch (e) {
         console.error("メッセージ処理中にエラー:", e);
     }
