@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
+// use std::io::Error; // ★ 削除 ★
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::closure::Closure;
@@ -48,11 +49,11 @@ use crate::app::browser_event_manager; // ★ 警告修正: 未使用のため�
 use wasm_bindgen::JsValue;
 
 // ★ 追加 ★
-use crate::app::stock_handler;
+// use crate::app::stock_handler; // ★ 削除 ★
 
 // ★ 追加: layout_calculator と components を使うための use 文 ★
 use crate::app::layout_calculator;
-use crate::components::{self, Card, Position, StackInfo};
+use crate::components::{Card, Position, StackInfo}; // ★ self を削除 ★
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
@@ -422,7 +423,7 @@ impl GameApp {
             &self.canvas,
             &self.context
         // JsValue に変換する必要があるので .map_err を追加
-        ).map_err(|e| JsValue::from(Error::new(&format!("Render error: {:?}", e))))
+        ).map_err(|e| JsValue::from_str(&format!("Render error: {:?}", e))) // ★ 修正: エラーを文字列化して JsValue に ★
     }
 
     /// JavaScript から Canvas 上でのクリックイベントを処理するために呼び出される関数だよ！
@@ -602,7 +603,7 @@ impl GameApp {
                          if let Some(position) = world.get_component_mut::<Position>(*entity) {
                             // ★ 修正: calculate_card_position の結果を一旦変数に入れる ★ // ← このコメントは古くなったので削除
                             // let new_pos = layout_calculator::calculate_card_position(StackType::Stock, new_stock_pos, &*world); // ← 移動済み
-                            *position = *new_pos; // ★ 修正: new_pos は Position 型のはず ★
+                            *position = new_pos.clone(); // ★ 修正: clone() を呼ぶ ★
                         }
                     }
                     cards_reset += 1;
