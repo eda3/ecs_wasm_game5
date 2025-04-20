@@ -279,12 +279,12 @@ impl GameApp {
                              Err(_e) => {} // error!("Failed to lock NetworkManager to send MakeMove: {}", _e)
                          }
                     }
-                    Err(e) => {} // error!("Failed to serialize MakeMove message: {}", e)
+                    Err(_e) => {} // error!("Failed to serialize MakeMove message: {}", _e)
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 // JSON デシリアライズ失敗
-                // error!("Failed to deserialize target_stack_json: {}. JSON: {}", e, target_stack_json);
+                // error!("Failed to deserialize target_stack_json: {}. JSON: {}", _e, target_stack_json);
             }
         }
     }
