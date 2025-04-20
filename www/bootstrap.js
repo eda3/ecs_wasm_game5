@@ -169,7 +169,7 @@ function setupEventListeners() {
         const coords = getCanvasCoordinates(event);
         if (coords) {
             console.log(`>>> Canvas 内クリック座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
-            // gameApp.handle_click(coords.x, coords.y); // 必要なら Rust の handle_click を呼ぶ
+            gameApp.handle_click(coords.x, coords.y); // ★ コメント解除！ Rust の handle_click を呼ぶ ★
         }
     });
 
