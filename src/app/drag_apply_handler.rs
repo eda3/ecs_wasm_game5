@@ -7,7 +7,7 @@ use crate::ecs::entity::Entity;
 use crate::components::{Position, Card, StackInfo, StackType};
 use crate::network::NetworkManager;
 use crate::protocol::{self, ClientMessage}; // Import ClientMessage specifically
-use crate::app::network_handler;
+use crate::app::network_sender;
 use crate::app::layout_calculator;
 use crate::components::dragging_info::DraggingInfo; // Needed for the function signature, though not used now
 use crate::log;
@@ -163,7 +163,7 @@ fn notify_move_to_server(
         moved_entity,
         target_stack: target_stack_type_for_proto,
     };
-    if let Err(e) = network_handler::send_serialized_message(network_manager_arc, message) {
+    if let Err(e) = network_sender::send_serialized_message(network_manager_arc, message) {
         error!("    Error sending MakeMove message: {}", e);
     }
 } 

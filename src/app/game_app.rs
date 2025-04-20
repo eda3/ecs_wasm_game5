@@ -33,8 +33,12 @@ use serde_json;
 use crate::config::layout;
 use crate::app::renderer::{RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT};
 
-// ★追加: network_handler から ProcessedMessageResult をインポート★
-use super::network_handler::ProcessedMessageResult;
+// ★修正: network_handler ではなく、新しいモジュールを use する★
+// use super::network_handler::ProcessedMessageResult; 
+use super::network_receiver::ProcessedMessageResult; // 受信結果
+use super::network_connector; // 接続
+use super::network_sender; // 送信
+use super::network_receiver; // 受信処理
 
 // ★追加: drag_handler モジュールを use する★
 use super::drag_handler;
@@ -116,15 +120,15 @@ impl GameApp {
 
     // WebSocket接続
     pub fn connect(&self) {
-        // ★修正: app::network_handler の関数を呼び出す！★
-        super::network_handler::connect(&self.network_manager); // app:: -> super::
+        // ★修正: network_connector の関数を呼び出す！★
+        super::network_connector::connect(&self.network_manager);
     }
 
     // ゲーム参加メッセージ送信
     #[wasm_bindgen]
     pub fn send_join_game(&self, player_name: String) {
-        // ★修正: app::network_handler の関数を呼び出す！★
-        super::network_handler::send_join_game(&self.network_manager, player_name); // app:: -> super::
+        // ★修正: network_sender の関数を呼び出す！★
+        super::network_sender::send_join_game(&self.network_manager, player_name);
     }
 
     // カード移動メッセージ送信 (引数を JSON 文字列に戻す)
@@ -167,9 +171,9 @@ impl GameApp {
     //   拒否がなければ `None`、あれば最初の `Some(entity_id)` を返す。
     #[wasm_bindgen]
     pub fn process_received_messages(&mut self) -> Option<usize> { 
-        // ★ network_handler の関数を呼び出す！ 戻り値は Vec<ProcessedMessageResult> ★
-        let results = super::network_handler::process_received_messages( // app:: -> super::
-            &self.message_queue,
+        // ★修正: network_receiver の関数を呼び出す！★
+        let results = super::network_receiver::process_received_messages(
+            &self.message_queue, 
             &self.my_player_id,
             &self.world
         );

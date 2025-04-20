@@ -9,8 +9,9 @@ use crate::network::{NetworkManager, ConnectionStatus};
 use crate::systems::deal_system::DealInitialCardsSystem;
 use crate::protocol::{GameStateData, ClientMessage, CardData, PositionData, ServerMessage};
 use crate::components::{self, Card, StackInfo, Position, /*StackType*/}; // StackType は直接使われていない
-use crate::{log, error}; // log と error マクロを使う
-use crate::app::network_handler; // send_serialized_message を使うために必要
+use crate::log; // ★修正: log マクロのみ★
+use log::error; // ★追加: error! マクロ★
+use crate::app::network_sender; // ★修正: network_handler -> network_sender ★
 use wasm_bindgen::JsValue;
 use wasm_bindgen::JsCast;
 use web_sys::{window, HtmlCanvasElement, CanvasRenderingContext2d};
@@ -114,8 +115,8 @@ pub(crate) fn send_initial_state(
     log("App::Init: send_initial_state called.");
     let message = ClientMessage::ProvideInitialState { initial_state: initial_state_data };
     log("  Sending ProvideInitialState message...");
-    if let Err(e) = network_handler::send_serialized_message(network_manager_arc, message) {
-        error(&format!("App::Init: Failed to send ProvideInitialState message: {}", e));
+    if let Err(e) = network_sender::send_serialized_message(network_manager_arc, message) {
+        error!("App::Init: Failed to send ProvideInitialState message: {}", e);
     } else {
         log("  ProvideInitialState message sent successfully.");
     }

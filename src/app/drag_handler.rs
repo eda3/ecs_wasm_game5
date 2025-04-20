@@ -18,14 +18,12 @@ use crate::components::{
     DraggingInfo,
     StackType,
 };
-use crate::network::NetworkManager;
-use crate::protocol;
+use crate::app::event_handler::{self, ClickTarget};
+use crate::protocol::{self, ClientMessage};
 use crate::logic::rules;
-use crate::app::{event_handler, network_handler, layout_calculator}; // layout_calculator を使う
 use crate::{log}; // log マクロを使う (ルートから)
-use crate::app::event_handler::ClickTarget; // ★追加: ClickTarget をインポート
-use crate::protocol::ClientMessage; // ★追加: ClientMessage をインポート
 use super::drag_apply_handler; // ★追加: 新しいモジュールを使う
+use crate::network::NetworkManager; // ★追加★
 
 
 /// ドラッグ開始時の処理 (GameApp::handle_drag_start のロジック)
