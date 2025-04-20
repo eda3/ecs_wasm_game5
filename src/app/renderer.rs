@@ -202,21 +202,22 @@ pub fn render_game_rust(
         }
     });
 
-    // --- 4. Draw cards in sorted order (handling dragged card) --- 
+    // --- 4. Draw cards in sorted order (handling dragged card) ---
     // log(&format!("Renderer: Drawing {} sorted card entities...", card_render_list.len())); // ★ コメントアウト ★
-    // ★ ドラッグ中カード描画用変数を初期化 ★
-    let mut dragged_card_data: Option<(Position, Card)> = None;
+    // ★ 削除: ドラッグ中カード描画用変数は不要になる ★
+    // let mut dragged_card_data: Option<(Position, Card)> = None;
 
     // ★ ソート済みリストをループ ★
-    for (_entity, pos, card, is_dragging, _stack_info_opt) in card_render_list {
-        // ★ ドラッグ中のカードは保存してスキップ ★
-        if is_dragging {
-            // log(&format!("  - Storing dragged card {:?} for later rendering.", _entity));
-            dragged_card_data = Some((pos, card)); // pos, card は move される
-            continue;
-        }
+    // ★ 修正: 変数名を is_dragging から _is_dragging に変更 (未使用警告を回避) ★
+    for (_entity, pos, card, _is_dragging, _stack_info_opt) in card_render_list {
+        // ★ 削除: ドラッグ中のカードをスキップする処理を削除 ★
+        // if is_dragging {
+        //     // log(&format!("  - Storing dragged card {:?} for later rendering.", _entity));
+        //     dragged_card_data = Some((pos, card)); // pos, card は move される
+        //     continue;
+        // }
 
-        // --- 通常のカード描画 (ドラッグ中でない場合) --- 
+        // --- 通常のカード描画 (ドラッグ中でない場合も含む) ---
         let card_x = pos.x as f64;
         let card_y = pos.y as f64;
 
@@ -251,42 +252,19 @@ pub fn render_game_rust(
             context.stroke();
             context.restore();
         }
-        // --- 通常のカード描画ここまで ---
     }
 
-    // --- 5. Draw the dragged card last (if any) --- 
-    if let Some((pos, card)) = dragged_card_data {
-        // log(&format!("Renderer: Drawing dragged card at ({}, {})", pos.x, pos.y));
-        let card_x = pos.x as f64;
-        let card_y = pos.y as f64;
-        // ... (dragged card drawing logic - unchanged) ...
-        if card.is_face_up {
-            context.save();
-            draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
-            context.set_fill_style_str(COLOR_CARD_BG);
-            context.fill();
-            context.set_stroke_style_str(COLOR_CARD_BORDER);
-            context.stroke();
-            let (text_color, suit_char) = match card.suit {
-                Suit::Heart | Suit::Diamond => (COLOR_TEXT_RED, get_suit_text(card.suit)),
-                Suit::Club | Suit::Spade => (COLOR_TEXT_BLACK, get_suit_text(card.suit)),
-            };
-            let rank_char = get_rank_text(card.rank);
-            context.save();
-            context.set_fill_style_str(text_color);
-            context.set_font(&format!("bold {}px {}", FONT_SIZE_RANK, FONT_FAMILY));
-            context.fill_text(&format!("{} {}", rank_char, suit_char), card_x + RANK_OFFSET_X, card_y + RANK_OFFSET_Y)?; 
-            context.restore();
-        } else {
-            context.save();
-            draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
-            context.set_fill_style_str(COLOR_CARD_BACK);
-            context.fill();
-            context.set_stroke_style_str(COLOR_CARD_BORDER);
-            context.stroke();
-            context.restore();
-        }
-    }
+    // --- 5. Draw the dragged card LAST (if any) ---
+    // ★ 削除: ドラッグ中のカードを最後に描画する処理を削除 ★
+    // if let Some((pos, card)) = dragged_card_data {
+    //     let card_x = pos.x as f64;
+    //     let card_y = pos.y as f64;
+    //     if card.is_face_up {
+    //         // ... (face-up card drawing logic - duplicated from above) ...
+    //     } else {
+    //         // ... (face-down card drawing logic - duplicated from above) ...
+    //     }
+    // }
 
     // ★削除★ ログ不要
     // log("App::Renderer: Card rendering finished.");
