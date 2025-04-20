@@ -36,6 +36,12 @@ use crate::app::renderer::{RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT};
 // ★追加: network_handler から ProcessedMessageResult をインポート★
 use super::network_handler::ProcessedMessageResult;
 
+// ★追加: state_getter モジュールを use する★
+use super::state_getter;
+
+// ★追加: drag_handler モジュールを use する★
+use super::drag_handler;
+
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
 pub struct GameApp {
@@ -214,125 +220,15 @@ impl GameApp {
     ///                  JavaScript 側でエラーとして扱える `JsValue` を返すよ。失敗！😭
     ///
     /// # 処理の流れ (Process Flow)
-    /// 1. `World` のデータを安全に読み書きするために、`Mutex` をロックするよ。(`lock().expect()` は仮。本当は `?` でエラー伝播したいけど、`wasm-bindgen` の制約で少し工夫が必要かも)
-    /// 2. `World` から「プレイヤー (`Player`)」コンポーネントを持つ全てのエンティティを取得するよ。
-    /// 3. 各プレイヤーエンティティから `PlayerData` を作るよ。`Player` コンポーネントから名前などを取得する。
-    /// 4. `World` から「カード (`Card`)」コンポーネントを持つ全てのエンティティを取得するよ。
-    /// 5. 各カードエンティティから `CardData` を作るよ。`Card`, `StackInfo`, `Position` コンポーネントから必要な情報を取得する。
-    /// 6. 作成した `PlayerData` のリストと `CardData` のリストを使って、`GameStateData` 構造体のインスタンスを作るよ。
-    /// 7. `GameStateData` インスタンスを `serde_json::to_string` を使って JSON 文字列に変換（シリアライズ）するよ。
-    /// 8. 成功したら JSON 文字列を `Ok` で包んで、失敗したらエラー情報を `Err(JsValue)` で包んで返すよ。
-    ///
-    /// # 関数型スタイルについて (Functional Style Notes)
-    /// - `World` からエンティティリストを取得した後、`iter()`, `map()`, `filter_map()`, `collect()` などの
-    ///   イテレータメソッドを積極的に使って、データを変換・収集していくよ！ これは Rust でよく使われるイディオム（慣用句）だよ！ ✨
-    /// - `for` ループを完全に排除するわけじゃないけど、データの変換処理は `map` とかで書くとスッキリすることが多いよ！ 👍
+    /// 内部で `state_getter::get_world_state_json` を呼び出すだけだよ！
     #[wasm_bindgen]
-    pub fn get_world_state_json(&self) -> Result<String, JsValue> {
-        // デバッグ用にコンソールに出力！ (JavaScript の console.log みたいなもの)
+    pub fn get_world_state_json(&self) -> Result<JsValue, JsValue> { // ★戻り値を JsValue に変更★
         println!("GameApp: get_world_state_json が呼ばれました。World の状態を準備中...");
 
-        // 1. World の Mutex をロックする！ 🔑
-        //   - `self.world` は `Arc<Mutex<World>>` 型だよ。複数の場所から安全に World を使うための仕組み。
-        //   - `.lock()` で Mutex のロックを取得しようとする。他の誰かがロックしてたら、解除されるまで待つよ。
-        //   - `.map_err(|e| ...)`: もしロック取得に失敗 (前の所有者がパニックしたとか) したら...
-        //     - `e.to_string()` でエラー内容を文字列にして、
-        //     - `Error::new()` で JavaScript の Error オブジェクトを作って、
-        //     - `JsValue::from()` でそれを `JsValue` に変換して `Err` として返すよ。JS にエラーを伝える！
-        //   - `?` 演算子: `Result` が `Ok(値)` なら中の値を取り出し、`Err(エラー)` なら即座に関数からそのエラーを返す、超便利なやつ！ ✨
-        let world = self.world.lock()
-            .map_err(|e| JsValue::from(Error::new(&format!("Failed to lock world: {}", e))))?;
-
-        // --- 2. プレイヤー (`Player`) データの収集 ---
-        println!("  プレイヤーデータを収集中...");
-        // `world.get_all_entities_with_component::<Player>()` で Player コンポーネントを持つ全エンティティIDを取得。
-        let player_entities = world.get_all_entities_with_component::<Player>();
-        // `iter()`: エンティティIDのリストをイテレータ（順番に処理できるやつ）に変換。
-        // `filter_map(|&entity| ...)`: 各エンティティID (`entity`) に対して処理を行う。
-        //   - `world.get_component::<Player>(entity)` で Player コンポーネントを取得 (Option<Player> が返る)。
-        //   - `map(|player| ...)`: もし Player コンポーネントが取得できたら (`Some(player)`)、PlayerData を作る。
-        //     - `PlayerData { id: entity.0 as PlayerId, name: player.name.clone() }`
-        //       - `entity.0` は Entity 型の中の usize 値。それを PlayerId (u32) にキャスト。
-        //       - `player.name.clone()`: Player コンポーネントから名前をコピーしてくる。
-        //   - `filter_map` は `Some(PlayerData)` だけを集めて、`None` は無視する。万が一 Player が取れなくても大丈夫！
-        // `collect::<Vec<_>>()`: イテレータの結果 (PlayerData) を Vec (リスト) に集める。
-        let players: Vec<PlayerData> = player_entities.iter()
-            .filter_map(|&entity| {
-                world.get_component::<Player>(entity).map(|player| {
-                    PlayerData {
-                        id: entity.0 as PlayerId, // Entity (usize) から PlayerId (u32) へキャスト
-                        name: player.name.clone(), // Player コンポーネントから名前をコピー
-                    }
-                })
-            })
-            .collect();
-        println!("    プレイヤー {} 人発見。", players.len());
-
-        // --- 3. カード (`Card`) データの収集 ---
-        println!("  カードデータを収集中...");
-        // Player と同様に、Card コンポーネントを持つ全エンティティIDを取得。
-        let card_entities = world.get_all_entities_with_component::<Card>();
-        // `filter_map` を使って、必要なコンポーネント (Card, StackInfo, Position) が
-        // 全て揃っているエンティティだけを `CardData` に変換して集めるよ！
-        let cards: Vec<CardData> = card_entities.iter()
-            .filter_map(|&entity| {
-                // カードに必要なコンポーネントをまとめて取得しようとする
-                let card_opt = world.get_component::<Card>(entity);
-                let stack_info_opt = world.get_component::<StackInfo>(entity);
-                let position_opt = world.get_component::<Position>(entity);
-
-                // `if let` を使って、全てのコンポーネントが `Some` (取得成功) だったら中身を取り出す。
-                // 一つでも `None` (取得失敗) だったら、この `filter_map` のクロージャは `None` を返すので、
-                // そのエンティティのデータは無視されるよ。安全！ 👍
-                if let (Some(card), Some(stack_info), Some(position)) = (card_opt, stack_info_opt, position_opt) {
-                    // 全て取得成功！ `CardData` を構築する。
-                    Some(CardData {
-                        entity, // エンティティID そのもの
-                        suit: card.suit,
-                        rank: card.rank,
-                        is_face_up: card.is_face_up,
-                        stack_type: stack_info.stack_type, // StackInfo から取得
-                        position_in_stack: stack_info.position_in_stack, // StackInfo から取得
-                        position: PositionData { // PositionData を作る
-                            x: position.x, // Position から取得
-                            y: position.y, // Position から取得
-                        },
-                    })
-                } else {
-                    // 必要なコンポーネントが揃っていなかった場合 (普通はありえないはずだけど念のため)
-                    // エラーログを出力して、このエンティティはスキップ (`None` を返す)
-                    eprintln!("警告: エンティティ {:?} に必要なコンポーネント (Card, StackInfo, Position) が全て取得できませんでした。スキップします。", entity);
-                    None
-                }
-            })
-            .collect(); // イテレータの結果を Vec<CardData> に集める。
-        println!("    完全なデータを持つカード {} 枚発見。", cards.len());
-
-
-        // --- 4. GameStateData の構築 ---
-        println!("  GameStateData を構築中...");
-        // 集めたプレイヤーデータとカードデータを使って、`GameStateData` を作るよ！
-        let game_state_data = GameStateData {
-            players, // さっき集めた players リスト
-            cards,   // さっき集めた cards リスト
-            // TODO: 必要なら他のフィールド (例: current_turn, game_status) も World から取得して追加する
-        };
-
-        // --- 5. JSON 文字列へのシリアライズ ---
-        println!("  GameStateData を JSON 文字列にシリアライズ中...");
-        // `serde_json::to_string` を使って `GameStateData` を JSON 文字列に変換！ ✨
-        // これも失敗する可能性があるので `Result` が返ってくる。
-        serde_json::to_string(&game_state_data)
-            // `map_err` で、もし `serde_json` がエラー (Err) を返したら...
-            .map_err(|e| {
-                // エラー内容をコンソールに出力 (eprintln! はエラー出力用)
-                eprintln!("GameStateData の JSON シリアライズエラー: {}", e);
-                // JavaScript の Error オブジェクトを作って JsValue に変換して返す！
-                JsValue::from(Error::new(&format!("Failed to serialize game state: {}", e)))
-            })
-        // `map_err` が成功した場合は `Ok(json_string)` がそのまま返る。
-        // `map_err` が失敗した場合は `Err(js_value)` が返る。
-        // これで関数の戻り値の型 `Result<String, JsValue>` にピッタリ合うね！ 🎉
+        // ★ state_getter モジュールの関数を呼び出す！★
+        // self.world は Arc<Mutex<World>> なので、そのまま参照を渡せるよ！
+        state_getter::get_world_state_json(&self.world)
+        // 返り値は既に Result<JsValue, JsValue> なので、そのまま返す！
     }
 
     // 接続状態を文字列で返す (デバッグ用)
@@ -382,38 +278,45 @@ impl GameApp {
     /// 3. **TODO:** 今後は、特定された要素に応じて、カードのドラッグ開始処理や、
     ///    スタッククリック時のアクション (例: 山札クリックでカードをめくる) などを実装していくよ！
     #[wasm_bindgen]
-    pub fn handle_click(&self, x: f32, y: f32) {
-        // まずは World のロックを取得するよ
-        let world = match self.world.lock() {
-            Ok(w) => w,
-            Err(e) => {
-                error(&format!("handle_click 内で World のロックに失敗: {}", e));
-                return; // ロック失敗したら何もできないので終了
-            }
+    pub fn handle_click(&mut self, x: f32, y: f32) {
+        // --- クリック要素の特定 (event_handler に委譲) --- 
+        // World は handle_click_logic 内でロックされるのでここでは不要
+
+        // ★ 修正: クリック要素を特定するだけに変更 ★
+        let clicked_target = {
+            let world = match self.world.lock() {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("handle_click 内で World のロックに失敗: {}", e);
+                    return;
+                }
+            };
+            event_handler::find_clicked_element(&world, x, y)
+            // world のロックはここでドロップされる
         };
 
-        // クリックされた要素を探す！ event_handler モジュールの関数を呼び出すよ！
-        let clicked_element = event_handler::find_clicked_element(&world, x, y);
-
-        // World のロックはもう不要なので早めに解除！
-        drop(world);
-
-        // クリックされた要素に応じてログを出力！ (今はまだログだけ)
-        match clicked_element {
-            Some(event_handler::ClickTarget::Card(entity)) => {
-                // カードがクリックされた！
-                log(&format!("カードをクリック: {:?}", entity));
-                // TODO: カードクリック時の処理 (ドラッグ開始など) をここに追加！
+        // --- クリック要素に応じた処理 --- 
+        match clicked_target {
+            Some(ClickTarget::Card(entity)) => {
+                log(&format!("カード {:?} をクリック -> ドラッグ開始処理へ", entity));
+                // ★ カードがクリックされたらドラッグ開始処理を呼ぶ！★
+                self.handle_drag_start(entity.0, x, y);
             }
-            Some(event_handler::ClickTarget::Stack(stack_type)) => {
-                // スタックエリアがクリックされた！
-                log(&format!("スタックエリアをクリック: {:?}", stack_type));
-                // TODO: スタッククリック時の処理 (山札をめくるなど) をここに追加！
+            Some(ClickTarget::Stack(stack_type)) => {
+                log(&format!("スタックエリア {:?} をクリック -> スタックアクション処理へ", stack_type));
+                // ★ スタッククリック時のロジックは event_handler に移譲する ★
+                //   (ただし、サーバー通信などは network_handler 経由で行うべき)
+                // TODO: event_handler にスタッククリック処理を実装し、それを呼ぶ
+                // event_handler::handle_stack_click_logic(&self.world, &self.network_manager, stack_type);
+                match stack_type {
+                    StackType::Stock => log("  山札クリック！ (処理は TODO)"),
+                    StackType::Waste => log("  捨て札クリック！ (処理は TODO)"),
+                    _ => log("  他のスタッククリック (処理は TODO)"),
+                }
             }
             None => {
-                // 何もないところがクリックされた！
                 log("空きスペースをクリック。");
-                // TODO: 背景クリック時の処理 (もし必要なら)
+                // 何もしない
             }
         }
     }
@@ -490,49 +393,10 @@ impl GameApp {
     // entity: ドラッグが開始されたカードの Entity ID (usize)
     // start_x, start_y: ドラッグが開始された Canvas 上の座標 (f32)
     #[wasm_bindgen]
-    pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) { // usize 型を明示
-        // try_lock は Result を返すため、if let Ok で受ける
-        if let Ok(mut world) = self.world.try_lock() {
-            // Entity 型に変換
-            let entity = Entity(entity_usize);
-
-            // ドラッグ対象エンティティから必要なコンポーネントを取得
-            // Entity 型で取得
-            let position_opt = world.get_component::<Position>(entity);
-            let stack_info_opt = world.get_component::<StackInfo>(entity);
-
-            // Position と StackInfo の両方が取得できた場合のみ処理を進める
-            if let (Some(position), Some(stack_info)) = (position_opt, stack_info_opt) {
-                // ドラッグ開始座標とカードの左上座標の差分 (オフセット) を計算
-                let offset_x = start_x - position.x; // f32 のまま計算
-                let offset_y = start_y - position.y; // f32 のまま計算
-
-                // DraggingInfo コンポーネントを作成
-                // 正しいフィールド名を使用し、型キャストを追加
-                let dragging_info = DraggingInfo {
-                    original_x: position.x.into(), // f32 -> f64
-                    original_y: position.y.into(), // f32 -> f64
-                    offset_x: offset_x.into(),   // f32 -> f64
-                    offset_y: offset_y.into(),   // f32 -> f64
-                    original_position_in_stack: stack_info.position_in_stack as usize, // u8 -> usize
-                    // original_stack_entity: stack_info.stack_entity, // StackInfo に存在しないためコメントアウト
-                    // ★一時的な修正: ダミーの Entity ID を設定 (usize::MAX は最大値)
-                    original_stack_entity: Entity(usize::MAX), // TODO: 後で正しいスタック Entity を取得する
-                };
-
-                // エンティティに DraggingInfo コンポーネントを追加
-                // add_component は () を返すので match は不要 (エラーハンドリングが必要なら別途)
-                // Entity 型で渡す
-                world.add_component(entity, dragging_info);
-                log::info!("Added DraggingInfo component to entity {:?}", entity);
-
-            } else {
-                // 必要なコンポーネントが取得できなかった場合
-                log::error!("Failed to get Position or StackInfo for entity {:?} in handle_drag_start", entity);
-            }
-        } else {
-            log::error!("Failed to lock world in handle_drag_start");
-        }
+    pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) {
+        // ★ drag_handler モジュールの関数を呼び出す！★
+        // self.world は Arc<Mutex<World>> なので、参照を渡す
+        drag_handler::handle_drag_start(&self.world, entity_usize, start_x, start_y);
     }
 
     /// ドラッグ終了時の処理 (マウスボタンが離された時)
@@ -631,8 +495,10 @@ impl GameApp {
                             // --- 3a-ii. 移動ルール OK の場合 ---
                             log("  - Move is valid! Updating world and notifying server...");
                             let target_stack_type_for_proto: protocol::StackType = target_stack_type.into();
-                            self.update_world_and_notify_server(
-                                world, 
+                            // ★ 修正: drag_handler の関数を呼び出す ★
+                            drag_handler::update_world_and_notify_server(
+                                world, // MutexGuard を渡す (self.world ではない)
+                                &self.network_manager, // NetworkManager の参照を渡す
                                 entity,
                                 target_stack_type, // World 更新には StackType を渡す
                                 target_stack_type_for_proto,
@@ -642,30 +508,35 @@ impl GameApp {
                         } else {
                             // --- 3a-iii. 移動ルール NG の場合 ---
                             log("  - Move is invalid. Resetting card position.");
-                            self.reset_card_position(world, entity, &dragging_info);
+                            // ★ 修正: drag_handler の関数を呼び出す ★
+                            drag_handler::reset_card_position(world, entity, &dragging_info);
                         }
                     } else {
                         // target_stack_entity は見つかったが、StackInfo が取得できなかった場合 (通常はありえない)
                         error(&format!("  - Error: StackInfo not found for target stack entity {:?}. Resetting card position.", target_stack_entity));
-                        self.reset_card_position(world, entity, &dragging_info);
+                        // ★ 修正: drag_handler の関数を呼び出す ★
+                        drag_handler::reset_card_position(world, entity, &dragging_info);
                     }
                 } else {
                     // target_stack_type に対応する Entity が見つからなかった場合 (通常はありえない)
                     error!("  - Error: Stack entity not found for type {:?}. Resetting card position.", target_stack_type);
-                    self.reset_card_position(world, entity, &dragging_info);
+                    // ★ 修正: drag_handler の関数を呼び出す ★
+                    drag_handler::reset_card_position(world, entity, &dragging_info);
                 }
             }
             // --- 3b. ドロップ先がカードだった場合 (今はスタックへのドロップのみ想定) ---
             Some(ClickTarget::Card(target_card_entity)) => {
                 log(&format!("  - Target is a card ({:?}). Invalid drop target. Resetting card position.", target_card_entity));
                 // カードの上は無効なドロップ先として扱う
-                self.reset_card_position(world, entity, &dragging_info);
+                // ★ 修正: drag_handler の関数を呼び出す ★
+                drag_handler::reset_card_position(world, entity, &dragging_info);
             }
             // --- 3c. ドロップ先が空の領域だった場合 ---
             None => {
                 log("  - Target is empty space. Resetting card position.");
                 // 何もない場所へのドロップも無効
-                self.reset_card_position(world, entity, &dragging_info);
+                // ★ 修正: drag_handler の関数を呼び出す ★
+                drag_handler::reset_card_position(world, entity, &dragging_info);
             }
         }
 
@@ -676,247 +547,6 @@ impl GameApp {
         log("  - Removed window mousemove and mouseup listeners.");
 
     } // handle_drag_end の終わり
-
-
-    /// World の状態を更新し、サーバーに移動を通知する内部ヘルパー関数。
-    /// `handle_drag_end` から、移動が有効だと判断された場合に呼び出される。
-    ///
-    /// # 引数
-    /// * `world`: World へのミュータブルな参照 (MutexGuard)
-    /// * `moved_entity`: 移動されたカードのエンティティ
-    /// * `target_stack_type_for_update`: 移動先のスタックタイプ (World の更新用)
-    /// * `target_stack_type_for_proto`: 移動先のスタックタイプ (サーバー通知用のプロトコル型) <- ★ network_handler に渡す ★
-    /// * `dragging_info`: ドラッグ開始時の情報 (元の位置など)
-    /// * `original_stack_info`: 移動元のスタック情報 (Option)
-    fn update_world_and_notify_server(
-        &self,
-        mut world: std::sync::MutexGuard<'_, World>, // MutexGuard を受け取る
-        moved_entity: Entity,
-        target_stack_type_for_update: StackType, // World 更新用
-        target_stack_type_for_proto: protocol::StackType, // ★ サーバー通知用の型 ★
-        dragging_info: &DraggingInfo, // ★ DraggingInfo を参照で受け取る ★
-        original_stack_info: Option<StackInfo> // ★ 元のスタック情報を受け取る ★
-    ) {
-        log(&format!("update_world_and_notify_server called for entity: {:?}, target_stack_type: {:?}", moved_entity, target_stack_type_for_update));
-
-        // --- 1. 移動元スタックのカードを表にする処理 (もし必要なら) ---
-        //    StackInfo に cards リストがなくなったので、World を検索する必要がある。
-        if let Some(original_info) = original_stack_info {
-            // 移動元が Tableau だった場合のみ、下のカードを表にする可能性がある
-            if let StackType::Tableau(_) = original_info.stack_type {
-                let position_below = dragging_info.original_position_in_stack.saturating_sub(1);
-                // 移動したカードの1つ下 (position_below) にカードが存在するか確認
-                let mut entity_to_reveal: Option<Entity> = None;
-                for entity in world.get_all_entities_with_component::<StackInfo>() {
-                    if let Some(stack_info) = world.get_component::<StackInfo>(entity) {
-                        // 同じスタックタイプで、位置が1つ下のエンティティを探す
-                        if stack_info.stack_type == original_info.stack_type && stack_info.position_in_stack as usize == position_below {
-                            entity_to_reveal = Some(entity);
-                            break;
-                        }
-                    }
-                }
-
-                // 表にするカードが見つかったら、Card コンポーネントを更新
-                if let Some(reveal_entity) = entity_to_reveal {
-                    if let Some(mut card) = world.get_component_mut::<Card>(reveal_entity) {
-                        if !card.is_face_up {
-                            log(&format!("  - Revealing card {:?} in original stack {:?}.", reveal_entity, original_info.stack_type));
-                            card.is_face_up = true;
-                        }
-                    }
-                }
-            }
-            // ★修正: StackType::Deck を StackType::Stock に変更★
-            // 移動元が山札(Stock) だった場合、一番上のカードを表にする (これは通常 Waste に移動するので不要かも？ルール次第)
-            else if original_info.stack_type == StackType::Stock { 
-                 // TODO: Stock から移動した場合の処理（通常 Waste に移動するので、
-                 //       Waste 側の処理で吸収されるか、特殊な移動ルールの場合に実装）
-                 log("  - Moved from Stock. Handling reveal logic if necessary...");
-                 // Stock の一番上のカードを探す処理が必要
-            }
-        }
-
-        // --- 2. 移動先スタックのエンティティを特定 --- ★find_entity_by_stack_type がないと仮定して一旦コメントアウト★
-        // TODO: World に find_entity_by_stack_type メソッドを実装後、以下のコメントアウトを解除する
-        // ★修正: コメントアウトを解除！ World にメソッドを追加したからね！★
-        let target_stack_entity_opt = world.find_entity_by_stack_type(target_stack_type_for_update);
-        // 仮の実装: find_entity_by_stack_type がないので、移動先スタックエンティティの特定はスキップ。StackInfo の更新で対応。
-        // ★修正: expect を追加して、見つからなかったらパニックさせる (移動ルールチェック後なので見つかるはず)★
-        let target_stack_entity = target_stack_entity_opt.expect("Target stack entity not found despite valid move"); 
-        log(&format!("  - Finding target stack entity for type: {:?} -> Found: {:?}", target_stack_type_for_update, target_stack_entity));
-
-        // --- 3. 移動先スタックでの新しい順序 (position_in_stack) を計算 --- ★書き換え★
-        //     移動先のスタックタイプを持つカードをすべて検索し、最大の position_in_stack を見つける。
-        let mut max_pos_in_target_stack: i16 = -1; // u8 だと 0 の場合があるので i16 で初期化
-        for entity in world.get_all_entities_with_component::<StackInfo>() {
-            // 自分自身 (moved_entity) は除外して検索
-            if entity == moved_entity { continue; }
-
-            if let Some(stack_info) = world.get_component::<StackInfo>(entity) {
-                if stack_info.stack_type == target_stack_type_for_update {
-                    max_pos_in_target_stack = max_pos_in_target_stack.max(stack_info.position_in_stack as i16);
-                }
-            }
-        }
-        // 新しい順序は、見つかった最大値 + 1 (カードがなければ 0)
-        let new_position_in_stack = (max_pos_in_target_stack + 1) as u8;
-        log(&format!("  - Calculated new position_in_stack for {:?}: {}", target_stack_type_for_update, new_position_in_stack));
-
-
-        // --- 4. moved_entity の StackInfo コンポーネントを更新 --- ★書き換え★
-        //     カードリストを直接いじるのではなく、移動したカード自身の StackInfo を更新！
-        if let Some(mut card_stack_info) = world.get_component_mut::<StackInfo>(moved_entity) {
-            card_stack_info.stack_type = target_stack_type_for_update; // 新しいスタックタイプ
-            card_stack_info.position_in_stack = new_position_in_stack; // 計算した新しい順序
-            log(&format!("  - Updated StackInfo for moved entity {:?}: type={:?}, position={}", moved_entity, card_stack_info.stack_type, card_stack_info.position_in_stack));
-        } else {
-             // 通常、カードには StackInfo があるはずだが、なければ警告
-            warn!("  - Warning: StackInfo component not found for moved entity {:?}. Cannot update its stack info.", moved_entity);
-            // 移動処理を中断すべきかもしれないので、元の位置に戻す
-            self.reset_card_position(world, moved_entity, dragging_info);
-            return; // エラーなのでここで処理終了
-        }
-
-        // --- 5. 移動したカードの Position コンポーネントを計算・更新 --- (内容はほぼ同じ)
-        // 新しいスタックでのカードの位置を計算
-        // calculate_card_position が World への参照 (&World) を取るように修正されているか確認！
-        let new_position = self.calculate_card_position(target_stack_type_for_update, new_position_in_stack, &world);
-        log(&format!("  - Calculated new position for {:?}: {:?}", moved_entity, new_position));
-        // 計算した位置をカードの Position コンポーネントに設定
-        if let Some(mut pos_comp) = world.get_component_mut::<Position>(moved_entity) {
-            *pos_comp = new_position;
-            log(&format!("  - Updated Position for moved entity {:?}: {:?}", moved_entity, pos_comp));
-        } else {
-            error!("  - Error: Position component not found for moved entity {:?}. Cannot update position.", moved_entity);
-            // 位置が更新できないのは致命的。StackInfo も元に戻した方が良いかも？
-            // とりあえずエラーログのみ。
-            // 元の位置に戻す処理はここではなく、reset_card_position を呼ぶべきか検討。
-        }
-
-        // --- 6. サーバーに移動完了を通知 --- (内容はほぼ同じ)
-        log(&format!("  - Notifying server about the move: entity {:?}, target stack type {:?}", moved_entity, target_stack_type_for_proto));
-        // network_handler の send_make_move を呼び出す
-        match serde_json::to_string(&target_stack_type_for_proto) {
-            Ok(target_stack_json) => {
-                // 実際の送信処理は network_handler に任せる
-                super::network_handler::send_make_move(
-                    &self.network_manager,
-                    moved_entity.0, // Entity から usize へ
-                    target_stack_json
-                );
-                log("  - MakeMove message sent to server.");
-            }
-            Err(e) => {
-                // JSON シリアライズ失敗
-                error!("  - Error: Failed to serialize target_stack_type_for_proto to JSON: {}", e);
-            }
-        }
-
-        // MutexGuard はスコープを抜けるときに自動的にドロップ（アンロック）される
-    }
-
-
-    /// カードの位置をドラッグ開始時の元の位置に戻す内部ヘルパー関数。
-    /// 移動が無効だった場合や、エラー発生時に呼び出される。
-    fn reset_card_position(
-        &self,
-        mut world: std::sync::MutexGuard<'_, World>, // MutexGuard を受け取る
-        entity: Entity,
-        dragging_info: &DraggingInfo // 元の位置情報を持つ DraggingInfo
-    ) {
-        log(&format!("reset_card_position called for entity: {:?}", entity));
-        // ★修正: original_position フィールドではなく、original_x, original_y を使う★
-        // DraggingInfo に保存されている元の座標 (f64) を Position (f32) に変換
-        let original_position = Position {
-            x: dragging_info.original_x as f32, // f64 -> f32
-            y: dragging_info.original_y as f32, // f64 -> f32
-        };
-        // ★修正: E0382 エラー回避のため、log を先に実行★
-        log(&format!("  - Reset position for entity {:?} to {:?}", entity, original_position));
-        // カードの Position コンポーネントを元の値で更新
-        if let Some(mut pos_comp) = world.get_component_mut::<Position>(entity) {
-            *pos_comp = original_position; // ムーブは log の後
-        } else {
-            // ★修正: log マクロに引数を追加★
-            error!("  - Error: Position component not found for entity {:?}. Cannot reset position.", entity);
-        }
-        // DraggingInfo コンポーネントは、この関数を呼び出す前に既に削除されているはずなので、ここでは何もしない。
-    }
-
-    // --- スタックの種類とスタック内での位置に基づいて、カードの描画位置 (Position) を計算するヘルパー関数 ---
-    // (ソリティアのレイアウトに合わせて調整が必要)
-    fn calculate_card_position(&self, stack_type: StackType, position_in_stack: u8, world: &World) -> Position {
-        // position_in_stack は u8 だけど、計算には f32 を使うからキャストするよ！
-        let pos_in_stack_f32 = position_in_stack as f32;
-
-        // スタックタイプに応じて基準となる X, Y 座標とオフセットを計算！
-        let (base_x, base_y) = match stack_type {
-            StackType::Stock => {
-                // 山札 (Stock) は常に同じ位置。重ならない。
-                (layout::STOCK_POS_X, layout::STOCK_POS_Y)
-            }
-            StackType::Waste => {
-                // 捨て札 (Waste) も基本同じ位置だけど、クロンダイクのルールによっては
-                // 3枚ずつめくって重ねて表示する場合がある。
-                // 今は単純に1箇所に重ねる想定で、Stock の隣の位置にするよ。
-                // TODO: Waste の重なり表示ルールをちゃんと実装するなら、ここを修正！
-                (layout::WASTE_POS_X, layout::WASTE_POS_Y)
-            }
-            StackType::Foundation(index) => {
-                // 組札 (Foundation) は、インデックス (0-3) に基づいて横に並ぶ。
-                // X座標 = 開始位置 + インデックス * 横オフセット
-                let x = layout::FOUNDATION_START_X + (index as f32) * layout::FOUNDATION_X_OFFSET;
-                // Y座標は開始位置と同じ。
-                let y = layout::FOUNDATION_START_Y;
-                (x, y)
-            }
-            StackType::Tableau(index) => {
-                // 場札 (Tableau) は、インデックス (0-6) で横の列が決まる。
-                let base_x = layout::TABLEAU_START_X + (index as f32) * layout::TABLEAU_X_OFFSET;
-                // Y座標は、その列に既に積まれているカードによって決まる。
-                // 基本のY座標 + 表向き/裏向きに応じたオフセット * スタック内の位置
-                // ここで、そのスタックの他のカードを見て、表向きか裏向きか判断する必要がある。
-                // ちょっと複雑なので、簡略化して「常に表向きオフセットを使う」としてみる。
-                // TODO: position_in_stack より前のカードが裏向きかどうかをチェックしてオフセットを計算するロジックを追加する。
-                let mut current_y = layout::TABLEAU_START_Y;
-                // このスタックのカードを取得してソートする (仮)
-                let mut cards_in_this_tableau: Vec<(Entity, StackInfo)> = Vec::new();
-                for entity in world.get_all_entities_with_component::<StackInfo>() {
-                    if let Some(info) = world.get_component::<StackInfo>(entity) {
-                        if info.stack_type == stack_type {
-                            cards_in_this_tableau.push((entity, info.clone()));
-                        }
-                    }
-                }
-                // position_in_stack でソート (昇順)
-                cards_in_this_tableau.sort_by_key(|(_, info)| info.position_in_stack);
-
-                // 0 から position_in_stack - 1 までのカードを見て Y オフセットを累積
-                for i in 0..position_in_stack {
-                    // Entity ID を取得 (インデックス i がリストの範囲内かチェックが必要だが省略)
-                    let card_entity = cards_in_this_tableau[i as usize].0;
-                    // そのカードが表向きか取得
-                    let is_face_up = world.get_component::<Card>(card_entity)
-                                        .map_or(false, |c| c.is_face_up);
-                    if is_face_up {
-                        current_y += layout::TABLEAU_Y_OFFSET_FACE_UP;
-                    } else {
-                        current_y += layout::TABLEAU_Y_OFFSET_FACE_DOWN;
-                    }
-                }
-                (base_x, current_y)
-            }
-            StackType::Hand => {
-                // 手札 (Hand) の座標計算。今は仮に左下に置くことにする。
-                // TODO: プレイヤーごとに手札の表示位置を決めるロジックが必要。
-                (50.0, 600.0 + pos_in_stack_f32 * layout::TABLEAU_Y_OFFSET_FACE_UP) // 適当な座標 + 重なり
-            }
-        };
-
-        // 計算結果を Position 型にして返す！
-        Position { x: base_x, y: base_y }
-    }
 
     /// JavaScript から呼び出される、ドラッグ中のカードの位置を一時的に更新するためのメソッドだよ！
     /// マウスの動きに合わせてカードの見た目を追従させるために使うんだ。

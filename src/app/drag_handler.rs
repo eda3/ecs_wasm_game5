@@ -229,7 +229,7 @@ pub fn handle_drag_end(
 /// * `target_stack_type_for_proto`: 移動先のスタックタイプ (サーバー通知用のプロトコル型)
 /// * `dragging_info`: ドラッグ開始時の情報 (元の位置など)
 /// * `original_stack_info`: 移動元のスタック情報 (Option)
-fn update_world_and_notify_server(
+pub fn update_world_and_notify_server(
     mut world: std::sync::MutexGuard<'_, World>, // MutexGuard を受け取る
     network_manager_arc: &Arc<Mutex<NetworkManager>>, // NetworkManager を受け取る
     moved_entity: Entity,
@@ -344,7 +344,7 @@ fn update_world_and_notify_server(
 /// * `world`: World へのミュータブルな参照 (MutexGuard)
 /// * `entity`: 位置をリセットするカードのエンティティ
 /// * `dragging_info`: 元の位置情報を持つ DraggingInfo
-fn reset_card_position(
+pub fn reset_card_position(
     mut world: std::sync::MutexGuard<'_, World>, // MutexGuard を受け取る
     entity: Entity,
     dragging_info: &DraggingInfo
