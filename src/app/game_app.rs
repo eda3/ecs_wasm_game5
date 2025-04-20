@@ -9,8 +9,7 @@ use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::closure::Closure;
 use web_sys::{Event, HtmlCanvasElement, CanvasRenderingContext2d, MouseEvent};
-use js_sys::Error;
-// log クレートのマクロをインポート
+use log::error;
 // use log::{info, error}; // ★★★ 削除: lib.rs のマクロと衝突するため ★★★
 
 use crate::ecs::world::World;
@@ -50,6 +49,10 @@ use wasm_bindgen::JsValue;
 
 // ★ 追加 ★
 use crate::app::stock_handler;
+
+// ★ 追加: layout_calculator と components を使うための use 文 ★
+use crate::app::layout_calculator;
+use crate::components::{self, Card, Position, StackInfo};
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
@@ -435,42 +438,184 @@ impl GameApp {
     ///    スタッククリック時のアクション (例: 山札クリックでカードをめくる) などを実装していくよ！
     #[wasm_bindgen]
     pub fn handle_click(&mut self, x: f32, y: f32) {
-        // log(&format!("GameApp::handle_click: Clicked at ({}, {})", x, y));
+        // ★ 早期リターンを追加 (デバッグ用、または不要なら削除) ★
+        // log(&format!("GameApp::handle_click received: ({}, {})", x, y));
+        // return; // ここで一旦止めてみる
 
-        let mut world_guard = match self.world.try_lock() {
+        // World のロックを取得 (エラーハンドリングを改善)
+        let world = match self.world.lock() {
             Ok(guard) => guard,
-            Err(_e) => {
-                // error!("Failed to lock world in handle_click: {}", _e);
+            Err(poisoned) => {
+                // パニックの連鎖を防ぐため、エラーログを出してリターンする
+                error!("World mutex poisoned in handle_click: {:?}. Aborting click.", poisoned);
                 return;
+                // poisoned.into_inner() // ← パニックリカバリーする場合はこちら
             }
         };
 
-        let clicked_element = event_handler::find_clicked_element(&*world_guard, x, y, None);
-        // log(&format!("  >>> Click target identified as: {:?}", clicked_element));
+        let target_element = event_handler::find_clicked_element(&world, x, y, None);
+        log(&format!("Canvas clicked at ({}, {}). Target: {:?}", x, y, target_element));
 
-        match clicked_element {
-            Some(ClickTarget::Card(_entity)) => {
-                // log(&format!("  Handling click on Card: {:?}", _entity));
-            }
+        // World のロックを一時的に解放 (match 内で再度ロックが必要な場合があるため)
+        drop(world);
+
+        match target_element {
             Some(ClickTarget::Stack(stack_type)) => {
-                // log(&format!("  Handling click on Stack Area: {:?}", stack_type));
+                log(&format!("Clicked on stack area: {:?}", stack_type));
+                // ★★★ ここに Stock クリック処理の呼び出しを追加 ★★★
                 if stack_type == StackType::Stock {
-                    // log!("[Input] Stock clicked");
-                    if !stock_handler::deal_one_card_from_stock(&mut *world_guard) {
-                        let _ = stock_handler::reset_waste_to_stock(&mut *world_guard);
-                        // log!("[Input] Tried resetting waste to stock (stock was likely empty).");
-                    } else {
-                        // log!("[Input] Dealt one card from stock to waste.");
-                    }
+                    log("Stock area clicked! Calling handle_stock_click...");
+                    // ★ self の可変参照が必要なので、match の外で呼び出すか、
+                    //   handle_stock_click が &self を取るようにする。
+                    //   今回は match の後に呼び出す形にする。
                 } else {
-                    // log(&format!("  Clicked on {:?} stack area (no action defined).", stack_type));
+                    // 他のスタックエリアがクリックされた場合の処理 (もしあれば)
+                    log("Clicked on other stack area.");
                 }
             }
+            Some(ClickTarget::Card(entity)) => {
+                // カードクリック時の処理は mousedown でドラッグ開始、dblclick で移動試行なので、
+                // 通常の click では何もしないことが多い。
+                // 必要ならここに処理を追加。
+                log(&format!("Clicked on card entity: {:?}. (No action for single click)", entity));
+            }
             None => {
-                // log("  Clicked on empty area.");
+                // 何もない場所がクリックされた場合の処理
+                log("Clicked on empty area.");
             }
         }
-        // log("GameApp::handle_click: Finished.");
+
+        // ★ Stock がクリックされた場合、ここで handle_stock_click を呼び出す ★
+        if let Some(ClickTarget::Stack(StackType::Stock)) = target_element {
+            self.handle_stock_click();
+        }
+    }
+
+    /// 山札 (Stock) がクリックされたときの処理
+    fn handle_stock_click(&mut self) {
+        log("handle_stock_click called.");
+        let mut world = match self.world.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                error!("World mutex poisoned in handle_stock_click: {:?}. Aborting.", poisoned);
+                return;
+            }
+        };
+        // NetworkManager は現時点では使わないが、将来のために残しておく
+        // let network_manager = self.network_manager.clone();
+
+        // --- 1. Stock の一番上のカードを探す ---
+        // position_in_stack が最も大きいものを探す
+        let top_stock_card_entity = world
+            .get_all_entities_with_component::<StackInfo>()
+            .into_iter()
+            .filter(|e| world.get_component::<StackInfo>(*e).map_or(false, |si| si.stack_type == StackType::Stock))
+            .max_by_key(|e| world.get_component::<StackInfo>(*e).unwrap().position_in_stack); // unwrap はフィルタリング後なので安全なはず
+
+        if let Some(top_card_entity) = top_stock_card_entity {
+            // --- 2. Stock にカードがある場合: Waste に移動 ---
+            log(&format!("Found top card in Stock: {:?}", top_card_entity));
+
+            // Waste の現在のカード数を取得 (次の position_in_stack のため)
+            let waste_card_count = world
+                .get_all_entities_with_component::<StackInfo>()
+                .into_iter()
+                .filter(|e| world.get_component::<StackInfo>(*e).map_or(false, |si| si.stack_type == StackType::Waste))
+                .count();
+            let next_waste_pos = waste_card_count as u8;
+
+            // ★ 修正: 位置計算を borrow_mut の前に移動 ★
+            let new_pos = layout_calculator::calculate_card_position(StackType::Waste, next_waste_pos, &*world);
+
+            // カードのコンポーネントを更新
+            let mut card_moved = false;
+            if let Some(stack_info) = world.get_component_mut::<StackInfo>(top_card_entity) {
+                stack_info.stack_type = StackType::Waste;
+                stack_info.position_in_stack = next_waste_pos;
+                card_moved = true; // StackInfo 変更成功
+            }
+            if let Some(card) = world.get_component_mut::<Card>(top_card_entity) {
+                card.is_face_up = true;
+            }
+            if let Some(position) = world.get_component_mut::<Position>(top_card_entity) {
+                // ★ 修正: 事前に計算した位置を使用 ★
+                // ★ 修正: calculate_card_position の結果を一旦変数に入れる ★ // ← このコメントは古くなったので削除
+                // let new_pos = layout_calculator::calculate_card_position(StackType::Waste, next_waste_pos, &*world); // ← 移動済み
+                *position = new_pos;
+            }
+
+            if card_moved {
+                log(&format!("Moved card {:?} from Stock to Waste (pos: {})", top_card_entity, next_waste_pos));
+                // ★ サーバーに通知 (必要なら) ★
+                // let mut nm = network_manager.lock().unwrap();
+                // nm.send_message(ClientMessage::DrawFromStock); // 例
+            }
+
+        } else {
+            // --- 3. Stock が空の場合: Waste から Stock に戻す ---
+            log("Stock is empty. Checking Waste...");
+
+            // Waste にあるカードの Entity を収集
+            let waste_cards: Vec<Entity> = world
+                .get_all_entities_with_component::<StackInfo>()
+                .into_iter()
+                .filter(|e| world.get_component::<StackInfo>(*e).map_or(false, |si| si.stack_type == StackType::Waste))
+                .collect();
+
+            if !waste_cards.is_empty() {
+                log(&format!("Found {} cards in Waste. Moving them back to Stock.", waste_cards.len()));
+                let mut cards_reset = 0;
+                // Waste のカードを position_in_stack の昇順でソートして Vec<(Entity, u8)> を作成
+                let mut sorted_waste_cards_with_pos: Vec<(Entity, u8)> = waste_cards
+                    .iter()
+                    .map(|e| (*e, world.get_component::<StackInfo>(*e).unwrap().position_in_stack))
+                    .collect();
+                sorted_waste_cards_with_pos.sort_by_key(|&(_, pos)| pos);
+
+                // ★ 修正: Vec を作ってイテレートする (borrow checker のため) ★
+                let entities_to_update: Vec<(Entity, u8)> = sorted_waste_cards_with_pos
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (entity, _))| (*entity, index as u8))
+                    .collect();
+
+                // ★ 修正: 位置計算と更新を分離 ★
+                //    事前に新しい位置を計算して Vec に格納
+                let mut new_positions = Vec::new();
+                for (entity, new_stock_pos) in &entities_to_update {
+                     let new_pos = layout_calculator::calculate_card_position(StackType::Stock, *new_stock_pos, &*world);
+                     new_positions.push((*entity, new_pos)); // タプル (Entity, Position) を格納
+                }
+
+                // ★ 修正: コンポーネント更新ループ ★
+                for (index, (entity, _original_waste_pos)) in sorted_waste_cards_with_pos.iter().enumerate() { // sorted_waste_cards_with_pos を再度使うか、entities_to_update を使うか注意
+                    let new_stock_pos = index as u8; // entities_to_update を使わない場合は index を使う
+                    if let Some(stack_info) = world.get_component_mut::<StackInfo>(*entity) {
+                        stack_info.stack_type = StackType::Stock;
+                        stack_info.position_in_stack = new_stock_pos;
+                    }
+                    if let Some(card) = world.get_component_mut::<Card>(*entity) {
+                        card.is_face_up = false; // Stock に戻すときは裏向き
+                    }
+                    // 事前に計算した位置を探して適用
+                    if let Some((_, new_pos)) = new_positions.iter().find(|(e, _)| *e == *entity) {
+                         if let Some(position) = world.get_component_mut::<Position>(*entity) {
+                            // ★ 修正: calculate_card_position の結果を一旦変数に入れる ★ // ← このコメントは古くなったので削除
+                            // let new_pos = layout_calculator::calculate_card_position(StackType::Stock, new_stock_pos, &*world); // ← 移動済み
+                            *position = *new_pos; // ★ 修正: new_pos は Position 型のはず ★
+                        }
+                    }
+                    cards_reset += 1;
+                }
+                log(&format!("Reset {} cards from Waste to Stock.", cards_reset));
+                 // ★ サーバーに通知 (必要なら) ★
+                // let mut nm = network_manager.lock().unwrap();
+                // nm.send_message(ClientMessage::ResetStockFromWaste); // 例
+            } else {
+                log("Waste is also empty. Nothing to do.");
+            }
+        }
+        // World のロックはこのスコープを抜けるときに解放される
     }
 
     /// JSから呼び出され、ドラッグ中のカード位置を更新する。
