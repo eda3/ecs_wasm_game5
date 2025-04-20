@@ -107,27 +107,21 @@ pub enum ClickTarget {
 /// を探して返す。
 /// 一番手前にある要素が見つかる。
 pub fn find_clicked_element(world: &World, x: f32, y: f32) -> Option<ClickTarget> {
-    // ★ 修正: スタックエリアの判定を先に行う ★
-    // まず、背景のスタックエリア (Stock, Waste, Foundation のプレースホルダー)
-    // がクリックされたかチェックする。
-    if let Some(stack_target) = find_clicked_stack_area(world, x, y) {
-        // スタックエリアが見つかったら、それを優先して返す！
-        return Some(stack_target);
+    // ★ 修正: カードの判定を先に行うように戻す！ ★
+    let card_target = find_topmost_clicked_card(world, x, y);
+    if card_target.is_some() {
+        // カードが見つかればそれを返す
+        return card_target;
     }
+    // カードが見つからなければ、背景のスタックエリアを探す
+    find_clicked_stack_area(world, x, y)
 
-    // ★ 修正: スタックエリアが見つからなかった場合のみ、カードを探す ★
-    // 次に、その座標にあるカードの中で一番手前 (z-index が高い or 後で描画される)
-    // のものを探す。
-    find_topmost_clicked_card(world, x, y)
-
-    // --- 元のコード (カード優先だった) ---
-    // let card_target = find_topmost_clicked_card(world, x, y);
-    // if card_target.is_some() {
-    //     // カードが見つかればそれを返す
-    //     return card_target;
+    // --- スタック優先だったコード (削除) ---
+    // if let Some(stack_target) = find_clicked_stack_area(world, x, y) {
+    //     // スタックエリアが見つかったら、それを優先して返す！
+    //     return Some(stack_target);
     // }
-    // // カードが見つからなければ、背景のスタックエリアを探す
-    // find_clicked_stack_area(world, x, y)
+    // find_topmost_clicked_card(world, x, y)
 }
 
 /// クリックされた座標 (x, y) に存在するカードのうち、最も手前にあるものを探すヘルパー関数だよ。
@@ -187,9 +181,15 @@ fn find_topmost_clicked_card(world: &World, x: f32, y: f32) -> Option<ClickTarge
                  let card_bottom = card_top + RENDER_CARD_HEIGHT as f32;
 
                  // クリック座標 (x, y) がカードの範囲内にあるかチェック！
-                 if x >= card_left && x < card_right && y >= card_top && y < card_bottom {
+                 let is_inside = x >= card_left && x < card_right && y >= card_top && y < card_bottom;
+                 log(&format!(
+                     "      Checking card {:?}: Click ({}, {}), Card Rect [({}, {}), ({}, {})] -> Inside: {}",
+                     entity, x, y, card_left, card_top, card_right, card_bottom, is_inside
+                 ));
+
+                 if is_inside {
                      // ヒット！ このカードの Entity と Y 座標を返す
-                     log(&format!("    Hit card entity {:?} at ({}, {})", entity, pos.x, pos.y));
+                     // log(&format!("    Hit card entity {:?} at ({}, {})", entity, pos.x, pos.y)); // ログの位置を詳細化のため、ここはコメントアウト or 削除してもOK
                      Some((entity, pos.y)) // タプル (Entity, f32) を返す
                  } else {
                      None // クリック範囲外

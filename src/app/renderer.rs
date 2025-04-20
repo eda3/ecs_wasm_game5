@@ -193,7 +193,7 @@ pub fn render_game_rust(
     });
 
     // --- 4. Draw cards in sorted order (handling dragged card) --- 
-    log(&format!("Renderer: Drawing {} sorted card entities...", card_render_list.len()));
+    // log(&format!("Renderer: Drawing {} sorted card entities...", card_render_list.len())); // ★ コメントアウト ★
     // ★ ドラッグ中カード描画用変数を初期化 ★
     let mut dragged_card_data: Option<(Position, Card)> = None;
 

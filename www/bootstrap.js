@@ -163,13 +163,20 @@ function setupEventListeners() {
         return;
     }
 
-    // -- クリックリスナー (ログ出力のみ) --
+    // -- クリックリスナー --
     canvas.addEventListener('click', (event) => {
         console.log("Canvas クリック！ ✨ イベント:", event);
+        // ★ 追加: ドラッグ中の場合はクリック処理を無視 ★
+        if (isDragging) {
+            console.log("  isDragging is true, ignoring click event to prevent conflict with drag end.");
+            return;
+        }
+        // ★ ここまで追加 ★
+
         const coords = getCanvasCoordinates(event);
         if (coords) {
             console.log(`>>> Canvas 内クリック座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
-            gameApp.handle_click(coords.x, coords.y); // ★ コメント解除！ Rust の handle_click を呼ぶ ★
+            gameApp.handle_click(coords.x, coords.y); // ドラッグ中でなければ呼び出す
         }
     });
 
@@ -268,8 +275,14 @@ function getCanvasCoordinates(event) {
         return null;
     }
     const rect = canvas.getBoundingClientRect();
+    // ★★★ デバッグログ追加 ★★★
+    console.log(`[DEBUG] getCanvasCoordinates: clientX=${event.clientX}, clientY=${event.clientY}, rect.left=${rect.left}, rect.top=${rect.top}`);
+    // ★★★ ここまで ★★★
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    // ★★★ デバッグログ追加 ★★★
+    console.log(`[DEBUG] getCanvasCoordinates: calculated x=${x}, y=${y}`);
+    // ★★★ ここまで ★★★
     // Canvas 範囲外のイベントも拾うことがあるのでチェック (マイナス座標など)
     if (x < 0 || x > canvas.width || y < 0 || y > canvas.height) {
         // console.log("座標が Canvas 範囲外です。");

@@ -29,6 +29,7 @@ use serde_json;
 // ★修正: network_handler ではなく、新しいモジュールを use する★
 // use super::network_handler::ProcessedMessageResult; 
 use super::network_receiver::ProcessedMessageResult; // 受信結果
+use crate::app::network_receiver; // ★★★ 追加！ ★★★
  // 接続
  // 送信
  // 受信処理
@@ -161,48 +162,33 @@ impl GameApp {
         }
     }
 
-    // 受信メッセージ処理
-    // ★戻り値を `bool` から `Option<usize>` に変更！★
-    //   `usize` は拒否されたカードの Entity ID を表すよ。
-    //   拒否がなければ `None`、あれば最初の `Some(entity_id)` を返す。
+    /// JS から呼び出され、受信メッセージキューを処理し、
+    /// もしサーバーから移動拒否メッセージがあればそのカードID (usize) を返す。
+    /// なければ None (JS側では undefined) を返す。
     #[wasm_bindgen]
     pub fn process_received_messages(&mut self) -> Option<usize> { 
-        // ★修正: network_receiver の関数を呼び出す！★
-        let results = super::network_receiver::process_received_messages(
-            &self.message_queue, 
+        let results = network_receiver::process_received_messages(
+            &self.message_queue,
             &self.my_player_id,
-            &self.world
+            &self.world,
         );
 
-        // --- ★処理結果をチェックして、JSに返す値を決定する！★ ---
-        // results (Vec<ProcessedMessageResult>) をループで見ていくよ。
+        // 結果の中から MoveRejected を探す
         for result in results {
-            match result {
-                // もし MoveRejected イベントが見つかったら…
-                ProcessedMessageResult::MoveRejected { entity_id, reason: _ } => {
-                    // ログにも一応出しておく (JS側でも出すけど念のため)
-                    log(&format!("GameApp: Move rejected event processed for entity {:?}. Returning ID to JS.", entity_id));
-                    // その entity_id (Entity 型なので .0 で中の usize を取り出す) を
-                    // Some() で包んで、この関数の戻り値として **すぐに返す！** (return)
-                    // これで、最初に見つかった拒否イベントだけが JS に伝わるよ。
-                    return Some(entity_id.0);
-                }
-                // StateChanged や Nothing の場合は、ここでは何もしないでループを続ける。
-                // (再描画は requestAnimationFrame のループで毎回行われるので、
-                //  StateChanged かどうかを JS に伝える必要は今はなさそう)
-                ProcessedMessageResult::StateChanged => {
-                    // log("GameApp: State changed event processed."); // 必要ならログ出す
-                }
-                ProcessedMessageResult::Nothing => {
-                    // log("GameApp: Nothing event processed."); // 必要ならログ出す
-                }
+            if let ProcessedMessageResult::MoveRejected { entity_id, reason: _ } = result {
+                log(&format!(
+                    "GameApp: MoveRejected event found for entity {:?}. Returning Some({}) to JS.", 
+                    entity_id, entity_id.0
+                ));
+                return Some(entity_id.0); // 見つかったら ID を返す
             }
+            // 他のイベントタイプ (StateChanged など) はここでは特に処理しない
+            // (StateChanged などで画面更新が必要な場合は、別途JS側で render を呼ぶなどの連携が必要)
         }
 
-        // ループが全部終わっても MoveRejected が見つからなかった場合
-        // (つまり、拒否イベントが結果リストになかった場合) は、None を返す。
-        log("GameApp: No MoveRejected event found in processed messages. Returning None to JS.");
-        None
+        // MoveRejected が見つからなかった場合
+        // log("GameApp: No MoveRejected event found in processed messages. Returning None to JS."); // ★ コメントアウト ★
+        None // None を返す
     }
 
     // JSから初期カード配置を実行するためのメソッド
