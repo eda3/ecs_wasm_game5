@@ -25,6 +25,7 @@ use crate::app::{event_handler, network_handler, layout_calculator}; // layout_c
 use crate::{log}; // log マクロを使う (ルートから)
 use crate::app::event_handler::ClickTarget; // ★追加: ClickTarget をインポート
 use crate::protocol::ClientMessage; // ★追加: ClientMessage をインポート
+use super::drag_apply_handler; // ★追加: 新しいモジュールを使う
 
 
 /// ドラッグ開始時の処理 (GameApp::handle_drag_start のロジック)
@@ -176,8 +177,8 @@ pub fn handle_drag_end(
                     // --- 4a-ii. 移動ルール OK の場合 ---
                     log("    Move is valid! Updating world and notifying server...");
                     let target_stack_type_for_proto: protocol::StackType = target_stack_type.into();
-                    // ★ 修正: update_world_and_notify_server を呼び出す (MutexGuard を渡す) ★
-                    update_world_and_notify_server(
+                    // ★ 修正: drag_apply_handler の関数を呼び出す ★
+                    drag_apply_handler::update_world_and_notify_server(
                         &mut world, // 可変の MutexGuard を渡す
                         network_manager_arc,
                         entity,
@@ -200,7 +201,8 @@ pub fn handle_drag_end(
                      if is_valid {
                          log("    Move onto card's stack is valid! Updating world and notifying server...");
                          let target_stack_type_for_proto: protocol::StackType = target_stack_type.into();
-                         update_world_and_notify_server(
+                         // ★ 修正: drag_apply_handler の関数を呼び出す ★
+                         drag_apply_handler::update_world_and_notify_server(
                              &mut world,
                              network_manager_arc,
                              entity,
@@ -248,167 +250,6 @@ fn check_move_validity(world: &World, moved_entity: Entity, target_stack_type: S
             log(&format!("    Dropping onto {:?} is not a valid target type.", target_stack_type));
             false
         }
-    }
-}
-
-/// World の状態を更新し、サーバーに移動を通知する。
-/// (handle_drag_end から移動)
-pub fn update_world_and_notify_server(
-    world: &mut World, // ★ 可変の MutexGuard を受け取るように変更 ★
-    network_manager_arc: &Arc<Mutex<NetworkManager>>,
-    moved_entity: Entity,
-    target_stack_type: StackType,
-    target_stack_type_for_proto: protocol::StackType,
-    _dragging_info: &DraggingInfo, // ★ Position 計算に dragging_info は不要になった ★
-    original_stack_info: &Option<StackInfo>, // ★参照を受け取るように変更★
-) {
-    log(&format!("update_world_and_notify_server for entity: {:?}, target: {:?}", moved_entity, target_stack_type));
-
-    // --- 1. 新しいスタック内での位置 (position_in_stack) を決定 --- 
-    //    ターゲットスタックにある既存のカード数を数える。
-    let new_position_in_stack = world
-        .get_all_entities_with_component::<StackInfo>()
-        .iter()
-        .filter(|&&entity| {
-            world.get_component::<StackInfo>(entity)
-                .map_or(false, |si| si.stack_type == target_stack_type)
-        })
-        .count() as u8;
-    log(&format!("  - Calculated new position_in_stack: {}", new_position_in_stack));
-
-    // --- 2. 新しい描画位置 (Position) を計算 --- 
-    let new_position = layout_calculator::calculate_card_position(
-        target_stack_type,
-        new_position_in_stack,
-        world, // World への不変参照を渡す
-    );
-    log(&format!("  - Calculated new Position: ({}, {})", new_position.x, new_position.y));
-
-    // --- 3. World の状態を更新 --- 
-    //   (StackInfo と Position コンポーネントを更新)
-    apply_card_move_to_world(
-        world, // 可変の World を渡す
-        moved_entity,
-        target_stack_type,
-        &new_position,
-        new_position_in_stack,
-    );
-
-    // --- 4. 移動元のスタックのカードを必要なら表にする --- 
-    reveal_underlying_card_if_needed(
-        world, // 可変の World を渡す
-        original_stack_info,
-    );
-
-    // --- 5. サーバーに移動を通知 --- 
-    notify_move_to_server(
-        network_manager_arc,
-        moved_entity,
-        target_stack_type_for_proto,
-    );
-
-    log("update_world_and_notify_server finished.");
-}
-
-// --- ★ NEW HELPER FUNCTIONS ★ ---
-
-/// World 内のカードの StackInfo と Position を更新する。
-fn apply_card_move_to_world(
-    world: &mut World,
-    moved_entity: Entity,
-    target_stack_type: StackType,
-    new_position: &Position,
-    new_position_in_stack: u8,
-) {
-    log(&format!("  Applying card move to world for {:?}", moved_entity));
-    // StackInfo コンポーネントを更新
-    if let Some(stack_info) = world.get_component_mut::<StackInfo>(moved_entity) {
-        log(&format!("    Updating StackInfo from {:?}({}) to {:?}({})",
-            stack_info.stack_type, stack_info.position_in_stack,
-            target_stack_type, new_position_in_stack));
-        stack_info.stack_type = target_stack_type;
-        stack_info.position_in_stack = new_position_in_stack;
-    } else {
-        error!("    Error: StackInfo component not found for moved entity {:?}", moved_entity);
-        // ここで処理を中断すべきか？ StackInfo がないとおかしい
-        return; 
-    }
-
-    // Position コンポーネントを更新
-    if let Some(pos_comp) = world.get_component_mut::<Position>(moved_entity) {
-        log(&format!("    Updating Position to ({}, {})", new_position.x, new_position.y));
-        *pos_comp = new_position.clone(); // Position は Clone なので clone する
-    } else {
-        error!("    Error: Position component not found for moved entity {:?}", moved_entity);
-    }
-}
-
-/// 移動元のスタックが Tableau で、移動したカードの下にカードがあれば、それを表にする。
-fn reveal_underlying_card_if_needed(
-    world: &mut World,
-    original_stack_info_opt: &Option<StackInfo>,
-) {
-    log("  Checking if underlying card needs reveal...");
-    if let Some(original_stack_info) = original_stack_info_opt {
-        // 移動元が Tableau だった場合のみ処理
-        if let StackType::Tableau(original_tableau_index) = original_stack_info.stack_type {
-            log(&format!("    Original stack was Tableau {}. Finding card below position {}.", original_tableau_index, original_stack_info.position_in_stack));
-            // 移動したカードの1つ下の位置 (position_in_stack - 1)
-            if original_stack_info.position_in_stack > 0 {
-                let position_below = original_stack_info.position_in_stack - 1;
-
-                // 同じ Tableau 列で、position_below にいるカードエンティティを探す
-                let card_below_entity_opt = world
-                    .get_all_entities_with_component::<StackInfo>()
-                    .into_iter()
-                    .find(|&entity| {
-                        world.get_component::<StackInfo>(entity)
-                            .map_or(false, |si| {
-                                si.stack_type == StackType::Tableau(original_tableau_index) &&
-                                si.position_in_stack == position_below
-                            })
-                    });
-
-                if let Some(card_below_entity) = card_below_entity_opt {
-                    log(&format!("    Found card below: {:?}", card_below_entity));
-                    // そのカードの Card コンポーネントを書き換えて表にする
-                    if let Some(card_below) = world.get_component_mut::<Card>(card_below_entity) {
-                        if !card_below.is_face_up {
-                            log(&format!("    Revealing card {:?}", card_below_entity));
-                            card_below.is_face_up = true;
-                        } else {
-                            log("    Card below was already face up.");
-                        }
-                    } else {
-                        error!("    Error: Card component not found for card below {:?}", card_below_entity);
-                    }
-                } else {
-                    log(&format!("    No card found at position {} in Tableau {}.", position_below, original_tableau_index));
-                }
-            } else {
-                log("    Moved card was the bottom card in Tableau, nothing to reveal.");
-            }
-        } else {
-             log("    Original stack was not Tableau, no need to reveal.");
-        }
-    } else {
-        log("    Original stack info not available, cannot check for reveal.");
-    }
-}
-
-/// サーバーにカード移動メッセージを送信する。
-fn notify_move_to_server(
-    network_manager_arc: &Arc<Mutex<NetworkManager>>,
-    moved_entity: Entity,
-    target_stack_type_for_proto: protocol::StackType,
-) {
-    log(&format!("  Notifying server about move for {:?} to {:?}", moved_entity, target_stack_type_for_proto));
-    let message = ClientMessage::MakeMove {
-        moved_entity,
-        target_stack: target_stack_type_for_proto,
-    };
-    if let Err(e) = network_handler::send_serialized_message(network_manager_arc, message) {
-        error!("    Error sending MakeMove message: {}", e);
     }
 }
 

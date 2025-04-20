@@ -11,4 +11,5 @@ pub mod state_handler;   // ★追加
 pub mod drag_handler;
 pub mod layout_calculator;
 pub mod state_getter;
-pub mod browser_event_manager; // ★追加 
+pub mod browser_event_manager; // ★追加済★
+pub mod drag_apply_handler; // ★追加 
