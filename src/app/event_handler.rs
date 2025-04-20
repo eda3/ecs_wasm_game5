@@ -124,102 +124,66 @@ pub fn find_clicked_element(world: &World, x: f32, y: f32) -> Option<ClickTarget
     // find_topmost_clicked_card(world, x, y)
 }
 
-/// クリックされた座標 (x, y) に存在するカードのうち、最も手前にあるものを探すヘルパー関数だよ。
-///
-/// # 引数
-/// * `world`: ゲーム世界の現在の状態 (`World`)。
-/// * `x`: クリックされた画面上の X 座標。
-/// * `y`: クリックされた画面上の Y 座標。
-///
-/// # 戻り値
-/// * `Option<ClickTarget>`:
-///   - `Some(ClickTarget::Card(entity))` : 一番手前のカードが見つかった場合。`entity` はそのカードの ID。
-///   - `None`: クリック座標にカードが存在しない場合。
-///
-/// # 実装詳細 (自作ECSの機能を考慮)
-/// 1. `World` から `Position` コンポーネントを持つ全てのエンティティを取得するよ。
-/// 2. 取得したエンティティをフィルタリング:
-///    a. そのエンティティが `Card` コンポーネントも持っているか確認。
-///    b. 持っていたら、クリック座標 `(x, y)` がそのカードの表示領域 (バウンディングボックス) 内にあるか判定する。
-///       - バウンディングボックスは `Position` (カードの左上の座標) と `RENDER_CARD_WIDTH`, `RENDER_CARD_HEIGHT` から計算するよ。
-/// 3. 条件 (a, b) を満たした全てのカードエンティティと、その Y 座標のペア `(Entity, f32)` を収集する。
-/// 4. **重なり処理:** 収集したペアの中から、最も手前にある（＝Y座標が最も大きい）ものを選択する。
-///    - `max_by` を使って、`Position` の `y` 座標で比較するよ。これが一番手前のカードになるはず！
-/// 5. 見つかったエンティティを `ClickTarget::Card` でラップして `Some` で返す。ヒットしなかった場合は `None` を返す。
-///
-/// # 関数型っぽさポイント ✨
-/// *   イテレータ (`filter_map`, `max_by`) をチェーンして、宣言的に処理を記述してるよ！
-fn find_topmost_clicked_card(world: &World, x: f32, y: f32) -> Option<ClickTarget> {
-    log("  Checking for clicked cards..."); // デバッグログ！
+/// 指定された座標 (x, y) にある、最も手前 (y 座標が最大) のクリック可能な要素 (カード) を探す。
+/// 重なりを考慮し、一番上の要素のみを返す。
+pub fn find_topmost_clicked_card(world: &World, x: f32, y: f32) -> Option<ClickTarget> {
+    // ★★★ 関数の中身を y 座標で比較する元のロジックに戻す ★★★
+    log("  Checking for clicked cards...");
 
-    // 1. World から Position を持つエンティティをすべて取得
     let position_entities = world.get_all_entities_with_component::<Position>();
     if position_entities.is_empty() {
-        log("    No entities with Position found.");
-        return None; // Position がなければカードもないはず
+        return None;
     }
-    log(&format!("    Found {} entities with Position.", position_entities.len()));
-
 
     // 2. Position持ちエンティティをフィルタリング & マッピング
     //    - Card も持っているか？
     //    - クリック範囲内か？
-    //    => 条件を満たす (Entity, y_pos) のイテレータを作る
+    //    => 条件を満たす (Entity, y_pos: f32) のイテレータを作る
     let clicked_cards_iter = position_entities
-        .into_iter() // イテレータに変換
+        .into_iter()
         .filter_map(|entity| { // 条件を満たさないものは None を返して除外
-            // a. Card コンポーネントを持っているか？
-            if world.get_component::<Card>(entity).is_some() { // get_component().is_some() で存在チェック
-                 // b. クリック範囲内か？
-                 // Position コンポーネントを取得 (これは必ず存在するはず)
-                 let pos = world.get_component::<Position>(entity).unwrap(); // unwrap はここでは安全なはず
+            if world.get_component::<Card>(entity).is_some() {
+                 let pos = world.get_component::<Position>(entity).unwrap();
 
-                 // カードの表示領域 (バウンディングボックス) を計算
                  let card_left = pos.x;
                  let card_top = pos.y;
                  let card_right = card_left + RENDER_CARD_WIDTH as f32;
                  let card_bottom = card_top + RENDER_CARD_HEIGHT as f32;
 
-                 // クリック座標 (x, y) がカードの範囲内にあるかチェック！
                  let is_inside = x >= card_left && x < card_right && y >= card_top && y < card_bottom;
-                 log(&format!(
-                     "      Checking card {:?}: Click ({}, {}), Card Rect [({}, {}), ({}, {})] -> Inside: {}",
-                     entity, x, y, card_left, card_top, card_right, card_bottom, is_inside
-                 ));
 
                  if is_inside {
-                     // ヒット！ このカードの Entity と Y 座標を返す
-                     // log(&format!("    Hit card entity {:?} at ({}, {})", entity, pos.x, pos.y)); // ログの位置を詳細化のため、ここはコメントアウト or 削除してもOK
-                     Some((entity, pos.y)) // タプル (Entity, f32) を返す
+                     // ヒット！ このカードの Entity と Y 座標 (手前判定用) を返す
+                     Some((entity, pos.y))
                  } else {
                      None // クリック範囲外
                  }
             } else {
                 None // Card コンポーネントがない
             }
-        }); // clicked_cards_iter は (Entity, f32) のイテレータ
+        });
 
     // 3. クリックされたカードの中から、Y座標が最大のものを探す！
     //    max_by はイテレータを消費して Option<(Entity, f32)> を返す
-    let topmost_card_entity = clicked_cards_iter
-        .max_by(|(_, y1), (_, y2)| {
+    //    ★ 型アノテーションを追加して E0282 を解消 ★
+    let topmost_card = clicked_cards_iter
+        .max_by(|(_entity1, y1): &(Entity, f32), (_entity2, y2): &(Entity, f32)| {
             // f32 の比較は total_cmp を使うのが Rust では推奨！
             y1.total_cmp(y2)
         });
 
     // 4. 結果を Option<ClickTarget> に変換して返す
-    match topmost_card_entity {
-        Some((entity, y_pos)) => {
-            // 一番手前のカードが見つかった！
-            log(&format!("  Topmost clicked card found: {:?} at y={}", entity, y_pos));
-            Some(ClickTarget::Card(entity)) // ClickTarget::Card でラップして返す
+    match topmost_card {
+        Some((entity, _y_pos)) => {
+            log(&format!("  Topmost clicked card found: {:?}", entity));
+            Some(ClickTarget::Card(entity)) // 正しく ClickTarget でラップして返す
         }
         None => {
-            // クリック座標に該当するカードはなかった
             log("  No card found at the clicked position (matching criteria).");
-            None // None を返す
+            None
         }
     }
+    // ★★★ ここまで修正 ★★★
 }
 
 /// クリックされた座標 (x, y) がスタックの表示エリア内にあるか判定するヘルパー関数だよ。

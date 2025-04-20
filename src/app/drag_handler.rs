@@ -109,13 +109,12 @@ pub fn handle_drag_end(
     end_x: f32,
     end_y: f32,
     // ★削除: Closure Arc は handle_drag_end では直接使わない ★
-    // window_mousemove_closure_arc: &Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
-    // window_mouseup_closure_arc: &Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    // ★ 引数リストからも削除されていることを確認 ★
 ) {
     let entity = Entity(entity_usize);
     log(&format!("handle_drag_end logic started for entity: {:?}, end: ({}, {})", entity, end_x, end_y));
 
-    // --- 1. World のロックを取得 --- 
+    // --- 1. World のロックを取得 ---
     let mut world = match world_arc.lock() {
         Ok(guard) => guard,
         Err(poisoned) => {
@@ -128,16 +127,16 @@ pub fn handle_drag_end(
     };
 
     // --- 2. DraggingInfo と元のスタック情報を取得 ---
-    let dragging_info_opt = world.remove_component::<DraggingInfo>(entity);
-    let dragging_info = match dragging_info_opt {
+    // ★修正: DraggingInfo がない場合はエラーログを出してリターンする形に変更★
+    let dragging_info = match world.remove_component::<DraggingInfo>(entity) {
         Some(info) => {
             log(&format!("  - Successfully removed DraggingInfo: {:?}", info));
             info
         }
         None => {
-            log(&format!("  - Warning: DraggingInfo not found for entity {:?}. Ignoring drag end.", entity));
-            // リスナーのデタッチは mouseup クロージャ側で行われるはずなので、ここでは何もしないでリターン
-            return;
+            // DraggingInfo がない状態で handle_drag_end が呼ばれるのは通常異常系
+            error!("  - Error: DraggingInfo not found for entity {:?} in handle_drag_end. Aborting.", entity);
+            return; // 処理を中断
         }
     };
 
@@ -224,7 +223,7 @@ pub fn handle_drag_end(
 
     // World のロックはこのスコープを抜けるときに解放される
 
-    // ★削除: リスナーのデタッチは mouseup クロージャで行うので、ここでは何もしない
+    // ★削除: リスナーのデタッチは JS 側で行うので、ここでは何もしない
     // detach_drag_listeners(window_mousemove_closure_arc, window_mouseup_closure_arc).unwrap_or_else(|e| {
     //     error!("Error detaching listeners in handle_drag_end: {:?}", e);
     // });

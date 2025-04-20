@@ -37,19 +37,36 @@ pub fn can_move_to_tableau(
                 }
             };
 
-            let move_color = CardColor::from_suit(card_to_move.suit);
-            let target_color = CardColor::from_suit(target_top_card.suit);
-            if move_color == target_color {
-                return false;
-            }
+            let move_rank = card_to_move.rank;
+            let move_suit = card_to_move.suit;
+            let move_color = CardColor::from_suit(move_suit);
+            let target_rank = target_top_card.rank;
+            let target_suit = target_top_card.suit;
+            let target_color = CardColor::from_suit(target_suit);
 
-            if (card_to_move.rank as usize) != (target_top_card.rank as usize) - 1 {
+            let colors_different = move_color != target_color;
+            let rank_is_one_less = (move_rank as usize) == (target_rank as usize).saturating_sub(1);
+
+            console::log_1(&JsValue::from_str(&format!(
+                "    [Rule Check] Moving {:?}({:?}) onto {:?}({:?}). Colors different: {}. Rank is one less: {}.",
+                move_rank, move_color, target_rank, target_color, colors_different, rank_is_one_less
+            )));
+
+            if !colors_different || !rank_is_one_less {
+                console::log_1(&JsValue::from_str("      -> Move invalid based on rank/color."));
                 return false;
             }
+            console::log_1(&JsValue::from_str("      -> Move valid based on rank/color."));
             true
         }
         None => {
-            card_to_move.rank == Rank::King
+            let move_rank = card_to_move.rank;
+            let is_king = move_rank == Rank::King;
+            console::log_1(&JsValue::from_str(&format!(
+                "    [Rule Check] Moving {:?} onto empty Tableau. Is King: {}.",
+                move_rank, is_king
+            )));
+            is_king
         }
     }
 } 
