@@ -27,8 +27,8 @@ pub(crate) fn attach_drag_listeners(
         // Clone Arcs for the closure
         let world_arc_clone = Arc::clone(&world_arc);
         let canvas_clone = canvas.clone();
-        let window_mousemove_closure_arc_clone = Arc::clone(&window_mousemove_closure_arc);
-        let window_mouseup_closure_arc_clone = Arc::clone(&window_mouseup_closure_arc); // mouseup closure might need access inside mousemove? Unlikely but pass for now.
+        let _window_mousemove_closure_arc_clone = Arc::clone(&window_mousemove_closure_arc); // ★ 変数名に _ を追加 ★
+        let _window_mouseup_closure_arc_clone = Arc::clone(&window_mouseup_closure_arc); // mouseup closure might need access inside mousemove? Unlikely but pass for now. ★ 変数名に _ を追加 ★
 
         let mousemove_closure = Closure::wrap(Box::new(move |event: Event| {
             // Cast the generic Event to a MouseEvent
@@ -65,8 +65,8 @@ pub(crate) fn attach_drag_listeners(
         // Clone Arcs for the closure
         let world_arc_clone = Arc::clone(&world_arc);
         let network_manager_arc_clone = Arc::clone(&network_manager_arc);
-        let window_mousemove_closure_arc_clone = Arc::clone(&window_mousemove_closure_arc); // Need to detach this listener
-        let window_mouseup_closure_arc_clone = Arc::clone(&window_mouseup_closure_arc);   // Need to detach this listener
+        let _window_mousemove_closure_arc_clone = Arc::clone(&window_mousemove_closure_arc); // Need to detach this listener
+        let _window_mouseup_closure_arc_clone = Arc::clone(&window_mouseup_closure_arc);   // Need to detach this listener
 
         let mouseup_closure = Closure::wrap(Box::new(move |event: Event| {
             log(&format!("MouseUp triggered for entity {}", entity_id));
@@ -90,8 +90,8 @@ pub(crate) fn attach_drag_listeners(
                 // This ensures listeners are removed even if handle_drag_end itself doesn't call detach.
                 log("  Detaching listeners from within mouseup closure...");
                  if let Err(e) = detach_drag_listeners(
-                     &window_mousemove_closure_arc_clone, // Pass Arcs again
-                     &window_mouseup_closure_arc_clone,
+                     &_window_mousemove_closure_arc_clone, // Pass Arcs again
+                     &_window_mouseup_closure_arc_clone,
                  ) {
                     error!("Error detaching listeners in mouseup: {:?}", e);
                  }

@@ -413,8 +413,8 @@ impl GameApp {
         // log(&format!("  >>> Click target identified as: {:?}", clicked_element));
 
         match clicked_element {
-            Some(ClickTarget::Card(entity)) => {
-                // log(&format!("  Handling click on Card: {:?}", entity));
+            Some(ClickTarget::Card(_entity)) => {
+                // log(&format!("  Handling click on Card: {:?}", _entity));
             }
             Some(ClickTarget::Stack(stack_type)) => {
                 // log(&format!("  Handling click on Stack Area: {:?}", stack_type));
@@ -458,8 +458,8 @@ impl GameApp {
     pub fn get_entity_id_at(&self, x: f32, y: f32) -> Option<usize> {
         let world = match self.world.try_lock() {
             Ok(guard) => guard,
-            Err(e) => {
-                // error!("Failed to lock world in get_entity_id_at: {}", e);
+            Err(_e) => {
+                // error!("Failed to lock world in get_entity_id_at: {}", _e);
                 return None;
             }
         };
@@ -538,14 +538,14 @@ impl Drop for GameApp {
         println!("GameApp is being dropped. Cleaning up listeners...");
 
         // ★★★ Canvas リスナーを解除 ★★★
-        if let Err(e) = browser_event_manager::detach_canvas_listeners(
+        if let Err(_e) = browser_event_manager::detach_canvas_listeners(
             &self.canvas,
             &self.canvas_click_closure,
             &self.canvas_dblclick_closure,
             &self.canvas_mousedown_closure,
         ) {
             // ここでも console.error に出したいけど…
-            println!("Error detaching canvas listeners: {:?}", e);
+            println!("Error detaching canvas listeners: {:?}", _e);
         }
 
         // ★★★ Window (ドラッグ) リスナーを解除 ★★★
