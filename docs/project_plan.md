@@ -69,10 +69,10 @@
 
 // --- UIインタラクション(JS & Rust) - Canvas ベース ---
 - [x] UIインタラクション(JS): Canvas クリックイベントの検知とログ出力 (JS側)
-- **[x] UIインタラクション(Rust/JS): クリック座標からカード/スタックを特定するロジック** 🔥最重要🔥 (Rust側判定ロジック実装完了！)
+- **[x] UIインタラクション(Rust/JS): クリック座標からカード/スタックを特定するロジック** 🔥最重要🔥 (Rust側判定ロジック実装 & JS連携 **完了！**)
     - [x] (Rust) クリック座標(x, y)を受け取り、Worldの状態(`Position`, `StackInfo`)とレイアウト情報(`config/layout.rs`)を元に、クリックされたカードの`Entity`または空きスタックの`StackType`を返す関数を `app/event_handler.rs` に実装 (`find_clicked_element`)。
-    - [ ] (JS) Rust側の判定関数 (`GameApp::handle_click`) を呼び出し、結果を取得する。
-- [ ] UIインタラクション(JS): ダブルクリックイベントの検知 (Canvas 上で)
+    - [x] (JS) Rust側の判定関数 (`GameApp::handle_click`) を呼び出し、結果を取得する。(ログ出力で確認済み)
+- [x] UIインタラクション(JS): ダブルクリックイベントの検知 (Canvas 上で) (ログ出力まで実装完了！)
 - [ ] UIインタラクション(JS): ダブルクリック時にRust側の自動移動ロジック (`GameApp::handle_double_click`) を呼び出す。
 - [ ] UIインタラクション(JS): ドラッグ開始 (`mousedown`): クリック判定ロジックを利用して対象カード特定、Rust側に通知して `DraggingInfo` コンポーネントを追加させる。
 - [ ] UIインタラクション(Rust/JS): ドラッグ中のカード追従表示
