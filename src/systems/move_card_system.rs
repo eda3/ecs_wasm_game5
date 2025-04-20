@@ -1,7 +1,6 @@
 use crate::components::{ // components はそのまま
-    card::{Card, Suit, Rank},
+    card::Card,
     position::Position,
-    game_state::{GameState, GameStatus},
     stack::{StackInfo, StackType}
 };
 use crate::ecs::{ // ★修正: crate:: を crate::ecs:: に変更！

@@ -23,7 +23,7 @@ use crate::protocol::{
 use crate::systems::deal_system::DealInitialCardsSystem;
 use crate::components::stack::StackType;
 use crate::app::event_handler::{self, ClickTarget}; // event_handler モジュールと ClickTarget を use する！
-use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
+use crate::log; // log と error マクロをインポート (lib.rs から)
 use crate::ecs::entity::Entity; // Entity を使うためにインポート
 use serde_json;
 // --- レイアウト情報とレンダラー定数をインポート --- ★追加★

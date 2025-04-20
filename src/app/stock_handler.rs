@@ -6,7 +6,6 @@ use crate::ecs::entity::Entity;
 use crate::components::{Card, Position, StackInfo, StackType};
 use crate::logic::rules::stock_waste; // Use the rule checks
 use crate::app::layout_calculator;
-use crate::log;
 use log::{warn, info}; // Import specific log levels
 
 /// Deals one card from the Stock pile to the Waste pile.
