@@ -20,6 +20,7 @@ getrandom = { version = "0.2", features = ["js"] }
 rand = "0.8"
 itertools = "0.14.0"
 # hecs = "0.10.5"
+log = "0.4"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.43"
@@ -27,3 +28,6 @@ wasm-bindgen-test = "0.3.43"
 [profile.release]
 lto = true
 opt-level = 's'
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Os', '--enable-mutable-globals']

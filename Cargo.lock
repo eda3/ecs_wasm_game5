@@ -48,6 +48,7 @@ dependencies = [
  "getrandom",
  "itertools",
  "js-sys",
+ "log",
  "rand",
  "serde",
  "serde_derive",

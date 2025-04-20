@@ -8,26 +8,27 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::closure::Closure;
 use web_sys::{Event, HtmlCanvasElement, CanvasRenderingContext2d};
 use js_sys::Error;
+// log クレートのマクロをインポート
+use log::{info, error, warn}; // warn も追加しておく
 
 use crate::ecs::world::World;
-use crate::network::{NetworkManager, /*ConnectionStatus*/};
+use crate::network::NetworkManager;
 use crate::protocol::{
-    ServerMessage, PlayerId, GameStateData, PlayerData, CardData, PositionData, /*StackType*/
+    self, // protocol モジュール自体も使う
+    ServerMessage, PlayerId, GameStateData, PlayerData, CardData, PositionData,
+    ClientMessage // ClientMessage も使う
 };
 use crate::systems::deal_system::DealInitialCardsSystem;
 use crate::components::dragging_info::DraggingInfo;
 use crate::components::card::Card;
-use crate::components::stack::StackInfo;
+use crate::components::stack::{StackInfo, StackType};
 use crate::components::position::Position;
 use crate::components::player::Player;
-use crate::app::event_handler; // event_handler モジュールを use する！
+use crate::app::event_handler::{self, ClickTarget}; // event_handler モジュールと ClickTarget を use する！
 use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
-// use crate::ecs::entity::Entity; // 未使用
-// use crate::app::init_handler; // 未使用 (super:: で直接呼ぶため)
-// use crate::app::network_handler; // 未使用 (super:: で直接呼ぶため)
-// use crate::app::state_handler; // 未使用 (super:: で直接呼ぶため)
-// use crate::app::renderer; // 未使用 (super:: で直接呼ぶため)
-// use crate::app::app_state::AppState; // ★ app_state が見つからないため一旦コメントアウト
+use crate::ecs::entity::Entity; // Entity を使うためにインポート
+use crate::logic::rules;
+use serde_json;
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
@@ -43,7 +44,7 @@ pub struct GameApp {
     // スレッドセーフにする (Wasm は基本シングルスレッドだが作法として)
     event_closures: Arc<Mutex<Vec<Closure<dyn FnMut(Event)>>>>,
     // ★追加: ドラッグ状態 (現在ドラッグ中のカード情報)★
-    dragging_state: Arc<Mutex<Option<DraggingInfo>>>,
+    // dragging_state: Arc<Mutex<Option<DraggingInfo>>>, // handle_drag_start/end で直接追加/削除するので不要かも
     // ★追加: Window にアタッチする MouseMove/MouseUp リスナー★
     // (ドラッグ中のみ Some になる)
     window_mousemove_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
@@ -77,7 +78,6 @@ impl GameApp {
         let my_player_id_arc = Arc::new(Mutex::new(None));
         let deal_system = DealInitialCardsSystem::default();
         let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
-        let dragging_state_arc = Arc::new(Mutex::new(None));
         let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
         let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
 
@@ -89,7 +89,6 @@ impl GameApp {
             my_player_id: my_player_id_arc,
             deal_system,
             event_closures: event_closures_arc,
-            dragging_state: dragging_state_arc,
             window_mousemove_closure: window_mousemove_closure_arc,
             window_mouseup_closure: window_mouseup_closure_arc,
             canvas,
@@ -110,11 +109,38 @@ impl GameApp {
         super::network_handler::send_join_game(&self.network_manager, player_name); // app:: -> super::
     }
 
-    // カード移動メッセージ送信
+    // カード移動メッセージ送信 (引数を JSON 文字列に戻す)
     #[wasm_bindgen]
-    pub fn send_make_move(&self, moved_entity_id: usize, target_stack_json: String) {
-        // ★修正: app::network_handler の関数を呼び出す！★
-        super::network_handler::send_make_move(&self.network_manager, moved_entity_id, target_stack_json); // app:: -> super::
+    pub fn send_make_move(&self, moved_entity_id: usize, target_stack_json: String) { // 引数を JSON 文字列に戻す
+        let moved_entity = Entity(moved_entity_id); // usize から Entity へ
+
+        // JSON 文字列をデシリアライズ
+        match serde_json::from_str::<protocol::StackType>(&target_stack_json) {
+            Ok(target_stack) => {
+                // デシリアライズ成功
+                let message = ClientMessage::MakeMove { moved_entity, target_stack };
+
+                match serde_json::to_string(&message) {
+                    Ok(json_message) => {
+                         match self.network_manager.lock() {
+                             Ok(nm) => {
+                                 if let Err(e) = nm.send_message(&json_message) {
+                                     error!("Failed to send MakeMove message: {}", e);
+                                 } else {
+                                     info!("MakeMove message sent: {:?}", message);
+                                 }
+                             },
+                             Err(e) => error!("Failed to lock NetworkManager to send MakeMove: {}", e)
+                         }
+                    }
+                    Err(e) => error!("Failed to serialize MakeMove message: {}", e)
+                }
+            }
+            Err(e) => {
+                // JSON デシリアライズ失敗
+                error!("Failed to deserialize target_stack_json: {}. JSON: {}", e, target_stack_json);
+            }
+        }
     }
 
     // 受信メッセージ処理
@@ -420,7 +446,280 @@ impl GameApp {
             }
         }
     }
-}
+
+    // ドラッグ開始時の処理
+    // entity: ドラッグが開始されたカードの Entity ID (usize)
+    // start_x, start_y: ドラッグが開始された Canvas 上の座標 (f32)
+    fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) { // usize 型を明示
+        // try_lock は Result を返すため、if let Ok で受ける
+        if let Ok(mut world) = self.world.try_lock() {
+            // Entity 型に変換
+            let entity = Entity(entity_usize);
+
+            // ドラッグ対象エンティティから必要なコンポーネントを取得
+            // Entity 型で取得
+            let position_opt = world.get_component::<Position>(entity);
+            let stack_info_opt = world.get_component::<StackInfo>(entity);
+
+            // Position と StackInfo の両方が取得できた場合のみ処理を進める
+            if let (Some(position), Some(stack_info)) = (position_opt, stack_info_opt) {
+                // ドラッグ開始座標とカードの左上座標の差分 (オフセット) を計算
+                let offset_x = start_x - position.x; // f32 のまま計算
+                let offset_y = start_y - position.y; // f32 のまま計算
+
+                // DraggingInfo コンポーネントを作成
+                // 正しいフィールド名を使用し、型キャストを追加
+                let dragging_info = DraggingInfo {
+                    original_x: position.x.into(), // f32 -> f64
+                    original_y: position.y.into(), // f32 -> f64
+                    offset_x: offset_x.into(),   // f32 -> f64
+                    offset_y: offset_y.into(),   // f32 -> f64
+                    original_position_in_stack: stack_info.position_in_stack as usize, // u8 -> usize
+                    // original_stack_entity: stack_info.stack_entity, // StackInfo に存在しないためコメントアウト
+                    // ★一時的な修正: ダミーの Entity ID を設定 (usize::MAX は最大値)
+                    original_stack_entity: Entity(usize::MAX), // TODO: 後で正しいスタック Entity を取得する
+                };
+
+                // エンティティに DraggingInfo コンポーネントを追加
+                // add_component は () を返すので match は不要 (エラーハンドリングが必要なら別途)
+                // Entity 型で渡す
+                world.add_component(entity, dragging_info);
+                log::info!("Added DraggingInfo component to entity {:?}", entity);
+
+            } else {
+                // 必要なコンポーネントが取得できなかった場合
+                log::error!("Failed to get Position or StackInfo for entity {:?} in handle_drag_start", entity);
+            }
+        } else {
+            log::error!("Failed to lock world in handle_drag_start");
+        }
+    }
+
+    // ドラッグ終了時の処理
+    fn handle_drag_end(&mut self, entity_usize: usize, end_x: f32, end_y: f32) {
+        log::info!("handle_drag_end: entity={}, end_x={}, end_y={}", entity_usize, end_x, end_y);
+        let entity_to_move = Entity(entity_usize); // usize から Entity へ
+
+        // 1. World のロックを取得 (try_lock は read/write の両方で使う)
+        let mut world_guard = match self.world.try_lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                log::error!("Failed to lock world in handle_drag_end: {}", e);
+                // ロック失敗時は何もできないので終了
+                return;
+            }
+        };
+
+        // 2. DraggingInfo を削除し、元の情報を取得
+        let dragging_info_opt = world_guard.remove_component::<DraggingInfo>(entity_to_move);
+
+        // DraggingInfo が取得できない場合は、不正な状態なので処理を中断
+        let dragging_info = match dragging_info_opt {
+            Some(info) => info,
+            None => {
+                log::warn!("DraggingInfo component not found for entity {:?} during drag end. Aborting move.", entity_to_move);
+                // World のロックを解除
+                drop(world_guard);
+                return;
+            }
+        };
+        log::info!("Removed DraggingInfo: {:?}", dragging_info);
+
+        // 3. ドロップ先の要素を特定
+        // event_handler::find_clicked_element を呼び出して、ドロップ座標に何があるか調べる
+        // World のロックはまだ保持しているので、& *world_guard で参照を渡す
+        let drop_target = event_handler::find_clicked_element(&*world_guard, end_x, end_y);
+        log::info!("Drop target found: {:?}", drop_target);
+
+        // 4. 移動が妥当か判定し、結果に応じて処理
+        let mut move_is_valid = false; // 移動が成功したかどうかのフラグ
+        // ★ サーバー通知用と World 更新用の StackType を別々に保持 ★
+        let mut target_stack_for_update: Option<StackType> = None;
+        let mut target_stack_for_proto: Option<protocol::StackType> = None;
+
+        match drop_target {
+            // --- 4a. スタックエリアにドロップされた場合 ---
+            Some(ClickTarget::Stack(target_stack_type)) => {
+                log::info!("Dropped onto stack area: {:?}", target_stack_type);
+                let is_valid = match target_stack_type {
+                    StackType::Foundation(index) => {
+                        rules::can_move_to_foundation(&*world_guard, entity_to_move, index)
+                    }
+                    StackType::Tableau(index) => {
+                        rules::can_move_to_tableau(&*world_guard, entity_to_move, index)
+                    }
+                    // Stock や Waste に直接ドロップするルールは通常ないので false とする
+                    StackType::Stock | StackType::Waste => {
+                        log::warn!("Cannot drop directly onto Stock or Waste.");
+                        false
+                    }
+                    // Hand にドロップするルールもないので false とする
+                    StackType::Hand => {
+                        log::warn!("Cannot drop onto Hand stack area.");
+                        false
+                    }
+                };
+
+                if is_valid {
+                    log::info!("Move to stack {:?} is valid.", target_stack_type);
+                    move_is_valid = true;
+                    target_stack_for_update = Some(target_stack_type);
+                    // ★ protocol::StackType への変換 match に Hand (unreachable) を追加 ★
+                    target_stack_for_proto = Some(match target_stack_type {
+                        StackType::Stock => protocol::StackType::Stock,
+                        StackType::Waste => protocol::StackType::Waste,
+                        StackType::Foundation(i) => protocol::StackType::Foundation(i),
+                        StackType::Tableau(i) => protocol::StackType::Tableau(i),
+                        StackType::Hand => unreachable!("Validated move target cannot be Hand stack"), // is_valid が false なのでここには来ないはず
+                    });
+                } else {
+                    log::info!("Move to stack {:?} is invalid.", target_stack_type);
+                }
+            }
+            // --- 4b. 別のカードの上にドロップされた場合 ---
+            Some(ClickTarget::Card(target_card_entity)) => {
+                log::info!("Dropped onto card: {:?}", target_card_entity);
+                if let Some(target_card_stack_info) = world_guard.get_component::<StackInfo>(target_card_entity) {
+                    let target_stack_type = target_card_stack_info.stack_type;
+                    log::info!("Target card belongs to stack: {:?}", target_stack_type);
+                    // ★ is_valid の match に Hand を追加 ★
+                    let is_valid = match target_stack_type {
+                        StackType::Foundation(index) => {
+                            rules::can_move_to_foundation(&*world_guard, entity_to_move, index)
+                        }
+                        StackType::Tableau(index) => {
+                            rules::can_move_to_tableau(&*world_guard, entity_to_move, index)
+                        }
+                        StackType::Stock | StackType::Waste => {
+                            log::warn!("Cannot drop onto a card in Stock or Waste.");
+                            false
+                        }
+                        // Hand のカード上へのドロップも無効
+                        StackType::Hand => {
+                            log::warn!("Cannot drop onto a card in Hand stack.");
+                            false
+                        }
+                    };
+
+                    if is_valid {
+                        log::info!("Move to stack {:?} (via card drop) is valid.", target_stack_type);
+                        move_is_valid = true;
+                        target_stack_for_update = Some(target_stack_type);
+                        // ★ protocol::StackType への変換 match に Hand (unreachable) を追加 ★
+                        target_stack_for_proto = Some(match target_stack_type {
+                            StackType::Stock => protocol::StackType::Stock,
+                            StackType::Waste => protocol::StackType::Waste,
+                            StackType::Foundation(i) => protocol::StackType::Foundation(i),
+                            StackType::Tableau(i) => protocol::StackType::Tableau(i),
+                            StackType::Hand => unreachable!("Validated move target cannot be Hand stack"),
+                        });
+                    } else {
+                        log::info!("Move to stack {:?} (via card drop) is invalid.", target_stack_type);
+                    }
+                } else {
+                    log::error!("Failed to get StackInfo for target card {:?}.", target_card_entity);
+                    move_is_valid = false;
+                }
+            }
+            // --- 4c. 何もない場所にドロップされた場合 ---
+            None => {
+                log::info!("Dropped onto empty space. Move is invalid.");
+                move_is_valid = false;
+            }
+        }
+
+        // 5. World 更新、サーバー通知、または位置リセットの実行
+        if move_is_valid {
+            // ★ target_stack_for_update と target_stack_for_proto の両方が Some であることを確認 ★
+            if let (Some(stack_for_update), Some(stack_for_proto)) = (target_stack_for_update, target_stack_for_proto) {
+                // ★ 修正: 正しい引数を渡す ★
+                self.update_world_and_notify_server(world_guard, entity_to_move, stack_for_update, stack_for_proto);
+            } else {
+                 log::error!("Move was valid but target stack types were None. This should not happen!");
+                 self.reset_card_position(world_guard, entity_to_move, &dragging_info);
+            }
+        } else {
+            self.reset_card_position(world_guard, entity_to_move, &dragging_info);
+        }
+    }
+
+    // --- ヘルパー関数: World 更新とサーバー通知 --- (シグネチャは変更なし、内部の型変換を削除)
+    fn update_world_and_notify_server(
+        &self,
+        mut world: std::sync::MutexGuard<'_, World>,
+        moved_entity: Entity,
+        target_stack_type_for_update: StackType, // World 更新用
+        target_stack_type_for_proto: protocol::StackType // サーバー通知用
+    ) {
+        log::info!("Updating world and notifying server for entity {:?} moving to {:?}", moved_entity, target_stack_type_for_update);
+
+        // --- World 更新 ---
+        // 1. 新しい Position の計算 (TODO: 正確な計算ロジックが必要！)
+        let new_pos = Position { x: 100.0, y: 100.0 }; // 仮の位置
+        if let Some(pos_component) = world.get_component_mut::<Position>(moved_entity) {
+            *pos_component = new_pos;
+            log::info!("  Updated Position for entity {:?}", moved_entity);
+        } else {
+            log::error!("  Failed to get Position component for entity {:?}", moved_entity);
+        }
+
+        // 2. 新しい StackInfo の計算 (TODO: position_in_stack の計算が必要！)
+        let new_pos_in_stack: u8 = 0; // 仮の値
+        if let Some(stack_info_component) = world.get_component_mut::<StackInfo>(moved_entity) {
+            stack_info_component.stack_type = target_stack_type_for_update; // ★ 渡された更新用型を使用
+            stack_info_component.position_in_stack = new_pos_in_stack;
+            log::info!("  Updated StackInfo for entity {:?}", moved_entity);
+        } else {
+            log::error!("  Failed to get StackInfo component for entity {:?}", moved_entity);
+        }
+
+        // 3. 移動元のスタックで公開されるカードを表にする処理 (TODO: 実装)
+        log::warn!("  TODO: Implement logic to turn face up the revealed card in the original stack.");
+
+        drop(world);
+        log::info!("  World lock released.");
+
+        // --- サーバー通知 (NetworkManager を直接使う) ---
+        // ★ 渡されたプロトコル用型を使用 ★
+        let message = ClientMessage::MakeMove { moved_entity, target_stack: target_stack_type_for_proto };
+        match serde_json::to_string(&message) {
+            Ok(json_message) => {
+                match self.network_manager.lock() {
+                    Ok(nm) => {
+                        if let Err(e) = nm.send_message(&json_message) {
+                            error!("Failed to send MakeMove message directly: {}", e);
+                        } else {
+                            info!("MakeMove message sent directly: {:?}", message);
+                        }
+                    }
+                    Err(e) => error!("Failed to lock NetworkManager to send MakeMove directly: {}", e)
+                }
+            }
+            Err(e) => error!("Failed to serialize MakeMove message directly: {}", e)
+        }
+    }
+
+    // --- ヘルパー関数: カード位置のリセット --- (シグネチャは変更なし、内部の型変換を削除)
+    fn reset_card_position(
+        &self,
+        mut world: std::sync::MutexGuard<'_, World>, // MutexGuard を受け取る
+        entity: Entity,
+        dragging_info: &DraggingInfo // 戻す位置の情報を持つ
+    ) {
+        log::info!("Resetting position for entity {:?}", entity);
+        if let Some(pos_component) = world.get_component_mut::<Position>(entity) {
+            // DraggingInfo に保存されていた元の座標に戻す
+            pos_component.x = dragging_info.original_x as f32; // f64 -> f32
+            pos_component.y = dragging_info.original_y as f32; // f64 -> f32
+            log::info!("  Position reset to ({}, {})", pos_component.x, pos_component.y);
+        } else {
+            log::error!("  Failed to get Position component for entity {:?} during reset", entity);
+        }
+        // World のロックはスコープを抜けるときに解除される
+        // drop(world); // 明示的に書いても良い
+    }
+
+} // impl GameApp の終わり
 
 // GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)
 impl Drop for GameApp {
