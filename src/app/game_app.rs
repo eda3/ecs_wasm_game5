@@ -45,6 +45,9 @@ use crate::app::browser_event_manager;
 // ★修正: Result を返すように変更 (listener attach のエラーハンドル)
 use wasm_bindgen::JsValue;
 
+// ★ 追加 ★
+use crate::app::stock_handler;
+
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
 pub struct GameApp {
@@ -283,183 +286,48 @@ impl GameApp {
     ///    スタッククリック時のアクション (例: 山札クリックでカードをめくる) などを実装していくよ！
     #[wasm_bindgen]
     pub fn handle_click(&mut self, x: f32, y: f32) {
-        // --- クリック要素の特定 (event_handler に委譲) --- 
-        // World は handle_click_logic 内でロックされるのでここでは不要
+        log(&format!("GameApp::handle_click: Clicked at ({}, {})", x, y));
 
-        // ★ 修正: クリック要素を特定するだけに変更 ★
-        let clicked_target = {
-            let world = match self.world.lock() {
-                Ok(w) => w,
-                Err(e) => {
-                    error!("handle_click 内で World のロックに失敗: {}", e);
-                    return;
-                }
-            };
+        // --- 1. クリックされた要素を特定 --- 
+        let clicked_element = {
+            // World のロックは find_clicked_element の中で行われる想定
+            let world = self.world.lock().expect("Failed to lock world for click check");
             event_handler::find_clicked_element(&world, x, y)
-            // world のロックはここでドロップされる
         };
+        log(&format!("  Clicked element: {:?}", clicked_element));
 
-        // --- クリック要素に応じた処理 --- 
-        match clicked_target {
+        // --- 2. クリックされた要素に応じて処理を分岐 --- 
+        match clicked_element {
             Some(ClickTarget::Card(entity)) => {
-                log(&format!("カード {:?} をクリック -> ドラッグ開始処理へ", entity));
-                // ★ カードがクリックされたらドラッグ開始処理を呼ぶ！★
-                self.handle_drag_start(entity.0, x, y);
+                log(&format!("  Handling click on Card: {:?}", entity));
+                // カードクリック時の処理 (ダブルクリックでの自動移動など)
+                // TODO: ダブルクリック判定をどう行うか？
+                //       一旦、シングルクリックでも自動移動を試すようにする？
+                self.handle_double_click(entity.0); // .0 で usize を取り出す
             }
             Some(ClickTarget::Stack(stack_type)) => {
-                log(&format!("スタックエリア {:?} をクリック -> スタックアクション処理へ", stack_type));
-                // ★ スタッククリック時のロジックは event_handler に移譲する ★
-                //   (ただし、サーバー通信などは network_handler 経由で行うべき)
-                // TODO: event_handler にスタッククリック処理を実装し、それを呼ぶ
-                // event_handler::handle_stack_click_logic(&self.world, &self.network_manager, stack_type);
-                match stack_type {
-                    StackType::Stock => log("  山札クリック！ (処理は TODO)"),
-                    StackType::Waste => log("  捨て札クリック！ (処理は TODO)"),
-                    _ => log("  他のスタッククリック (処理は TODO)"),
+                log(&format!("  Handling click on Stack Area: {:?}", stack_type));
+                // ★★★ 山札クリック処理を追加 ★★★
+                if stack_type == StackType::Stock {
+                    log("    Stock pile clicked!");
+                    // World への可変参照が必要なので、ここでロックを取得
+                    let mut world_guard = self.world.lock().expect("Failed to lock world for stock click");
+                    // まず、Stock から Waste へのディールを試みる
+                    if !stock_handler::deal_one_card_from_stock(&mut world_guard) {
+                        // ディールできなかった場合 (Stock が空など)、Waste から Stock へのリセットを試みる
+                        log("    Could not deal from stock, attempting to reset waste...");
+                        stock_handler::reset_waste_to_stock(&mut world_guard);
+                    }
                 }
+                // ★★★ ここまで ★★★
+                // 他のスタックエリアクリック時の処理 (もしあれば)
             }
             None => {
-                log("空きスペースをクリック。");
-                // 何もしない
+                log("  Clicked on empty area.");
+                // 何もないところをクリックした場合の処理 (何もしない？)
             }
         }
-    }
-
-    /// JavaScript から呼び出して、指定された Canvas 座標 (x, y) にある
-    /// 一番手前の「カード」の Entity ID を取得するための関数だよ！
-    /// ダブルクリックされた時に「どのカードがクリックされたか」を JS 側で知るために使うんだ。
-    ///
-    /// # 引数
-    /// * `x`: 判定したい Canvas 上の X 座標 (f32)。
-    /// * `y`: 判定したい Canvas 上の Y 座標 (f32)。
-    ///
-    /// # 戻り値
-    /// * `Option<usize>`:
-    ///   - `Some(entity_id)`: 指定座標にカードが見つかった場合、そのカードの Entity ID (usize) を返すよ。
-    ///   - `None`: 指定座標にカードが見つからなかった場合 (スタックや背景だった場合)。
-    ///   JS側では number | undefined として受け取れる！
-    ///
-    /// # 処理の流れ
-    /// 1. `World` のロックを取得する。失敗したらエラーログを出して `None` を返すよ。
-    /// 2. `event_handler::find_clicked_element` 関数を呼び出して、指定座標の要素を特定する。
-    /// 3. `find_clicked_element` の結果を `match` で判定する。
-    ///    - `Some(ClickTarget::Card(entity))` だったら、そのカードの ID (`entity.0`) を `Some()` で包んで返す。
-    ///    - それ以外 (`Some(ClickTarget::Stack(_))` や `None`) だったら、`None` を返す。
-    /// 4. World のロックを早めに解除する (`drop`)。
-    #[wasm_bindgen]
-    pub fn get_entity_id_at(&self, x: f32, y: f32) -> Option<usize> {
-        // まずは World のロックを取得するよ。ロックは大事！🔒
-        let world = match self.world.lock() {
-            Ok(w) => w,
-            Err(e) => {
-                // ロックに失敗したらエラーログを出して None (何も見つからなかった) を返す。
-                error(&format!("get_entity_id_at 内で World のロックに失敗: {}", e));
-                return None;
-            }
-        };
-
-        // event_handler モジュールの find_clicked_element 関数を呼び出して、
-        // 指定された座標 (x, y) に何があるか調べてもらう！🔍
-        let clicked_element = event_handler::find_clicked_element(&world, x, y);
-
-        // World のロックはここで解除！🔓 もう World のデータは必要ないからね。
-        // drop(world) を明示的に書くことで、ロックが早く解除されることを保証するよ。
-        drop(world);
-
-        // find_clicked_element から返ってきた結果 (Option<ClickTarget>) を match で判定！
-        match clicked_element {
-            // Some(ClickTarget::Card(entity)) が返ってきたら…
-            Some(event_handler::ClickTarget::Card(entity)) => {
-                // それはカードがクリックされたってこと！🎉
-                // カードの Entity ID (entity は Entity(usize) というタプル構造体なので、中の usize を .0 で取り出す) を Some で包んで返す。
-                // これで JS 側は、どのカードがクリックされたか ID を知ることができるね！
-                log(&format!("get_entity_id_at: 座標 ({}, {}) でカードエンティティ {:?} を発見。", x, y, entity));
-                Some(entity.0) // entity.0 は usize 型
-            }
-            // Some(ClickTarget::Stack(stack_type)) が返ってきたら…
-            Some(event_handler::ClickTarget::Stack(stack_type)) => {
-                // それはスタックの空きエリアがクリックされたってことだね。
-                // 今回はカードの ID だけが欲しいので、スタックの場合は None を返す。
-                log(&format!("get_entity_id_at: 座標 ({}, {}) でスタックエリア {:?} を発見。None を返します。", x, y, stack_type));
-                None
-            }
-            // None が返ってきたら…
-            None => {
-                // それは背景とか、何もない場所がクリックされたってこと。
-                // もちろんカードじゃないので None を返す。
-                log(&format!("get_entity_id_at: 座標 ({}, {}) では何も見つからず。None を返します。", x, y));
-                None
-            }
-        }
-    }
-
-    /// ドラッグ開始時の処理。必要なリスナーをアタッチする。
-    pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) {
-        log(&format!(
-            "GameApp::handle_drag_start: Entity {}, Start: ({}, {})",
-            entity_usize, start_x, start_y
-        ));
-
-        // --- 1. ドラッグ対象の情報を World に追加 --- 
-        drag_handler::handle_drag_start(&self.world, entity_usize, start_x, start_y);
-
-        // --- 2. MouseMove と MouseUp リスナーを Window にアタッチ --- 
-        // (エラーハンドリングは簡単のために unwrap を使うけど、本当はちゃんと処理すべき)
-        if let Err(e) = browser_event_manager::attach_drag_listeners(
-            Arc::clone(&self.world),
-            Arc::clone(&self.network_manager),
-            Arc::clone(&self.window_mousemove_closure),
-            Arc::clone(&self.window_mouseup_closure),
-            entity_usize,
-            &self.canvas, // ★ 追加: self.canvas への参照を渡す ★
-        ) {
-            error!("GameApp: Failed to attach drag listeners: {:?}", e);
-        }
-        log("GameApp::handle_drag_start: Listeners attached.");
-    }
-
-    /// ドラッグ終了時の処理 (マウスボタンが離された時)
-    /// - カードのエンティティID (`entity_usize`) とドロップ座標 (`end_x`, `end_y`) を受け取るよ。
-    /// - ドロップ座標にある要素を特定する。
-    /// - もしドロップ先が有効なスタックなら:
-    ///   - 移動ルール (`is_move_valid`) をチェックする。
-    ///   - ルール上OKなら:
-    ///     - `DraggingInfo` を削除する。
-    ///     - `update_world_and_notify_server` を呼び出して、World の状態を更新し、サーバーに移動を通知する。
-    ///   - ルール上NGなら:
-    ///     - `DraggingInfo` を削除する。
-    ///     - カードの位置を元の位置 (`original_position` in `DraggingInfo`) に戻す。
-    ///     - サーバーには通知しない。
-    /// - もしドロップ先が有効なスタックでないなら:
-    ///   - `DraggingInfo` を削除する。
-    ///   - カードの位置を元の位置に戻す。
-    ///   - サーバーには通知しない。
-    #[wasm_bindgen]
-    pub fn handle_drag_end(&mut self, entity_usize: usize, end_x: f32, end_y: f32) {
-        log(&format!(
-            "GameApp: handle_drag_end called for entity: {}, end: ({}, {})",
-            entity_usize,
-            end_x,
-            end_y
-        ));
-        
-        // The actual drag end logic (updating world, notifying server) 
-        // is triggered by the mouseup listener which calls drag_handler::handle_drag_end.
-        
-        // The primary role of *this specific GameApp method* might be reduced, 
-        // but we still need to ensure listeners are cleaned up.
-        // The mouseup listener *should* call detach_drag_listeners itself.
-        // We could add a redundant call here for safety, but it might log warnings
-        // if the listener already detached itself.
-        log("GameApp::handle_drag_end - Relying on mouseup listener to call detach.");
-        
-        // If we needed manual cleanup unrelated to mouseup, it would go here:
-        // if let Err(e) = browser_event_manager::detach_drag_listeners(
-        //     &self.window_mousemove_closure,
-        //     &self.window_mouseup_closure,
-        // ) {
-        //     error!("GameApp: Error detaching listeners in handle_drag_end: {:?}", e);
-        // }
+        log("GameApp::handle_click: Finished.");
     }
 
     /// JavaScript から呼び出される、ドラッグ中のカードの位置を一時的に更新するためのメソッドだよ！

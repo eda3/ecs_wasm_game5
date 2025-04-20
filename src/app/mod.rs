@@ -16,4 +16,5 @@ pub mod drag_apply_handler; // ★追加
 // ★追加: 新しいネットワークモジュール★
 pub mod network_connector;
 pub mod network_sender;
-pub mod network_receiver; 
+pub mod network_receiver;
+pub mod stock_handler; // ★ 追加 ★ 
