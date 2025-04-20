@@ -8,3 +8,6 @@ pub mod event_handler; // イベント処理
 pub mod renderer;    // 描画処理
 pub mod state_handler;   // ★追加
 // pub mod init_handler;    // 今後追加予定 
+pub mod drag_handler;
+pub mod layout_calculator;
+pub mod state_getter; 
