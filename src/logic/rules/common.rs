@@ -1,6 +1,6 @@
 //! ルール判定で共通して使うヘルパー関数や型を置くよ。
 
-use crate::components::card::{Suit, Card}; // Card を使う
+use crate::components::card::Suit; // Card を使う
 use crate::components::stack::{StackType, StackInfo}; // StackInfo を使う
 use crate::ecs::entity::Entity;
 use crate::ecs::world::World;

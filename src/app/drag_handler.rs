@@ -3,9 +3,6 @@
 
 use std::sync::{Arc, Mutex};
 use log::{info, error, warn};
-use wasm_bindgen::JsValue;
-use js_sys::Error;
-use serde_json;
 
 use crate::ecs::{
     world::World,
@@ -13,13 +10,12 @@ use crate::ecs::{
 };
 use crate::components::{
     Position,
-    Card,
     StackInfo,
     DraggingInfo,
     StackType,
 };
 use crate::app::event_handler::{self, ClickTarget};
-use crate::protocol::{self, ClientMessage};
+use crate::protocol::{self};
 use crate::logic::rules;
 use crate::{log}; // log マクロを使う (ルートから)
 use super::drag_apply_handler; // ★追加: 新しいモジュールを使う

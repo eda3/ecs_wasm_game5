@@ -6,9 +6,8 @@ use serde_json;
 use wasm_bindgen::JsValue;
 
 use crate::ecs::world::World;
-use crate::components::{Position, Card, StackInfo, DraggingInfo, StackType};
+use crate::components::{Position, Card, StackInfo};
 use crate::protocol::{CardData, GameStateData, PositionData};
-use crate::components::card::{Suit, Rank};
 
 /// ワールドの状態を取得し、JSON 文字列として返します。
 /// (GameApp::get_world_state_json のロジック)

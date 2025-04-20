@@ -9,36 +9,29 @@ use wasm_bindgen::closure::Closure;
 use web_sys::{Event, HtmlCanvasElement, CanvasRenderingContext2d};
 use js_sys::Error;
 // log クレートのマクロをインポート
-use log::{info, error, warn}; // warn も追加しておく
+use log::{info, error}; // warn も追加しておく
 
 use crate::ecs::world::World;
 use crate::network::NetworkManager;
 use crate::protocol::{
     self, // protocol モジュール自体も使う
-    ServerMessage, PlayerId, GameStateData, PlayerData, CardData, PositionData,
+    ServerMessage, PlayerId,
     ClientMessage // ClientMessage も使う
 };
 use crate::systems::deal_system::DealInitialCardsSystem;
-use crate::components::dragging_info::DraggingInfo;
-use crate::components::card::Card;
-use crate::components::stack::{StackInfo, StackType};
-use crate::components::position::Position;
-use crate::components::player::Player;
+use crate::components::stack::StackType;
 use crate::app::event_handler::{self, ClickTarget}; // event_handler モジュールと ClickTarget を use する！
 use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
 use crate::ecs::entity::Entity; // Entity を使うためにインポート
-use crate::logic::rules;
 use serde_json;
 // --- レイアウト情報とレンダラー定数をインポート --- ★追加★
-use crate::config::layout;
-use crate::app::renderer::{RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT};
 
 // ★修正: network_handler ではなく、新しいモジュールを use する★
 // use super::network_handler::ProcessedMessageResult; 
 use super::network_receiver::ProcessedMessageResult; // 受信結果
-use super::network_connector; // 接続
-use super::network_sender; // 送信
-use super::network_receiver; // 受信処理
+ // 接続
+ // 送信
+ // 受信処理
 
 // ★追加: drag_handler モジュールを use する★
 use super::drag_handler;

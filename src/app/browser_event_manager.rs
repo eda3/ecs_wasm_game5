@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{window, Event, MouseEvent, HtmlCanvasElement};
+use web_sys::{window, Event, MouseEvent};
 use crate::ecs::world::World;
 use crate::network::NetworkManager;
 use crate::app::drag_handler; // update_dragged_position, handle_drag_end を呼び出すため
