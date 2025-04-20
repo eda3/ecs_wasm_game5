@@ -29,6 +29,9 @@ use crate::{log, error}; // log と error マクロをインポート (lib.rs �
 use crate::ecs::entity::Entity; // Entity を使うためにインポート
 use crate::logic::rules;
 use serde_json;
+// --- レイアウト情報とレンダラー定数をインポート --- ★追加★
+use crate::config::layout;
+use crate::app::renderer::{RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT};
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
@@ -498,47 +501,40 @@ impl GameApp {
     // ドラッグ終了時の処理
     fn handle_drag_end(&mut self, entity_usize: usize, end_x: f32, end_y: f32) {
         log::info!("handle_drag_end: entity={}, end_x={}, end_y={}", entity_usize, end_x, end_y);
-        let entity_to_move = Entity(entity_usize); // usize から Entity へ
+        let entity_to_move = Entity(entity_usize);
 
-        // 1. World のロックを取得 (try_lock は read/write の両方で使う)
         let mut world_guard = match self.world.try_lock() {
             Ok(guard) => guard,
             Err(e) => {
                 log::error!("Failed to lock world in handle_drag_end: {}", e);
-                // ロック失敗時は何もできないので終了
                 return;
             }
         };
 
-        // 2. DraggingInfo を削除し、元の情報を取得
+        // ★重要★ DraggingInfo を削除する前に、移動元カードの StackInfo を取得しておく！
+        // (隠れたカードを表にする処理で、元のスタックタイプを知るために必要)
+        let original_stack_info_opt = world_guard.get_component::<StackInfo>(entity_to_move).cloned(); // .cloned() でコピーを取得
+
         let dragging_info_opt = world_guard.remove_component::<DraggingInfo>(entity_to_move);
 
-        // DraggingInfo が取得できない場合は、不正な状態なので処理を中断
         let dragging_info = match dragging_info_opt {
             Some(info) => info,
             None => {
                 log::warn!("DraggingInfo component not found for entity {:?} during drag end. Aborting move.", entity_to_move);
-                // World のロックを解除
                 drop(world_guard);
                 return;
             }
         };
         log::info!("Removed DraggingInfo: {:?}", dragging_info);
 
-        // 3. ドロップ先の要素を特定
-        // event_handler::find_clicked_element を呼び出して、ドロップ座標に何があるか調べる
-        // World のロックはまだ保持しているので、& *world_guard で参照を渡す
         let drop_target = event_handler::find_clicked_element(&*world_guard, end_x, end_y);
         log::info!("Drop target found: {:?}", drop_target);
 
-        // 4. 移動が妥当か判定し、結果に応じて処理
-        let mut move_is_valid = false; // 移動が成功したかどうかのフラグ
-        // ★ サーバー通知用と World 更新用の StackType を別々に保持 ★
+        let mut move_is_valid = false;
         let mut target_stack_for_update: Option<StackType> = None;
         let mut target_stack_for_proto: Option<protocol::StackType> = None;
 
         match drop_target {
-            // --- 4a. スタックエリアにドロップされた場合 ---
             Some(ClickTarget::Stack(target_stack_type)) => {
                 log::info!("Dropped onto stack area: {:?}", target_stack_type);
                 let is_valid = match target_stack_type {
@@ -548,12 +544,10 @@ impl GameApp {
                     StackType::Tableau(index) => {
                         rules::can_move_to_tableau(&*world_guard, entity_to_move, index)
                     }
-                    // Stock や Waste に直接ドロップするルールは通常ないので false とする
                     StackType::Stock | StackType::Waste => {
                         log::warn!("Cannot drop directly onto Stock or Waste.");
                         false
                     }
-                    // Hand にドロップするルールもないので false とする
                     StackType::Hand => {
                         log::warn!("Cannot drop onto Hand stack area.");
                         false
@@ -564,25 +558,22 @@ impl GameApp {
                     log::info!("Move to stack {:?} is valid.", target_stack_type);
                     move_is_valid = true;
                     target_stack_for_update = Some(target_stack_type);
-                    // ★ protocol::StackType への変換 match に Hand (unreachable) を追加 ★
                     target_stack_for_proto = Some(match target_stack_type {
                         StackType::Stock => protocol::StackType::Stock,
                         StackType::Waste => protocol::StackType::Waste,
                         StackType::Foundation(i) => protocol::StackType::Foundation(i),
                         StackType::Tableau(i) => protocol::StackType::Tableau(i),
-                        StackType::Hand => unreachable!("Validated move target cannot be Hand stack"), // is_valid が false なのでここには来ないはず
+                        StackType::Hand => unreachable!("Validated move target cannot be Hand stack"),
                     });
                 } else {
                     log::info!("Move to stack {:?} is invalid.", target_stack_type);
                 }
             }
-            // --- 4b. 別のカードの上にドロップされた場合 ---
             Some(ClickTarget::Card(target_card_entity)) => {
                 log::info!("Dropped onto card: {:?}", target_card_entity);
                 if let Some(target_card_stack_info) = world_guard.get_component::<StackInfo>(target_card_entity) {
                     let target_stack_type = target_card_stack_info.stack_type;
                     log::info!("Target card belongs to stack: {:?}", target_stack_type);
-                    // ★ is_valid の match に Hand を追加 ★
                     let is_valid = match target_stack_type {
                         StackType::Foundation(index) => {
                             rules::can_move_to_foundation(&*world_guard, entity_to_move, index)
@@ -594,7 +585,6 @@ impl GameApp {
                             log::warn!("Cannot drop onto a card in Stock or Waste.");
                             false
                         }
-                        // Hand のカード上へのドロップも無効
                         StackType::Hand => {
                             log::warn!("Cannot drop onto a card in Hand stack.");
                             false
@@ -605,7 +595,6 @@ impl GameApp {
                         log::info!("Move to stack {:?} (via card drop) is valid.", target_stack_type);
                         move_is_valid = true;
                         target_stack_for_update = Some(target_stack_type);
-                        // ★ protocol::StackType への変換 match に Hand (unreachable) を追加 ★
                         target_stack_for_proto = Some(match target_stack_type {
                             StackType::Stock => protocol::StackType::Stock,
                             StackType::Waste => protocol::StackType::Waste,
@@ -621,19 +610,16 @@ impl GameApp {
                     move_is_valid = false;
                 }
             }
-            // --- 4c. 何もない場所にドロップされた場合 ---
             None => {
                 log::info!("Dropped onto empty space. Move is invalid.");
                 move_is_valid = false;
             }
         }
 
-        // 5. World 更新、サーバー通知、または位置リセットの実行
         if move_is_valid {
-            // ★ target_stack_for_update と target_stack_for_proto の両方が Some であることを確認 ★
             if let (Some(stack_for_update), Some(stack_for_proto)) = (target_stack_for_update, target_stack_for_proto) {
-                // ★ 修正: 正しい引数を渡す ★
-                self.update_world_and_notify_server(world_guard, entity_to_move, stack_for_update, stack_for_proto);
+                // ★ 修正: dragging_info と original_stack_info_opt も渡す ★
+                self.update_world_and_notify_server(world_guard, entity_to_move, stack_for_update, stack_for_proto, &dragging_info, original_stack_info_opt);
             } else {
                  log::error!("Move was valid but target stack types were None. This should not happen!");
                  self.reset_card_position(world_guard, entity_to_move, &dragging_info);
@@ -643,68 +629,148 @@ impl GameApp {
         }
     }
 
-    // --- ヘルパー関数: World 更新とサーバー通知 --- (シグネチャは変更なし、内部の型変換を削除)
+    // --- ヘルパー関数: World 更新とサーバー通知 --- ★大幅に修正★
     fn update_world_and_notify_server(
         &self,
         mut world: std::sync::MutexGuard<'_, World>,
         moved_entity: Entity,
         target_stack_type_for_update: StackType, // World 更新用
-        target_stack_type_for_proto: protocol::StackType // サーバー通知用
+        target_stack_type_for_proto: protocol::StackType, // サーバー通知用
+        dragging_info: &DraggingInfo, // ★追加: 元の情報を参照するために必要
+        original_stack_info: Option<StackInfo> // ★追加: 移動元スタックタイプを知るために必要
     ) {
-        log::info!("Updating world and notifying server for entity {:?} moving to {:?}", moved_entity, target_stack_type_for_update);
+        log::info!("Updating world for entity {:?} moving to {:?}", moved_entity, target_stack_type_for_update);
 
-        // --- World 更新 ---
-        // 1. 新しい Position の計算 (TODO: 正確な計算ロジックが必要！)
-        let new_pos = Position { x: 100.0, y: 100.0 }; // 仮の位置
+        // --- World 更新 --- //
+
+        // --- 1. 新しいスタック内順序 (position_in_stack) の計算 --- //
+        //      移動先のスタックにあるカードを探し、その数を取得する。
+        //      (Stock/Waste/Foundation は単純に数えればOK、Tableau も基本同じ)
+        //      新しい順序はその数 (0から始まるので、次の番号になる)
+        let mut cards_in_target_stack: Vec<(Entity, StackInfo)> = Vec::new();
+        // StackInfo を持つすべてのエンティティをループ
+        for entity in world.get_all_entities_with_component::<StackInfo>() {
+            // get_component で StackInfo を取得 (可変参照は不要なので &*world)
+            if let Some(stack_info) = world.get_component::<StackInfo>(entity) {
+                // 移動先のスタックタイプと一致するかチェック
+                if stack_info.stack_type == target_stack_type_for_update {
+                    // 一致したら、(Entity, StackInfo) のタプルをリストに追加 (あとでソートや最大値取得に使うかも)
+                    cards_in_target_stack.push((entity, stack_info.clone())); // clone が必要
+                }
+            }
+        }
+        // target_stack に既に存在するカードの数を数えることで、
+        // 新しいカードが何番目 (0-indexed) になるかが決まる
+        let new_pos_in_stack = cards_in_target_stack.len() as u8; // usize から u8 にキャスト
+        log::info!("  Calculated new position_in_stack: {}", new_pos_in_stack);
+
+
+        // --- 2. 新しい表示座標 (Position) の計算 --- //
+        //      新しく作ったヘルパー関数 `calculate_card_position` を使う！
+        let new_pos = self.calculate_card_position(target_stack_type_for_update, new_pos_in_stack, &*world);
+        log::info!("  Calculated new Position: ({}, {})", new_pos.x, new_pos.y);
+
+        // --- 3. 移動したカードの Position と StackInfo コンポーネントを更新 --- //
+        let mut update_success = true; // 更新が成功したかのフラグ
+
+        // Position を更新
         if let Some(pos_component) = world.get_component_mut::<Position>(moved_entity) {
-            *pos_component = new_pos;
+            *pos_component = new_pos; // 計算した新しい Position をセット
             log::info!("  Updated Position for entity {:?}", moved_entity);
         } else {
-            log::error!("  Failed to get Position component for entity {:?}", moved_entity);
+            log::error!("  Failed to get Position component for entity {:?} during update", moved_entity);
+            update_success = false;
         }
 
-        // 2. 新しい StackInfo の計算 (TODO: position_in_stack の計算が必要！)
-        let new_pos_in_stack: u8 = 0; // 仮の値
+        // StackInfo を更新
         if let Some(stack_info_component) = world.get_component_mut::<StackInfo>(moved_entity) {
-            stack_info_component.stack_type = target_stack_type_for_update; // ★ 渡された更新用型を使用
-            stack_info_component.position_in_stack = new_pos_in_stack;
+            stack_info_component.stack_type = target_stack_type_for_update; // 移動先のスタックタイプをセット
+            stack_info_component.position_in_stack = new_pos_in_stack;     // 計算した新しいスタック内順序をセット
             log::info!("  Updated StackInfo for entity {:?}", moved_entity);
         } else {
-            log::error!("  Failed to get StackInfo component for entity {:?}", moved_entity);
+            log::error!("  Failed to get StackInfo component for entity {:?} during update", moved_entity);
+            update_success = false;
         }
 
-        // 3. 移動元のスタックで公開されるカードを表にする処理 (TODO: 実装)
-        log::warn!("  TODO: Implement logic to turn face up the revealed card in the original stack.");
+        // --- 4. 移動元のスタックで公開されるカードを表にする処理 --- //
+        //      元のスタックが Tableau だった場合のみ処理する
+        if let Some(original_info) = original_stack_info {
+            if let StackType::Tableau(original_tableau_index) = original_info.stack_type {
+                // 移動したカードの元のスタック内順序 (0から始まる)
+                let original_pos = dragging_info.original_position_in_stack;
+                // 表にするべきカードのスタック内順序 (移動したカードの1つ下)
+                if original_pos > 0 {
+                    let pos_to_reveal = (original_pos - 1) as u8; // usize から u8 にキャスト
+                    log::info!("  Checking card to reveal at original tableau {} position {}", original_tableau_index, pos_to_reveal);
 
+                    // 元の Tableau スタックで、対象の位置にいるカードエンティティを探す
+                    let mut entity_to_reveal: Option<Entity> = None;
+                    for entity in world.get_all_entities_with_component::<StackInfo>() {
+                        if let Some(stack_info) = world.get_component::<StackInfo>(entity) {
+                            if stack_info.stack_type == original_info.stack_type && stack_info.position_in_stack == pos_to_reveal {
+                                entity_to_reveal = Some(entity);
+                                break; // 見つかったらループ終了
+                            }
+                        }
+                    }
+
+                    // 公開するカードが見つかったら、その Card コンポーネントの is_face_up を true にする
+                    if let Some(reveal_entity) = entity_to_reveal {
+                        log::info!("  Found entity to reveal: {:?}", reveal_entity);
+                        if let Some(card_component) = world.get_component_mut::<Card>(reveal_entity) {
+                            if !card_component.is_face_up {
+                                card_component.is_face_up = true;
+                                log::info!("    Revealed card {:?}!", reveal_entity);
+                            } else {
+                                log::info!("    Card {:?} was already face up.", reveal_entity);
+                            }
+                        } else {
+                            log::error!("    Failed to get Card component for entity {:?} to reveal", reveal_entity);
+                        }
+                    } else {
+                        log::info!("  No card found below the moved card to reveal.");
+                    }
+                }
+            }
+        }
+
+        // --- 5. World のロックを解除 & サーバー通知 --- //
         drop(world);
         log::info!("  World lock released.");
 
-        // --- サーバー通知 (NetworkManager を直接使う) ---
-        // ★ 渡されたプロトコル用型を使用 ★
-        let message = ClientMessage::MakeMove { moved_entity, target_stack: target_stack_type_for_proto };
-        match serde_json::to_string(&message) {
-            Ok(json_message) => {
-                match self.network_manager.lock() {
-                    Ok(nm) => {
-                        if let Err(e) = nm.send_message(&json_message) {
-                            error!("Failed to send MakeMove message directly: {}", e);
-                        } else {
-                            info!("MakeMove message sent directly: {:?}", message);
+        // World の更新中にエラーがなければサーバーに通知
+        if update_success {
+            let message = ClientMessage::MakeMove { moved_entity, target_stack: target_stack_type_for_proto };
+            match serde_json::to_string(&message) {
+                Ok(json_message) => {
+                    match self.network_manager.lock() {
+                        Ok(nm) => {
+                            if let Err(e) = nm.send_message(&json_message) {
+                                error!("Failed to send MakeMove message directly: {}", e);
+                            } else {
+                                info!("MakeMove message sent directly: {:?}", message);
+                            }
                         }
+                        Err(e) => error!("Failed to lock NetworkManager to send MakeMove directly: {}", e)
                     }
-                    Err(e) => error!("Failed to lock NetworkManager to send MakeMove directly: {}", e)
                 }
+                Err(e) => error!("Failed to serialize MakeMove message directly: {}", e)
             }
-            Err(e) => error!("Failed to serialize MakeMove message directly: {}", e)
+        } else {
+            // World 更新に失敗した場合 (Position や StackInfo が取得できなかったなど)
+            // サーバーには通知せず、エラーログのみ出力（位置リセットは handle_drag_end 側で行われる想定だが、ここでのエラーは致命的かも）
+            log::error!("Skipping server notification due to errors during world update.");
+            // TODO: この場合、どう復旧するのがベストか？ 不整合が起きる可能性がある。
+            //       一旦ログのみで続行するが、より堅牢なエラーハンドリングが必要。
         }
     }
 
-    // --- ヘルパー関数: カード位置のリセット --- (シグネチャは変更なし、内部の型変換を削除)
+    // --- ヘルパー関数: カード位置のリセット --- (変更なし)
     fn reset_card_position(
         &self,
-        mut world: std::sync::MutexGuard<'_, World>, // MutexGuard を受け取る
+        mut world: std::sync::MutexGuard<'_, World>,
         entity: Entity,
-        dragging_info: &DraggingInfo // 戻す位置の情報を持つ
+        dragging_info: &DraggingInfo
     ) {
         log::info!("Resetting position for entity {:?}", entity);
         if let Some(pos_component) = world.get_component_mut::<Position>(entity) {
@@ -717,6 +783,81 @@ impl GameApp {
         }
         // World のロックはスコープを抜けるときに解除される
         // drop(world); // 明示的に書いても良い
+    }
+
+    // --- ★★★ 新しいヘルパー関数: カードの表示位置を計算 ★★★ ---
+    /// スタックの種類とスタック内での順序に基づいて、カードの表示座標 (Position) を計算するよ！
+    /// レイアウト情報 (`config/layout.rs`) を参照するんだ。
+    fn calculate_card_position(&self, stack_type: StackType, position_in_stack: u8, world: &World) -> Position {
+        // position_in_stack は u8 だけど、計算には f32 を使うからキャストするよ！
+        let pos_in_stack_f32 = position_in_stack as f32;
+
+        // スタックタイプに応じて基準となる X, Y 座標とオフセットを計算！
+        let (base_x, base_y) = match stack_type {
+            StackType::Stock => {
+                // 山札 (Stock) は常に同じ位置。重ならない。
+                (layout::STOCK_POS_X, layout::STOCK_POS_Y)
+            }
+            StackType::Waste => {
+                // 捨て札 (Waste) も基本同じ位置だけど、クロンダイクのルールによっては
+                // 3枚ずつめくって重ねて表示する場合がある。
+                // 今は単純に1箇所に重ねる想定で、Stock の隣の位置にするよ。
+                // TODO: Waste の重なり表示ルールをちゃんと実装するなら、ここを修正！
+                (layout::WASTE_POS_X, layout::WASTE_POS_Y)
+            }
+            StackType::Foundation(index) => {
+                // 組札 (Foundation) は、インデックス (0-3) に基づいて横に並ぶ。
+                // X座標 = 開始位置 + インデックス * 横オフセット
+                let x = layout::FOUNDATION_START_X + (index as f32) * layout::FOUNDATION_X_OFFSET;
+                // Y座標は開始位置と同じ。
+                let y = layout::FOUNDATION_START_Y;
+                (x, y)
+            }
+            StackType::Tableau(index) => {
+                // 場札 (Tableau) は、インデックス (0-6) で横の列が決まる。
+                let base_x = layout::TABLEAU_START_X + (index as f32) * layout::TABLEAU_X_OFFSET;
+                // Y座標は、その列に既に積まれているカードによって決まる。
+                // 基本のY座標 + 表向き/裏向きに応じたオフセット * スタック内の位置
+                // ここで、そのスタックの他のカードを見て、表向きか裏向きか判断する必要がある。
+                // ちょっと複雑なので、簡略化して「常に表向きオフセットを使う」としてみる。
+                // TODO: position_in_stack より前のカードが裏向きかどうかをチェックしてオフセットを計算するロジックを追加する。
+                let mut current_y = layout::TABLEAU_START_Y;
+                // このスタックのカードを取得してソートする (仮)
+                let mut cards_in_this_tableau: Vec<(Entity, StackInfo)> = Vec::new();
+                for entity in world.get_all_entities_with_component::<StackInfo>() {
+                    if let Some(info) = world.get_component::<StackInfo>(entity) {
+                        if info.stack_type == stack_type {
+                            cards_in_this_tableau.push((entity, info.clone()));
+                        }
+                    }
+                }
+                // position_in_stack でソート (昇順)
+                cards_in_this_tableau.sort_by_key(|(_, info)| info.position_in_stack);
+
+                // 0 から position_in_stack - 1 までのカードを見て Y オフセットを累積
+                for i in 0..position_in_stack {
+                    // Entity ID を取得 (インデックス i がリストの範囲内かチェックが必要だが省略)
+                    let card_entity = cards_in_this_tableau[i as usize].0;
+                    // そのカードが表向きか取得
+                    let is_face_up = world.get_component::<Card>(card_entity)
+                                        .map_or(false, |c| c.is_face_up);
+                    if is_face_up {
+                        current_y += layout::TABLEAU_Y_OFFSET_FACE_UP;
+                    } else {
+                        current_y += layout::TABLEAU_Y_OFFSET_FACE_DOWN;
+                    }
+                }
+                (base_x, current_y)
+            }
+            StackType::Hand => {
+                // 手札 (Hand) の座標計算。今は仮に左下に置くことにする。
+                // TODO: プレイヤーごとに手札の表示位置を決めるロジックが必要。
+                (50.0, 600.0 + pos_in_stack_f32 * layout::TABLEAU_Y_OFFSET_FACE_UP) // 適当な座標 + 重なり
+            }
+        };
+
+        // 計算結果を Position 型にして返す！
+        Position { x: base_x, y: base_y }
     }
 
 } // impl GameApp の終わり

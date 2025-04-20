@@ -69,21 +69,20 @@
 
 // --- UIインタラクション(JS & Rust) - Canvas ベース ---
 - [x] UIインタラクション(JS): Canvas クリックイベントの検知とログ出力 (JS側)
-- **[x] UIインタラクション(Rust/JS): クリック座標からカード/スタックを特定するロジック** 🔥最重要🔥 (Rust側判定ロジック実装 & JS連携 **完了！**)
+- [x] UIインタラクション(Rust/JS): クリック座標からカード/スタックを特定するロジック 🔥最重要🔥 (Rust側判定ロジック実装 & JS連携 **完了！**)
     - [x] (Rust) クリック座標(x, y)を受け取り、Worldの状態(`Position`, `StackInfo`)とレイアウト情報(`config/layout.rs`)を元に、クリックされたカードの`Entity`または空きスタックの`StackType`を返す関数を `app/event_handler.rs` に実装 (`find_clicked_element`)。
     - [x] (JS) Rust側の判定関数 (`GameApp::handle_click`) を呼び出し、結果を取得する。(ログ出力で確認済み)
 - [x] UIインタラクション(JS): ダブルクリックイベントの検知 (Canvas 上で) (ログ出力まで実装完了！)
-- [ ] UIインタラクション(JS): ダブルクリック時にRust側の自動移動ロジック (`GameApp::handle_double_click`) を呼び出す。
-- [ ] UIインタラクション(JS): ドラッグ開始 (`mousedown`): クリック判定ロジックを利用して対象カード特定、Rust側に通知して `DraggingInfo` コンポーネントを追加させる。
-- [ ] UIインタラクション(Rust/JS): ドラッグ中のカード追従表示
-    - [ ] (JS) `mousemove` イベントでマウス座標をRust側に通知。
-    - [ ] (Rust) `DraggingInfo` を持つカードの `Position` を更新。
-    - [ ] (Rust) `app/renderer.rs` で `DraggingInfo` を持つカードを特別扱いして描画 (例: 他のカードより手前に描画)。
-- [ ] UIインタラクション(JS): ドラッグ終了 (`mouseup`): ドロップ位置から移動先スタックを判定 (クリック判定ロジック応用)、Rust側に通知。
-- [ ] UIインタラクション(Rust): ドロップ時のルールチェックと移動実行
-    - [ ] (Rust) `logic/rules.rs` の関数で移動可否を判定。
-    - [ ] (Rust) 移動可能なら `app/network_handler.rs` の `send_make_move` を呼び出してサーバーに通知。
-    - [ ] (Rust) `DraggingInfo` コンポーネントを削除。
+- [x] UIインタラクション(JS): ダブルクリック時にRust側の自動移動ロジック (`GameApp::handle_double_click`) を呼び出す。
+- [x] UIインタラクション(JS): ドラッグ開始 (`mousedown`): クリック判定ロジックを利用して対象カード特定、Rust側に通知して `DraggingInfo` コンポーネントを追加させる。
+- [x] UIインタラクション(JS): ドラッグ終了 (`mouseup`): ドロップ位置から移動先スタックを判定 (クリック判定ロジック応用)、Rust側に通知。
+- [x] UIインタラクション(Rust): ドロップ時のルールチェックと移動実行
+    - [x] (Rust) `logic/rules.rs` の関数で移動可否を判定。
+    - [x] (Rust) 移動可能なら `NetworkManager` を直接使ってサーバーに通知。 (旧: `app/network_handler.rs` の `send_make_move`)
+    - [x] (Rust) `DraggingInfo` コンポーネントを削除。
+    - [x] (Rust) 移動成功時にカードの `Position` と `StackInfo` を更新。
+    - [x] (Rust) 移動成功時に元の Tableau スタックで隠れていたカードを表向きにする。
+    - [x] (Rust) 移動失敗時にカードの `Position` を元に戻す。
 
 // --- 状態更新と表示 (Canvas) ---
 - [x] 状態更新(Rust): サーバーからの `GameStateUpdate` 受信時に `apply_game_state` を呼び出す (`app/network_handler.rs`)
