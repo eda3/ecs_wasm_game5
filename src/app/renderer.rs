@@ -35,11 +35,8 @@ const COLOR_PLACEHOLDER_BORDER: &str = "#a0a0a0"; // 空のスタックの枠線
 // カードの文字 (ランクとスート)
 const FONT_FAMILY: &str = "sans-serif";
 const FONT_SIZE_RANK: f64 = 18.0; // ランク (A, 2-10, J, Q, K) のフォントサイズ
-const FONT_SIZE_SUIT: f64 = 14.0; // スート (♥♦♠♣) のフォントサイズ
 const RANK_OFFSET_X: f64 = 5.0; // カード左上からのランク文字のXオフセット
 const RANK_OFFSET_Y: f64 = 20.0; // カード左上からのランク文字のYオフセット
-const SUIT_OFFSET_X: f64 = 5.0; // カード左上からのスート文字のXオフセット
-const SUIT_OFFSET_Y: f64 = 38.0; // カード左上からのスート文字のYオフセット
 
 // --- 公開関数 (GameApp から呼び出される) ---
 
