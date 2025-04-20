@@ -3,7 +3,7 @@
 // --- 必要なものをインポート ---
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 
 use wasm_bindgen::prelude::*;
@@ -123,7 +123,11 @@ impl GameApp {
 
         // ★★★ Rc<RefCell<>> で包んでリスナーを設定 ★★★
         let game_app_rc = Rc::new(RefCell::new(game_app));
-        if let Err(e) = Self::setup_canvas_listeners(Rc::clone(&game_app_rc)) {
+        // ★ Weak ポインタを作成 ★
+        let game_app_weak = Rc::downgrade(&game_app_rc);
+
+        // ★ setup_canvas_listeners に Weak ポインタを渡す ★
+        if let Err(e) = Self::setup_canvas_listeners(game_app_weak /* Rc ではなく Weak */) {
              // エラーを JS の console.error に表示したいけど、log! は使えない…
              // とりあえず println! で出す
              println!("Error setting up canvas listeners: {:?}", e);
@@ -132,104 +136,136 @@ impl GameApp {
 
         println!("GameApp: 初期化完了。");
 
-        // ★★★ Rc<RefCell<>> から GameApp を取り出して返す ★★★
+        // ★★★ Rc<RefCell<>> から GameApp を取り出して返す (Weak を使ったので成功するはず) ★★★
         match Rc::try_unwrap(game_app_rc) {
             Ok(cell) => cell.into_inner(),
             Err(_) => {
-                // これは通常起こらないはず (他に参照が残ってないため)
-                panic!("Failed to unwrap Rc<RefCell<GameApp>> during initialization");
+                // Weak を使ったので、通常ここには来ないはず
+                panic!("Failed to unwrap Rc<RefCell<GameApp>> during initialization despite using Weak pointers");
             }
         }
     }
 
     /// Canvas にイベントリスナーを設定するヘルパー関数
-    fn setup_canvas_listeners(game_app_rc: Rc<RefCell<GameApp>>) -> Result<(), JsValue> {
-        let canvas = game_app_rc.borrow().canvas.clone(); // キャンバスへの参照を取得 (clone が必要)
+    // ★ 引数を Weak ポインタに変更 ★
+    fn setup_canvas_listeners(game_app_weak: Weak<RefCell<GameApp>>) -> Result<(), JsValue> {
+        // Canvas を取得するために Weak ポインタをアップグレード (borrow する必要はない)
+        // アップグレードできない (= GameApp が既に Drop されている) 場合はリスナー設定できない
+        let canvas = match game_app_weak.upgrade() {
+            Some(rc) => rc.borrow().canvas.clone(),
+            None => return Err(JsValue::from_str("Cannot setup listeners: GameApp already dropped?")),
+        };
+        // let canvas = game_app_rc.borrow().canvas.clone(); // 古いコード
 
-        // --- Click Listener --- (例)
+        // --- Click Listener ---
         {
-            let game_app_clone = Rc::clone(&game_app_rc);
+            // ★ Weak ポインタをクローンしてクロージャにキャプチャ ★
+            let game_app_weak_clone = game_app_weak.clone();
             let closure = Closure::<dyn FnMut(_)>::new(move |event: Event| {
-                // Event を MouseEvent にキャスト
-                if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
-                    // Canvas ローカル座標を取得 (ヘルパー関数を使う想定)
-                    // TODO: get_canvas_coordinates を実装またはインポート
-                    let coords = Self::get_canvas_coordinates_from_event(&game_app_clone.borrow().canvas, &mouse_event);
-                    if let Some((x, y)) = coords {
-                        // GameApp のメソッド呼び出し
-                        game_app_clone.borrow_mut().handle_click(x, y);
+                // ★ Weak ポインタをアップグレードして Rc を取得 ★
+                if let Some(game_app_rc) = game_app_weak_clone.upgrade() {
+                    if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
+                        let coords = Self::get_canvas_coordinates_from_event(&game_app_rc.borrow().canvas, &mouse_event);
+                        if let Some((x, y)) = coords {
+                            // ★ Rc を使ってメソッド呼び出し (borrow_mut) ★
+                            game_app_rc.borrow_mut().handle_click(x, y);
+                        }
+                    } else {
+                         println!("Failed to cast to MouseEvent in click listener");
                     }
                 } else {
-                     println!("Failed to cast to MouseEvent in click listener");
+                     println!("GameApp weak ref upgrade failed in click listener");
                 }
             });
 
             canvas.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())?;
-            // 作成したクロージャを GameApp に保存
-            *game_app_rc.borrow_mut().canvas_click_closure.lock().unwrap() = Some(closure);
-            // closure.forget(); // drop で解除するので forget しない！
+            // ★ GameApp 取得時にアップグレード必要 ★
+            if let Some(rc) = game_app_weak.upgrade() {
+                 *rc.borrow_mut().canvas_click_closure.lock().unwrap() = Some(closure);
+            } else {
+                // GameApp が存在しない場合はクロージャを保存できない (が、通常は発生しないはず)
+                println!("Warning: Could not store click closure as GameApp was dropped?");
+            }
         }
 
-        // --- DblClick Listener --- ★★★ 実装 ★★★
+        // --- DblClick Listener --- ★★★ 修正 ★★★
         {
-            let game_app_clone = Rc::clone(&game_app_rc);
-            let canvas_clone = canvas.clone(); // 座標取得用に canvas も clone
+            // ★ Weak ポインタをクローン ★
+            let game_app_weak_clone = game_app_weak.clone();
+            let canvas_clone = canvas.clone();
             let closure = Closure::<dyn FnMut(_)>::new(move |event: Event| {
-                if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
-                    let coords = Self::get_canvas_coordinates_from_event(&canvas_clone, &mouse_event);
-                    if let Some((x, y)) = coords {
-                        // ダブルクリックされた場所の Entity ID を取得
-                        let entity_id_opt = game_app_clone.borrow().get_entity_id_at(x, y);
-                        if let Some(entity_id) = entity_id_opt {
-                            // Entity があれば handle_double_click を呼び出す
-                            game_app_clone.borrow().handle_double_click(entity_id);
-                        } else {
-                            // カードがない場所でのダブルクリックは無視
-                             println!("DblClick on empty area ignored.");
+                // ★ Weak ポインタをアップグレード ★
+                if let Some(game_app_rc) = game_app_weak_clone.upgrade() {
+                    if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
+                        let coords = Self::get_canvas_coordinates_from_event(&canvas_clone, &mouse_event);
+                        if let Some((x, y)) = coords {
+                            // ★ Rc を使ってメソッド呼び出し (borrow) ★
+                            let entity_id_opt = game_app_rc.borrow().get_entity_id_at(x, y);
+                            if let Some(entity_id) = entity_id_opt {
+                                // ★ Rc を使ってメソッド呼び出し (borrow) ★
+                                game_app_rc.borrow().handle_double_click(entity_id);
+                            } else {
+                                 println!("DblClick on empty area ignored.");
+                            }
                         }
+                    } else {
+                         println!("Failed to cast to MouseEvent in dblclick listener");
                     }
                 } else {
-                     println!("Failed to cast to MouseEvent in dblclick listener");
+                    println!("GameApp weak ref upgrade failed in dblclick listener");
                 }
             });
             canvas.add_event_listener_with_callback("dblclick", closure.as_ref().unchecked_ref())?;
-            *game_app_rc.borrow_mut().canvas_dblclick_closure.lock().unwrap() = Some(closure);
+            // ★ GameApp 取得時にアップグレード必要 ★
+            if let Some(rc) = game_app_weak.upgrade() {
+                *rc.borrow_mut().canvas_dblclick_closure.lock().unwrap() = Some(closure);
+            } else {
+                println!("Warning: Could not store dblclick closure as GameApp was dropped?");
+            }
         }
 
-        // --- MouseDown Listener --- ★★★ 実装 ★★★
+        // --- MouseDown Listener --- ★★★ 修正 ★★★
         {
-            let game_app_clone = Rc::clone(&game_app_rc);
-            let canvas_clone = canvas.clone(); // 座標取得用に canvas も clone
+            // ★ Weak ポインタをクローン ★
+            let game_app_weak_clone = game_app_weak.clone();
+            let canvas_clone = canvas.clone();
             let closure = Closure::<dyn FnMut(_)>::new(move |event: Event| {
-                if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
-                    // 左クリック (button 0) 以外は無視
-                    if mouse_event.button() != 0 {
-                         println!("Ignoring non-left mousedown event.");
-                        return;
-                    }
-
-                    let coords = Self::get_canvas_coordinates_from_event(&canvas_clone, &mouse_event);
-                    if let Some((x, y)) = coords {
-                        // マウスダウンされた場所の Entity ID を取得
-                        let entity_id_opt = game_app_clone.borrow().get_entity_id_at(x, y);
-                        if let Some(entity_id) = entity_id_opt {
-                            // Entity があれば handle_drag_start を呼び出す
-                            // handle_drag_start は &mut self だけど、Rc<RefCell<>> 経由で呼べる！
-                            game_app_clone.borrow_mut().handle_drag_start(entity_id, x, y);
-                        } else {
-                            // カードがない場所でのマウスダウンは無視 (ドラッグ開始しない)
-                            println!("Mousedown on empty area ignored.");
+                // ★ Weak ポインタをアップグレード ★
+                if let Some(game_app_rc) = game_app_weak_clone.upgrade() {
+                    if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
+                        if mouse_event.button() != 0 {
+                             println!("Ignoring non-left mousedown event.");
+                            return;
                         }
+
+                        let coords = Self::get_canvas_coordinates_from_event(&canvas_clone, &mouse_event);
+                        if let Some((x, y)) = coords {
+                            // ★ Rc を使ってメソッド呼び出し (borrow) ★
+                            let entity_id_opt = game_app_rc.borrow().get_entity_id_at(x, y);
+                            if let Some(entity_id) = entity_id_opt {
+                                // ★ Rc を使ってメソッド呼び出し (borrow_mut) ★
+                                game_app_rc.borrow_mut().handle_drag_start(entity_id, x, y);
+                            } else {
+                                println!("Mousedown on empty area ignored.");
+                            }
+                        }
+                    } else {
+                         println!("Failed to cast to MouseEvent in mousedown listener");
                     }
                 } else {
-                     println!("Failed to cast to MouseEvent in mousedown listener");
+                    println!("GameApp weak ref upgrade failed in mousedown listener");
                 }
             });
             canvas.add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())?;
-            *game_app_rc.borrow_mut().canvas_mousedown_closure.lock().unwrap() = Some(closure);
+            // ★ GameApp 取得時にアップグレード必要 ★
+            if let Some(rc) = game_app_weak.upgrade() {
+                *rc.borrow_mut().canvas_mousedown_closure.lock().unwrap() = Some(closure);
+            } else {
+                 println!("Warning: Could not store mousedown closure as GameApp was dropped?");
+            }
         }
 
-        println!("Canvas listeners set up.");
+        println!("Canvas listeners set up using Weak pointers.");
         Ok(())
     }
 

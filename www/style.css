@@ -3,214 +3,206 @@
 /* 基本的なスタイル */
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    /* もうちょっとモダンなフォントにしてみる？ */
-    background-color: #f4f4f4;
-    /* ちょっと薄いグレー */
-    color: #333;
+    /* background-color: #f8f9fa; */
+    /* Light mode background */
+    background-color: #212529;
+    /* ★ Dark mode background ★ */
+    /* color: #333; */
+    /* Light mode text */
+    color: #f8f9fa;
+    /* ★ Dark mode text ★ */
     margin: 0;
-    padding: 0;
+    padding: 20px;
     display: flex;
-    /* コンテンツを中央寄せしやすくする */
     justify-content: center;
     align-items: flex-start;
-    /* 上寄せ */
+    /* Align container to top */
     min-height: 100vh;
-    /* 画面の高さいっぱいに広げる */
 }
 
 #game-container {
-    background-color: #fff;
-    /* 白い背景 */
-    padding: 25px;
-    margin-top: 20px;
-    border-radius: 8px;
-    /* 角をちょっと丸くする */
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    /* 影をつける */
+    /* background-color: #ffffff; */
+    /* Light mode background */
+    background-color: #343a40;
+    /* ★ Dark mode container background ★ */
+    padding: 30px;
+    border-radius: 15px;
+    /* box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); */
+    /* Light mode shadow */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+    /* ★ Dark mode shadow ★ */
+    text-align: center;
     max-width: 900px;
-    /* 最大幅 */
-    width: 90%;
-    /* 幅を可変に */
+    /* Adjust as needed */
+    width: 100%;
 }
 
 h1 {
-    color: #e91e63;
-    /* ピンク系のタイトルカラー！💖 */
-    text-align: center;
+    /* color: #6c757d; */
+    /* Previous color */
+    color: #e9ecef;
+    /* ★ Dark mode title color ★ */
+    /* margin-bottom: 10px; */
+    /* font-weight: 300; */
     margin-top: 0;
-    margin-bottom: 20px;
+    /* Remove default top margin */
+    margin-bottom: 25px;
+    font-weight: 500;
+    /* Slightly bolder */
+    font-size: 2.5em;
+    /* Make title bigger */
+    letter-spacing: 1px;
 }
 
 /* ステータス表示部分 */
 #status {
-    margin-bottom: 15px;
+    margin-bottom: 20px;
+    /* マージン調整 */
     font-size: 0.9em;
-    color: #555;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #eee;
-    /* 下線 */
+    color: #6c757d;
+    /* グレー系 */
+    padding-bottom: 15px;
+    /* パディング調整 */
+    border-bottom: 1px solid #e9ecef;
+    /* 下線の色を変更 */
 }
 
 #status span {
-    font-weight: bold;
+    font-weight: 600;
+    /* 少し太く */
     color: #007bff;
-    /* 青色で目立たせる */
+    /* アクセントカラー (青) */
 }
 
 /* 操作ボタン部分 */
 #controls {
-    margin-bottom: 20px;
-    text-align: center;
-    /* ボタンを中央寄せ */
+    margin-bottom: 30px;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    /* Increase gap between buttons */
 }
 
 #controls button {
-    margin: 5px 8px;
-    padding: 10px 18px;
-    font-size: 1em;
-    cursor: pointer;
-    background-color: #5cb85c;
-    /* 緑系のボタン */
+    padding: 12px 25px;
+    /* background-color: #0d6efd; */
+    /* Keep blue */
+    background-color: #0d6efd;
     color: white;
     border: none;
-    border-radius: 5px;
-    transition: background-color 0.2s ease;
-    /* ホバー効果を滑らかに */
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    /* box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); */
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    /* ★ Dark mode shadow ★ */
 }
 
-#controls button:hover {
-    background-color: #4cae4c;
-    /* ホバー時にもう少し濃い緑に */
+#controls button:hover:not(:disabled) {
+    /* background-color: #0b5ed7; */
+    /* Darker blue */
+    background-color: #0b5ed7;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
 #controls button:disabled {
-    background-color: #cccccc;
+    /* background-color: #6c757d; */
+    background-color: #495057;
+    /* ★ Darker disabled background ★ */
+    /* color: #adb5bd; */
+    color: #6c757d;
+    /* ★ Darker disabled text ★ */
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 /* ゲームエリア */
 #game-area {
     width: 100%;
-    /* コンテナに合わせて幅100% */
-    height: 600px;
-    /* 高さは固定 (カード配置に合わせて調整) */
-    border: 1px solid #ccc;
-    background-color: #dff0d8;
-    /* 少し薄い緑 */
+    /* height: 600px; */
+    /* Adjust as needed */
+    height: 650px;
+    /* Increase height slightly */
+    /* background-color: #e9ecef; */
+    /* Light mode background */
+    background-color: #495057;
+    /* ★ Dark mode game area background ★ */
+    border-radius: 10px;
     position: relative;
-    /* カードを絶対位置で配置する時のために */
-    border-radius: 5px;
-    overflow: hidden;
-    /* はみ出した要素を隠す (念のため) */
+    /* Needed for absolute positioning of cards if done via DOM */
+    margin: 0 auto;
+    /* Center the game area */
+    /* box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05); */
+    /* Light inset shadow */
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+    /* ★ Dark mode inset shadow ★ */
 }
 
-/* ゲームエリア内のプレースホルダーテキスト (後で消す) */
+/* ゲームエリア内のプレースホルダーテキスト (もし残っていれば) */
 #game-area p {
     text-align: center;
     margin-top: 50px;
-    color: #888;
+    color: #adb5bd;
+    /* 色を変更 */
 }
 
-/* --- カードのスタイル --- */
+/* --- ★削除: 使われていない .card スタイル --- */
+/*
 .card {
-    width: 72px;
-    /* カードの幅 (bootstrap.js の計算と合わせる) */
-    height: 96px;
-    /* カードの高さ */
-    border: 1px solid #aaa;
-    border-radius: 5px;
-    background-color: white;
-    position: absolute;
-    /* JavaScript で left/top を指定して配置！ */
-    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
-    /* ちょっと影をつける */
-    cursor: pointer;
-    /* クリックできそうな見た目に */
-    transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
-    /* 簡単なアニメーション */
-    user-select: none;
-    /* テキスト選択を無効に */
-    font-size: 16px;
-    font-weight: bold;
-    overflow: hidden;
-    /* はみ出した内容を隠す */
-    box-sizing: border-box;
-    /* padding, border を width/height に含める */
+    ...
 }
-
 .card:hover {
-    transform: translateY(-3px);
-    /* ホバー時に少し持ち上げる */
-    box-shadow: 2px 4px 6px rgba(0, 0, 0, 0.3);
+    ...
 }
-
-/* 裏向きカード */
 .card.face-down {
-    background-color: #4a90e2;
-    /* 青っぽい背景 */
-    /* background-image: url('card-back.png'); */
-    /* 画像を使うならこんな感じ */
-    background-size: cover;
+    ...
 }
-
-/* 表向きカード */
 .card.face-up {
-    background-color: #fff;
-    display: flex;
-    /* ランクとスートの配置に flexbox を使う */
-    flex-direction: column;
-    /* 縦に並べる */
-    justify-content: space-between;
-    /* 上下端に配置 */
-    padding: 5px;
+    ...
 }
-
-/* ランク表示 (カードの左上と右下) */
 .card.face-up .rank {
-    display: block;
-    text-align: center;
-    /* 中央揃え */
-    line-height: 1;
-    /* 行間を詰める */
+    ...
 }
-
-/* 右下のランクはCSSで反転させる (オプション) */
-/* .card.face-up .rank:last-child { transform: rotate(180deg); } */
-
-/* スート表示 (カードの中央) */
 .card.face-up .suit {
-    display: block;
-    text-align: center;
-    font-size: 28px;
-    /* スート記号を大きく */
-    line-height: 1;
-    flex-grow: 1;
-    /* 中央のスペースを埋める */
-    display: flex;
-    /* 中央揃えのため */
-    justify-content: center;
-    align-items: center;
+    ...
 }
-
-/* スートの色分け */
 .card.suit-heart,
 .card.suit-diamond {
-    color: red;
+    ...
 }
-
 .card.suit-club,
 .card.suit-spade {
-    color: black;
+    ...
+}
+.card.selected {
+    ...
+}
+*/
+
+/* --- Card Styles (Likely mostly unused due to Canvas rendering) --- */
+/* Keep for reference or potential future DOM elements */
+.card {
+    /* ... existing styles ... */
+    /* Adjust if needed, e.g., border for contrast */
+    /* border: 1px solid #495057; */
+    /* Example dark mode border */
 }
 
-/* --- ★ 追加: 選択されたカードのスタイル ★ --- */
-.card.selected {
-    border-color: #fbc02d;
-    /* 目立つ黄色い枠線とか？ */
-    border-width: 2px;
-    /* 枠線を少し太く */
-    box-shadow: 0 0 8px rgba(251, 192, 45, 0.8);
-    /* 黄色い光彩を追加 */
-    transform: scale(1.03);
-    /* 少しだけ大きく表示 */
+.card-face-down {
+    /* ... existing styles ... */
+    /* background-color: #0056b3; */
+    /* Match Rust COLOR_CARD_BACK if needed */
 }
+
+.card-suit-red {
+    /* color: #d10a0a; */
+    /* Match Rust COLOR_TEXT_RED if needed */
+}
+
+.card-suit-black {
+    /* color: #111111; */
+    /* Match Rust COLOR_TEXT_BLACK if needed */
+}
+
+/* --- End Card Styles --- */

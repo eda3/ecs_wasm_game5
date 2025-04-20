@@ -23,14 +23,18 @@ pub const RENDER_CARD_WIDTH: f64 = 70.0;
 pub const RENDER_CARD_HEIGHT: f64 = 100.0;
 pub const RENDER_CARD_CORNER_RADIUS: f64 = 5.0; // カードの角の丸み
 
-// カードの色
-const COLOR_CARD_BG: &str = "#ffffff"; // カードの背景色 (白)
-const COLOR_CARD_BORDER: &str = "#cccccc"; // カードの枠線の色 (薄いグレー)
-const COLOR_CARD_BACK: &str = "#4682b4"; // カード裏面の色 (スティールブルー)
-const COLOR_TEXT_RED: &str = "#d10a0a"; // 赤色の文字 (ハート、ダイヤ)
-const COLOR_TEXT_BLACK: &str = "#111111"; // 黒色の文字 (スペード、クラブ)
-// ★追加: プレースホルダーの色★
-const COLOR_PLACEHOLDER_BORDER: &str = "#a0a0a0"; // 空のスタックの枠線色 (少し濃いグレー)
+// カードの色 ★ ダークモード対応 ★
+// const COLOR_CARD_BG: &str = "#ffffff"; // Light: カードの背景色 (白)
+const COLOR_CARD_BG: &str = "#212529"; // ★ Dark: カードの背景色 (濃いグレー) ★
+// const COLOR_CARD_BORDER: &str = "#cccccc"; // Light: カードの枠線の色 (薄いグレー)
+const COLOR_CARD_BORDER: &str = "#adb5bd"; // ★ Dark: カードの枠線の色 (明るいグレー) ★
+const COLOR_CARD_BACK: &str = "#0056b3"; // Dark: カード裏面の色 (青を維持)
+// const COLOR_TEXT_RED: &str = "#d10a0a"; // Light: 赤色の文字
+const COLOR_TEXT_RED: &str = "#ff7b7b"; // ★ Dark: 明るい赤色の文字 ★
+// const COLOR_TEXT_BLACK: &str = "#111111"; // Light: 黒色の文字
+const COLOR_TEXT_BLACK: &str = "#f8f9fa"; // ★ Dark: 明るいグレー/オフホワイトの文字 ★
+// const COLOR_PLACEHOLDER_BORDER: &str = "#adb5bd"; // Previous Gray
+const COLOR_PLACEHOLDER_BORDER: &str = "#6c757d"; // ★ Dark: 中間のグレーの枠線 ★
 
 // カードの文字 (ランクとスート)
 const FONT_FAMILY: &str = "sans-serif";
@@ -55,20 +59,39 @@ pub fn render_game_rust(
     let canvas_height = canvas.height() as f64;
 
     // --- ステップ2: Canvas をクリア --- 
+    // ★★★ 背景色を CSS の #game-area に合わせて塗りつぶす ★★★
+    // context.set_fill_style_str("#e9ecef"); // Light: CSS と同じグレー
+    context.set_fill_style_str("#495057"); // ★ Dark: CSS と同じ中間のグレー ★
+    context.fill_rect(0.0, 0.0, canvas_width, canvas_height);
+    // ★★★ ここまで変更 ★★★
+
     // 毎回描画する前に、前のフレームの絵を全部消すよ！🧹
-    context.clear_rect(0.0, 0.0, canvas_width, canvas_height);
+    // context.clear_rect(0.0, 0.0, canvas_width, canvas_height); // ← clearRectは不要になるかも？念の為残しておく
 
     // ★★★ 新しいステップ: 2.5 スタックのプレースホルダーを描画 ★★★
     // ★削除★ ログ不要
     // log("  Drawing stack placeholders...");
-    context.begin_path();
-    context.rect(STOCK_POS_X as f64, STOCK_POS_Y as f64, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT);
+    // context.begin_path(); // ← draw_rounded_rect が begin_path するので不要かも
+    // context.rect(STOCK_POS_X as f64, STOCK_POS_Y as f64, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT);
+    // context.set_stroke_style_str(COLOR_PLACEHOLDER_BORDER);
+    // context.set_line_width(1.0);
+    // context.stroke();
+    // context.set_line_dash(&JsValue::from(js_sys::Array::new())).unwrap();
+    // ★★★ 修正: Stock も draw_rounded_rect を使う ★★★
+    draw_rounded_rect(
+        context, 
+        STOCK_POS_X as f64, 
+        STOCK_POS_Y as f64, 
+        RENDER_CARD_WIDTH, 
+        RENDER_CARD_HEIGHT, 
+        RENDER_CARD_CORNER_RADIUS
+    )?;
     context.set_stroke_style_str(COLOR_PLACEHOLDER_BORDER);
-    context.set_line_width(1.0);
+    context.set_line_width(1.0); // 線幅は描画前に設定
     context.stroke();
-    context.set_line_dash(&JsValue::from(js_sys::Array::new())).unwrap();
+    context.set_line_dash(&JsValue::from(js_sys::Array::new())).unwrap(); // 点線解除 (必要なら)
     // ★削除★ ログ不要
-    // log(&format!("    Drew Stock placeholder at ({}, {})", STOCK_POS_X, STOCK_POS_Y));
+    // log(&format!("    Drew Stock placeholder at ({}, {})"), STOCK_POS_X, STOCK_POS_Y);
 
     // 2.5.2: 捨て札 (Waste) のプレースホルダーを描画
     // ★削除★ ログ不要

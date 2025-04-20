@@ -163,57 +163,6 @@ function setupEventListeners() {
         return;
     }
 
-    /* --- 削除: クリックリスナー ---
-    canvas.addEventListener('click', (event) => {
-        console.log("Canvas クリック！ ✨ イベント:", event);
-        if (isDragging) {
-            console.log("  isDragging is true, ignoring click event to prevent conflict with drag end.");
-            return;
-        }
-        const coords = getCanvasCoordinates(event);
-        if (coords) {
-            console.log(`>>> Canvas 内クリック座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
-            gameApp.handle_click(coords.x, coords.y);
-        }
-    });
-    */
-
-    /* --- 削除: ダブルクリックリスナー ---
-    canvas.addEventListener('dblclick', (event) => {
-        console.log("Canvas ダブルクリック！ 🖱️🖱️ イベント:", event);
-        if (!gameApp) { console.error("GameApp 未初期化"); return; }
-
-        const coords = getCanvasCoordinates(event);
-        if (!coords) return;
-
-        console.log(`>>> Canvas 内ダブルクリック座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
-
-        let clickedEntityId = undefined;
-        try {
-            console.log(`  📞 Rust 呼び出し中: gameApp.get_entity_id_at(${coords.x.toFixed(2)}, ${coords.y.toFixed(2)})`);
-            clickedEntityId = gameApp.get_entity_id_at(coords.x, coords.y);
-            console.log(`  Rust からの応答 Entity ID: ${clickedEntityId}`);
-        } catch (error) {
-            console.error("💥 gameApp.get_entity_id_at 呼び出しエラー:", error);
-            return;
-        }
-
-        if (clickedEntityId !== undefined) {
-            console.log(`  ✅ カード発見！ Entity ID: ${clickedEntityId}。Rust のダブルクリックハンドラーを呼び出します...`);
-            try {
-                console.log(`  🚀 Rust 呼び出し中: gameApp.handle_double_click(${clickedEntityId})`);
-                gameApp.handle_double_click(clickedEntityId);
-                console.log("  Rust の handle_double_click 関数呼び出し成功！");
-            } catch (error) {
-                console.error("💥 gameApp.handle_double_click 呼び出しエラー:", error);
-            }
-        } else {
-            console.log("  🤷 この座標にカードは見つかりませんでした。自動移動のためのダブルクリックは無視します。");
-        }
-    });
-    */
-
-    /* --- 削除: マウスダウンリスナー (と、その中の Window リスナーアタッチ) ---
     canvas.addEventListener('mousedown', (event) => {
         console.log("[DEBUG] mousedown リスナー開始");
 
@@ -236,30 +185,18 @@ function setupEventListeners() {
 
         if (clickedEntityId !== undefined) {
             console.log(`[DEBUG] mousedown: カード発見 (ID: ${clickedEntityId})。ドラッグ開始処理へ`);
-            isDragging = true;
-            draggedEntityId = clickedEntityId;
-
             try {
-                console.log(`[DEBUG] mousedown: gameApp.handle_drag_start(${draggedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
-                gameApp.handle_drag_start(draggedEntityId, coords.x, coords.y);
+                console.log(`[DEBUG] mousedown: gameApp.handle_drag_start(${clickedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
+                gameApp.handle_drag_start(clickedEntityId, coords.x, coords.y);
                 console.log("[DEBUG] mousedown: handle_drag_start 呼び出し成功");
-
-                // ★★★ 削除: Rust側でやるため Window リスナーのアタッチ処理は不要 ★★★
-                // window.addEventListener('mousemove', handleMouseMove);
-                // window.addEventListener('mouseup', handleMouseUp);
-                // console.log("[DEBUG] mousedown: Window リスナー追加完了");
-
             } catch (error) {
                 console.error("💥 gameApp.handle_drag_start 呼び出しエラー:", error);
-                isDragging = false;
-                draggedEntityId = null;
             }
         } else {
             console.log("[DEBUG] mousedown: カードが見つからなかったためドラッグ開始せず");
         }
         console.log("[DEBUG] mousedown リスナー終了");
     });
-    */
 
     // ★ 他のリスナー (mousemove, mouseup のヘルパー関数自体) はまだ残しておく
     //   -> Rust 側の detach から呼ばれる可能性は低いが、コード整理するまでは一旦残す
