@@ -6,13 +6,16 @@ use crate::ecs::world::World;
 use crate::network::NetworkManager;
 use crate::ecs::entity::Entity;
 use crate::components::card::Card;
-// use crate::components::stack::StackType; // 未使用
+use crate::components::stack::StackType; // StackType も使うから use するよ！
+use crate::components::position::Position; // Position も使うから use するよ！
+use crate::config::layout; // レイアウト情報も使う！
+use crate::app::renderer::{RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT}; // カードのサイズを Renderer から持ってくる！
 use crate::logic::auto_move::find_automatic_foundation_move;
 use crate::protocol::{self, ClientMessage}; // protocol モジュールと ClientMessage をインポート
 use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
 use serde_json;
+use itertools::Itertools; // グループ化とかで便利なイテレータ操作を追加！
 // use crate::app::AppEvent; // ★ AppEvent が見つからないため一旦コメントアウト
-// use crate::components::position::Position; // 現状未使用
 // use crate::components::dragging_info::DraggingInfo; // 現状未使用
 // use web_sys::MouseEvent; // 現状未使用
 // use wasm_bindgen::JsValue; // 現状未使用
@@ -87,3 +90,248 @@ pub fn handle_double_click_logic(
 }
 
 // TODO: ドラッグ開始、ドラッグ中、ドラッグ終了のイベントハンドラロジックもここに移動する 
+
+// --- クリック判定ロジック ---
+
+/// クリックされた要素の種類を表す Enum だよ！
+/// カードがクリックされたのか、それともスタックの空きスペースがクリックされたのかを示すんだ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)] // デバッグ表示、コピー、比較ができるようにするおまじない✨
+pub enum ClickTarget {
+    /// カードがクリックされた場合。どのカードか (Entity) を保持するよ。
+    Card(Entity),
+    /// スタックの空きエリアがクリックされた場合。どの種類のスタックか (StackType) を保持するよ。
+    Stack(StackType),
+}
+
+/// クリックされた座標 (x, y) に基づいて、どのゲーム要素 (カード or スタック) が
+/// クリックされたかを特定する関数だよ！
+///
+/// # 引数
+/// * `world`: ゲーム世界の現在の状態 (`World`)。ここからカードやスタックの位置情報を得るんだ。
+/// * `x`: クリックされた画面上の X 座標。
+/// * `y`: クリックされた画面上の Y 座標。
+///
+/// # 戻り値
+/// * `Option<ClickTarget>`:
+///   - `Some(ClickTarget::Card(entity))` : カードがクリックされた場合。`entity` はクリックされたカードの ID。
+///   - `Some(ClickTarget::Stack(stack_type))` : スタックの空きエリアがクリックされた場合。`stack_type` はクリックされたスタックの種類。
+///   - `None`: 何もクリックされなかった場合 (背景など)。
+///
+/// # 実装方針 (予定)
+/// 1. **カードの判定:**
+///    - World から `Position` と `Card` コンポーネントを持つエンティティをすべて取得するよ。
+///    - 各カードについて、その表示領域 (バウンディングボックス) を計算する。
+///      - `Position` コンポーネントと `config/layout.rs` のカードサイズ (RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT) を使うよ。
+///      - **重要:** カードは重なって表示されることがあるから (特に Tableau)、描画順（Z インデックスのようなもの、もしくは単純に Entity の ID 順とか？）で一番手前にあるものだけをヒット対象とする必要があるね！
+///    - クリック座標 `(x, y)` が、計算した表示領域内に入っているかチェックするよ。
+///    - 最初にヒットした（一番手前の）カードが見つかったら、`Some(ClickTarget::Card(entity))` を返して終了！🎉
+/// 2. **スタックの判定 (カードが見つからなかった場合):**
+///    - 各スタック (`Stock`, `Waste`, `Foundation` x4, `Tableau` x7) の表示領域を計算するよ。
+///      - `config/layout.rs` のスタックの基準位置 (`STOCK_POS_X`, `TABLEAU_START_Y` など) と、カードサイズ (空のスタックもカードと同じサイズで表示される想定) を使うよ。
+///    - クリック座標 `(x, y)` が、計算したスタック領域内に入っているかチェックするよ。
+///    - ヒットしたスタックが見つかったら、`Some(ClickTarget::Stack(stack_type))` を返して終了！🎊
+/// 3. **何もヒットしなかった場合:**
+///    - どのカードにも、どのスタックにもヒットしなかったら、`None` を返して終了！🤷‍♀️
+///
+/// # Rust らしさ & 関数型っぽさポイント (予定)
+/// *   **イミュータブル:** `world` は読み取り専用で使うよ！状態を変更しない安全な関数を目指すんだ。👍
+/// *   **イテレータ:** カードを探したり、スタックをチェックしたりするときに、`filter`, `map`, `find` みたいなイテレータメソッドをうまく使って、手続き的なループ (`for`) を減らして、宣言的に書けるようにしたいな！✨
+/// *   **Option型:** 結果が見つからない可能性があることを `Option<T>` で明確に示す！ `unwrap()` は使わないぞ！🙅‍♀️
+/// *   **パターンマッチ:** `match` 式を使って、処理の分岐を分かりやすく書くよ！
+/// *   **関数の分離:** 当たり判定のロジックとか、複雑になりそうな部分は別の小さな関数に分けて、見通しを良くするかも！🔧
+pub fn find_clicked_element(world: &World, x: f32, y: f32) -> Option<ClickTarget> {
+    log(&format!("Finding clicked element at ({}, {})", x, y)); // デバッグログ！
+
+    // --- 1. カードの判定 ---
+    let clicked_card = find_topmost_clicked_card(world, x, y);
+    if clicked_card.is_some() {
+        return clicked_card;
+    }
+
+    // --- 2. スタックの判定 (カードが見つからなかった場合のみ実行) ---
+    // カードが見つからなかったら、スタックの空きエリアがクリックされたかチェック！
+    let clicked_stack = find_clicked_stack_area(world, x, y); // 引数 world は将来的に使うかも？現状未使用
+    if clicked_stack.is_some() {
+        // スタックが見つかったらそれを返す！
+        return clicked_stack;
+    }
+
+    // --- 3. 何もヒットしなかった場合 ---
+    log("No element clicked."); // デバッグログ！
+    None // カードもスタックも見つからなかったら None を返す
+}
+
+/// クリックされた座標 (x, y) に存在するカードのうち、最も手前にあるものを探すヘルパー関数だよ。
+///
+/// # 引数
+/// * `world`: ゲーム世界の現在の状態 (`World`)。
+/// * `x`: クリックされた画面上の X 座標。
+/// * `y`: クリックされた画面上の Y 座標。
+///
+/// # 戻り値
+/// * `Option<ClickTarget>`:
+///   - `Some(ClickTarget::Card(entity))` : 一番手前のカードが見つかった場合。`entity` はそのカードの ID。
+///   - `None`: クリック座標にカードが存在しない場合。
+///
+/// # 実装詳細 (自作ECSの機能を考慮)
+/// 1. `World` から `Position` コンポーネントを持つ全てのエンティティを取得するよ。
+/// 2. 取得したエンティティをフィルタリング:
+///    a. そのエンティティが `Card` コンポーネントも持っているか確認。
+///    b. 持っていたら、クリック座標 `(x, y)` がそのカードの表示領域 (バウンディングボックス) 内にあるか判定する。
+///       - バウンディングボックスは `Position` (カードの左上の座標) と `RENDER_CARD_WIDTH`, `RENDER_CARD_HEIGHT` から計算するよ。
+/// 3. 条件 (a, b) を満たした全てのカードエンティティと、その Y 座標のペア `(Entity, f32)` を収集する。
+/// 4. **重なり処理:** 収集したペアの中から、最も手前にある（＝Y座標が最も大きい）ものを選択する。
+///    - `max_by` を使って、`Position` の `y` 座標で比較するよ。これが一番手前のカードになるはず！
+/// 5. 見つかったエンティティを `ClickTarget::Card` でラップして `Some` で返す。ヒットしなかった場合は `None` を返す。
+///
+/// # 関数型っぽさポイント ✨
+/// *   イテレータ (`filter_map`, `max_by`) をチェーンして、宣言的に処理を記述してるよ！
+fn find_topmost_clicked_card(world: &World, x: f32, y: f32) -> Option<ClickTarget> {
+    log("  Checking for clicked cards..."); // デバッグログ！
+
+    // 1. World から Position を持つエンティティをすべて取得
+    let position_entities = world.get_all_entities_with_component::<Position>();
+    if position_entities.is_empty() {
+        log("    No entities with Position found.");
+        return None; // Position がなければカードもないはず
+    }
+    log(&format!("    Found {} entities with Position.", position_entities.len()));
+
+
+    // 2. Position持ちエンティティをフィルタリング & マッピング
+    //    - Card も持っているか？
+    //    - クリック範囲内か？
+    //    => 条件を満たす (Entity, y_pos) のイテレータを作る
+    let clicked_cards_iter = position_entities
+        .into_iter() // イテレータに変換
+        .filter_map(|entity| { // 条件を満たさないものは None を返して除外
+            // a. Card コンポーネントを持っているか？
+            if world.get_component::<Card>(entity).is_some() { // get_component().is_some() で存在チェック
+                 // b. クリック範囲内か？
+                 // Position コンポーネントを取得 (これは必ず存在するはず)
+                 let pos = world.get_component::<Position>(entity).unwrap(); // unwrap はここでは安全なはず
+
+                 // カードの表示領域 (バウンディングボックス) を計算
+                 let card_left = pos.x;
+                 let card_top = pos.y;
+                 let card_right = card_left + RENDER_CARD_WIDTH as f32;
+                 let card_bottom = card_top + RENDER_CARD_HEIGHT as f32;
+
+                 // クリック座標 (x, y) がカードの範囲内にあるかチェック！
+                 if x >= card_left && x < card_right && y >= card_top && y < card_bottom {
+                     // ヒット！ このカードの Entity と Y 座標を返す
+                     log(&format!("    Hit card entity {:?} at ({}, {})", entity, pos.x, pos.y));
+                     Some((entity, pos.y)) // タプル (Entity, f32) を返す
+                 } else {
+                     None // クリック範囲外
+                 }
+            } else {
+                None // Card コンポーネントがない
+            }
+        }); // clicked_cards_iter は (Entity, f32) のイテレータ
+
+    // 3. クリックされたカードの中から、Y座標が最大のものを探す！
+    //    max_by はイテレータを消費して Option<(Entity, f32)> を返す
+    let topmost_card_entity = clicked_cards_iter
+        .max_by(|(_, y1), (_, y2)| {
+            // f32 の比較は total_cmp を使うのが Rust では推奨！
+            y1.total_cmp(y2)
+        });
+
+    // 4. 結果を Option<ClickTarget> に変換して返す
+    match topmost_card_entity {
+        Some((entity, y_pos)) => {
+            // 一番手前のカードが見つかった！
+            log(&format!("  Topmost clicked card found: {:?} at y={}", entity, y_pos));
+            Some(ClickTarget::Card(entity)) // ClickTarget::Card でラップして返す
+        }
+        None => {
+            // クリック座標に該当するカードはなかった
+            log("  No card found at the clicked position (matching criteria).");
+            None // None を返す
+        }
+    }
+}
+
+/// クリックされた座標 (x, y) がスタックの表示エリア内にあるか判定するヘルパー関数だよ。
+/// カードがクリックされなかった場合に呼び出されることを想定しているよ。
+///
+/// # 引数
+/// * `_world`: ゲーム世界の現在の状態 (`World`)。(現状未使用だけど、将来的に使うかも？例えば空のスタックのみ判定対象にするとか)
+/// * `x`: クリックされた画面上の X 座標。
+/// * `y`: クリックされた画面上の Y 座標。
+///
+/// # 戻り値
+/// * `Option<ClickTarget>`:
+///   - `Some(ClickTarget::Stack(stack_type))` : クリック座標がいずれかのスタックエリア内にあった場合。
+///   - `None`: どのスタックエリアにもヒットしなかった場合。
+///
+/// # 実装詳細
+/// 1. 各スタックタイプ (`Stock`, `Waste`, `Foundation` 0-3, `Tableau` 0-6) の基本的な表示領域（通常はカード1枚分のサイズ）を計算する。
+///    - `src/config/layout.rs` の定数とカードサイズ (`RENDER_CARD_WIDTH`, `RENDER_CARD_HEIGHT`) を使うよ。
+/// 2. 順番に各スタックの領域をチェックし、クリック座標 `(x, y)` が領域内に含まれていれば、
+///    対応する `StackType` を `ClickTarget::Stack` でラップして `Some` で返す。最初に見つかった時点で終了！
+/// 3. 全てのスタックエリアをチェックしてもヒットしなかった場合は `None` を返す。
+///
+/// # 注意点
+/// - この関数は `find_topmost_clicked_card` の後に呼ばれる前提だよ。
+/// - そのため、ここでの判定は「カード以外のスタックのพื้นฐาน的な場所」をクリックしたかどうかのチェックが主になるよ。
+/// - (将来的に) Tableau などで、カードがある場合でも一番下の空きスペースをクリックしたい、みたいな細かい制御が必要なら、`world` の情報を使ってさらに判定を絞り込む必要があるかもね！
+fn find_clicked_stack_area(_world: &World, x: f32, y: f32) -> Option<ClickTarget> {
+    log("  Checking for clicked stack areas..."); // デバッグログ！
+
+    // --- 各スタックエリアの判定 ---
+
+    // Helper: 座標が矩形内にあるかチェックする関数
+    // 矩形は (左上のX, 左上のY, 幅, 高さ) のタプルで表現するよ。
+    fn is_point_in_rect(px: f32, py: f32, rect: (f32, f32, f32, f32)) -> bool {
+        let (rx, ry, rw, rh) = rect;
+        px >= rx && px < rx + rw && py >= ry && py < ry + rh
+    }
+
+    // 1. Stock エリアのチェック
+    let stock_rect = (layout::STOCK_POS_X, layout::STOCK_POS_Y, RENDER_CARD_WIDTH as f32, RENDER_CARD_HEIGHT as f32);
+    if is_point_in_rect(x, y, stock_rect) {
+        log("    Hit Stock area.");
+        return Some(ClickTarget::Stack(StackType::Stock));
+    }
+
+    // 2. Waste エリアのチェック
+    let waste_rect = (layout::WASTE_POS_X, layout::WASTE_POS_Y, RENDER_CARD_WIDTH as f32, RENDER_CARD_HEIGHT as f32);
+     if is_point_in_rect(x, y, waste_rect) {
+        log("    Hit Waste area.");
+        return Some(ClickTarget::Stack(StackType::Waste));
+    }
+
+    // 3. Foundation エリアのチェック (4箇所)
+    for i in 0..4 {
+        let foundation_x = layout::FOUNDATION_START_X + i as f32 * layout::FOUNDATION_X_OFFSET;
+        let foundation_y = layout::FOUNDATION_START_Y;
+        let foundation_rect = (foundation_x, foundation_y, RENDER_CARD_WIDTH as f32, RENDER_CARD_HEIGHT as f32);
+        if is_point_in_rect(x, y, foundation_rect) {
+            log(&format!("    Hit Foundation {} area.", i));
+            // Foundation のインデックス (0-3) を StackType に含める
+            return Some(ClickTarget::Stack(StackType::Foundation(i as u8))); // u8 にキャスト
+        }
+    }
+
+    // 4. Tableau エリアのチェック (7箇所) - ここではスタックのベース位置のみチェック
+    // カード自体へのクリックは find_topmost_clicked_card で処理済みの前提
+    for i in 0..7 {
+        let tableau_x = layout::TABLEAU_START_X + i as f32 * layout::TABLEAU_X_OFFSET;
+        let tableau_y = layout::TABLEAU_START_Y; // ベースのY座標
+        let tableau_rect = (tableau_x, tableau_y, RENDER_CARD_WIDTH as f32, RENDER_CARD_HEIGHT as f32);
+        if is_point_in_rect(x, y, tableau_rect) {
+             log(&format!("    Hit Tableau {} base area.", i));
+             // Tableau のインデックス (0-6) を StackType に含める
+             return Some(ClickTarget::Stack(StackType::Tableau(i as u8))); // u8 にキャスト
+        }
+    }
+
+    // 5. どのスタックエリアにもヒットしなかった場合
+    log("  No stack area found at the clicked position.");
+    None
+}
+
+// ここにクリックされた座標からカードやスタックを特定するロジックを書いていくよ！
+// 乞うご期待！ ✨ 

@@ -62,16 +62,16 @@
 - [x] ルール実装(Rust): `StackType` ごとのカード移動可否判定ヘルパー関数 (`logic/rules.rs`) - `get_top_card_entity` ヘルパー **実装完了！**
 - [x] ルール実装(Rust): タブローからタブローへの移動ルール実装 (`logic/rules.rs` の `can_move_to_tableau`) - **World 依存版 & テスト完了！**
 - [x] ルール実装(Rust): タブローからファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_to_foundation`) - **World 依存版 & テスト完了！**
-- [x] ルール実装(Rust): ストックからウェストへの移動ルール実装 (`logic/rules.rs` の `can_deal_from_stock`, `can_reset_stock_from_waste`) - (World状態を見ない単純版)
-- [x] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation`) - **World 依存版完了！** (呼び出し側テストでカバー)
+- [x] ルール実装(Rust): ストックからウェストへの移動ルール実装 (`logic/rules.rs` の `can_deal_from_stock`, `can_reset_stock_from_waste`) - (World状態を見ない単純版) **実装完了！**
+- [x] ルール実装(Rust): ウェストからタブロー/ファンデーションへの移動ルール実装 (`logic/rules.rs` の `can_move_from_waste_to_tableau`, `can_move_from_waste_to_foundation`) - **World 依存版完了！** (呼び出し側テストでカバー) **実装完了！**
 - [x] ルール実装(Rust): カード自動移動ロジック (`logic/auto_move.rs` の `find_automatic_foundation_move`) - **World 依存版 & テスト完了！** ✨🤖✅
 - [x] ルール実装(Rust): ゲームクリア判定ロジック (`logic/rules.rs` の `check_win_condition`) - システム (`systems/win_condition_system.rs`) 側で World の状態を見て **実装＆テスト完了！** 🎉
 
 // --- UIインタラクション(JS & Rust) - Canvas ベース ---
 - [x] UIインタラクション(JS): Canvas クリックイベントの検知とログ出力 (JS側)
-- **[ ] UIインタラクション(Rust/JS): クリック座標からカード/スタックを特定するロジック** 🔥最重要🔥
-    - [ ] (Rust) クリック座標(x, y)を受け取り、Worldの状態(`Position`, `StackInfo`)とレイアウト情報(`config/layout.rs`)を元に、クリックされたカードの`Entity`または空きスタックの`StackType`を返す関数を `app/event_handler.rs` あたりに実装する。
-    - [ ] (JS) Rust側の判定関数を呼び出し、結果を取得する。
+- **[x] UIインタラクション(Rust/JS): クリック座標からカード/スタックを特定するロジック** 🔥最重要🔥 (Rust側判定ロジック実装完了！)
+    - [x] (Rust) クリック座標(x, y)を受け取り、Worldの状態(`Position`, `StackInfo`)とレイアウト情報(`config/layout.rs`)を元に、クリックされたカードの`Entity`または空きスタックの`StackType`を返す関数を `app/event_handler.rs` に実装 (`find_clicked_element`)。
+    - [ ] (JS) Rust側の判定関数 (`GameApp::handle_click`) を呼び出し、結果を取得する。
 - [ ] UIインタラクション(JS): ダブルクリックイベントの検知 (Canvas 上で)
 - [ ] UIインタラクション(JS): ダブルクリック時にRust側の自動移動ロジック (`GameApp::handle_double_click`) を呼び出す。
 - [ ] UIインタラクション(JS): ドラッグ開始 (`mousedown`): クリック判定ロジックを利用して対象カード特定、Rust側に通知して `DraggingInfo` コンポーネントを追加させる。

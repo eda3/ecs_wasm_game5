@@ -18,9 +18,10 @@ use crate::config::layout::*;
 // ★注意: layout.rs にも CARD_WIDTH/HEIGHT があるけど、型が違う (f32 vs f64)。
 //   描画では f64 が必要なので、ここで定義するか、layout.rs の方を f64 にするか、
 //   キャストして使うか。ここでは renderer.rs に f64 で定義する。
-const RENDER_CARD_WIDTH: f64 = 70.0;
-const RENDER_CARD_HEIGHT: f64 = 100.0;
-const RENDER_CARD_CORNER_RADIUS: f64 = 5.0; // カードの角の丸み
+// ★修正: event_handler から参照されるため pub にする★
+pub const RENDER_CARD_WIDTH: f64 = 70.0;
+pub const RENDER_CARD_HEIGHT: f64 = 100.0;
+pub const RENDER_CARD_CORNER_RADIUS: f64 = 5.0; // カードの角の丸み
 
 // カードの色
 const COLOR_CARD_BG: &str = "#ffffff"; // カードの背景色 (白)

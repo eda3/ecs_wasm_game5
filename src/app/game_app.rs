@@ -20,10 +20,11 @@ use crate::components::card::Card;
 use crate::components::stack::StackInfo;
 use crate::components::position::Position;
 use crate::components::player::Player;
+use crate::app::event_handler; // event_handler モジュールを use する！
+use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
 // use crate::ecs::entity::Entity; // 未使用
 // use crate::app::init_handler; // 未使用 (super:: で直接呼ぶため)
 // use crate::app::network_handler; // 未使用 (super:: で直接呼ぶため)
-// use crate::app::event_handler; // 未使用 (super:: で直接呼ぶため)
 // use crate::app::state_handler; // 未使用 (super:: で直接呼ぶため)
 // use crate::app::renderer; // 未使用 (super:: で直接呼ぶため)
 // use crate::app::app_state::AppState; // ★ app_state が見つからないため一旦コメントアウト
@@ -302,6 +303,54 @@ impl GameApp {
             &self.context
         // JsValue に変換する必要があるので .map_err を追加
         ).map_err(|e| JsValue::from(Error::new(&format!("Render error: {:?}", e))))
+    }
+
+    /// JavaScript から Canvas 上でのクリックイベントを処理するために呼び出される関数だよ！
+    ///
+    /// # 引数
+    /// * `x`: クリックされた Canvas 上の X 座標 (f32)。
+    /// * `y`: クリックされた Canvas 上の Y 座標 (f32)。
+    ///
+    /// # 処理内容
+    /// 1. `event_handler::find_clicked_element` を呼び出して、クリックされた要素 (カード or スタック) を特定する。
+    /// 2. 特定された要素に応じて、ログを出力する。(デバッグ用)
+    /// 3. **TODO:** 今後は、特定された要素に応じて、カードのドラッグ開始処理や、
+    ///    スタッククリック時のアクション (例: 山札クリックでカードをめくる) などを実装していくよ！
+    #[wasm_bindgen]
+    pub fn handle_click(&self, x: f32, y: f32) {
+        // まずは World のロックを取得するよ
+        let world = match self.world.lock() {
+            Ok(w) => w,
+            Err(e) => {
+                error(&format!("Failed to lock world in handle_click: {}", e));
+                return; // ロック失敗したら何もできないので終了
+            }
+        };
+
+        // クリックされた要素を探す！ event_handler モジュールの関数を呼び出すよ！
+        let clicked_element = event_handler::find_clicked_element(&world, x, y);
+
+        // World のロックはもう不要なので早めに解除！
+        drop(world);
+
+        // クリックされた要素に応じてログを出力！ (今はまだログだけ)
+        match clicked_element {
+            Some(event_handler::ClickTarget::Card(entity)) => {
+                // カードがクリックされた！
+                log(&format!("Clicked on Card: {:?}", entity));
+                // TODO: カードクリック時の処理 (ドラッグ開始など) をここに追加！
+            }
+            Some(event_handler::ClickTarget::Stack(stack_type)) => {
+                // スタックエリアがクリックされた！
+                log(&format!("Clicked on Stack area: {:?}", stack_type));
+                // TODO: スタッククリック時の処理 (山札をめくるなど) をここに追加！
+            }
+            None => {
+                // 何もないところがクリックされた！
+                log("Clicked on empty space.");
+                // TODO: 背景クリック時の処理 (もし必要なら)
+            }
+        }
     }
 }
 
