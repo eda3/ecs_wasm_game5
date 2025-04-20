@@ -3,10 +3,12 @@
 // --- 必要なものをインポート ---
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::closure::Closure;
-use web_sys::{Event, HtmlCanvasElement, CanvasRenderingContext2d};
+use web_sys::{Event, HtmlCanvasElement, CanvasRenderingContext2d, MouseEvent};
 use js_sys::Error;
 // log クレートのマクロをインポート
 // use log::{info, error}; // ★★★ 削除: lib.rs のマクロと衝突するため ★★★
@@ -58,18 +60,19 @@ pub struct GameApp {
     my_player_id: Arc<Mutex<Option<PlayerId>>>,
     // DealInitialCardsSystem のインスタンスを持っておこう！ (状態を持たないので Clone でも Default でもOK)
     deal_system: DealInitialCardsSystem,
-    // ★追加: イベントリスナーのクロージャを保持する Vec ★
-    // Arc<Mutex<>> で囲むことで、&self からでも変更可能にし、
-    // スレッドセーフにする (Wasm は基本シングルスレッドだが作法として)
-    event_closures: Arc<Mutex<Vec<Closure<dyn FnMut(Event)>>>>,
-    // ★追加: ドラッグ状態 (現在ドラッグ中のカード情報)★
-    // dragging_state: Arc<Mutex<Option<DraggingInfo>>>, // handle_drag_start/end で直接追加/削除するので不要かも
-    // ★追加: Window にアタッチする MouseMove/MouseUp リスナー★
-    // (ドラッグ中のみ Some になる)
+    // ★★★ 削除: 汎用的なリスナー保持 Vec ★★★
+    // event_closures: Arc<Mutex<Vec<Closure<dyn FnMut(Event)>>>>,
+
+    // ★★★ 追加: Canvas 用の個別リスナー保持フィールド ★★★
+    canvas_click_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    canvas_dblclick_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    canvas_mousedown_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+
+    // ★ Window にアタッチする MouseMove/MouseUp リスナー (これは元々あった)
     window_mousemove_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
     window_mouseup_closure: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
-    // ★追加: Canvas 要素と 2D コンテキストを保持するフィールド★
-    // (今回は Arc<Mutex<>> で囲まず、直接保持してみる)
+
+    // Canvas 要素と 2D コンテキスト (これも元々あった)
     canvas: HtmlCanvasElement,
     context: CanvasRenderingContext2d,
 }
@@ -96,23 +99,102 @@ impl GameApp {
         // --- その他のフィールド初期化 ---
         let my_player_id_arc = Arc::new(Mutex::new(None));
         let deal_system = DealInitialCardsSystem::default();
-        let event_closures_arc = Arc::new(Mutex::new(Vec::new()));
+        let canvas_click_closure_arc = Arc::new(Mutex::new(None));
+        let canvas_dblclick_closure_arc = Arc::new(Mutex::new(None));
+        let canvas_mousedown_closure_arc = Arc::new(Mutex::new(None));
         let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
         let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
 
-        println!("GameApp: 初期化完了。");
-        Self {
+        // --- GameApp インスタンス生成 ---
+        let game_app = Self {
             world: world_arc,
             network_manager: network_manager_arc,
             message_queue: message_queue_arc,
             my_player_id: my_player_id_arc,
             deal_system,
-            event_closures: event_closures_arc,
+            canvas_click_closure: canvas_click_closure_arc,
+            canvas_dblclick_closure: canvas_dblclick_closure_arc,
+            canvas_mousedown_closure: canvas_mousedown_closure_arc,
             window_mousemove_closure: window_mousemove_closure_arc,
             window_mouseup_closure: window_mouseup_closure_arc,
             canvas,
             context,
+        };
+
+        // ★★★ Rc<RefCell<>> で包んでリスナーを設定 ★★★
+        let game_app_rc = Rc::new(RefCell::new(game_app));
+        if let Err(e) = Self::setup_canvas_listeners(Rc::clone(&game_app_rc)) {
+             // エラーを JS の console.error に表示したいけど、log! は使えない…
+             // とりあえず println! で出す
+             println!("Error setting up canvas listeners: {:?}", e);
+             // パニックさせるか、エラー状態を持つか… ここではとりあえず続行
         }
+
+        println!("GameApp: 初期化完了。");
+
+        // ★★★ Rc<RefCell<>> から GameApp を取り出して返す ★★★
+        match Rc::try_unwrap(game_app_rc) {
+            Ok(cell) => cell.into_inner(),
+            Err(_) => {
+                // これは通常起こらないはず (他に参照が残ってないため)
+                panic!("Failed to unwrap Rc<RefCell<GameApp>> during initialization");
+            }
+        }
+    }
+
+    /// Canvas にイベントリスナーを設定するヘルパー関数
+    fn setup_canvas_listeners(game_app_rc: Rc<RefCell<GameApp>>) -> Result<(), JsValue> {
+        let canvas = game_app_rc.borrow().canvas.clone(); // キャンバスへの参照を取得 (clone が必要)
+
+        // --- Click Listener --- (例)
+        {
+            let game_app_clone = Rc::clone(&game_app_rc);
+            let closure = Closure::<dyn FnMut(_)>::new(move |event: Event| {
+                // Event を MouseEvent にキャスト
+                if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
+                    // Canvas ローカル座標を取得 (ヘルパー関数を使う想定)
+                    // TODO: get_canvas_coordinates を実装またはインポート
+                    let coords = Self::get_canvas_coordinates_from_event(&game_app_clone.borrow().canvas, &mouse_event);
+                    if let Some((x, y)) = coords {
+                        // GameApp のメソッド呼び出し
+                        game_app_clone.borrow_mut().handle_click(x, y);
+                    }
+                } else {
+                     println!("Failed to cast to MouseEvent in click listener");
+                }
+            });
+
+            canvas.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())?;
+            // 作成したクロージャを GameApp に保存
+            *game_app_rc.borrow_mut().canvas_click_closure.lock().unwrap() = Some(closure);
+            // closure.forget(); // drop で解除するので forget しない！
+        }
+
+        // --- DblClick Listener --- (同様に実装)
+        {
+            // TODO: ダブルクリックリスナーの実装
+            // クロージャ作成、canvas.add_event_listener_with_callback("dblclick", ...)?;
+            // *game_app_rc.borrow_mut().canvas_dblclick_closure... = Some(closure);
+        }
+
+        // --- MouseDown Listener --- (同様に実装)
+        {
+            // TODO: マウスダウンリスナーの実装
+            // クロージャ作成、canvas.add_event_listener_with_callback("mousedown", ...)?;
+            // *game_app_rc.borrow_mut().canvas_mousedown_closure... = Some(closure);
+        }
+
+        println!("Canvas listeners set up.");
+        Ok(())
+    }
+
+    /// MouseEvent から Canvas ローカル座標を取得する (仮実装)
+    /// TODO: bootstrap.js の getCanvasCoordinates と同じロジックを実装
+    fn get_canvas_coordinates_from_event(canvas: &HtmlCanvasElement, event: &MouseEvent) -> Option<(f32, f32)> {
+        let rect = canvas.get_bounding_client_rect();
+        let x = event.client_x() as f32 - rect.left() as f32;
+        let y = event.client_y() as f32 - rect.top() as f32;
+        Some((x, y))
     }
 
     // WebSocket接続
@@ -352,7 +434,29 @@ impl GameApp {
     /// ドラッグ開始時に JS から呼ばれる
     pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) {
         // log(&format!("GameApp::handle_drag_start: Entity {}, Start: ({}, {})", entity_usize, start_x, start_y));
+
+        // 1. drag_handler を呼び出して DraggingInfo を追加
         drag_handler::handle_drag_start(&self.world, entity_usize, start_x, start_y);
+
+        // ★★★ ステップ6: 内部リスナーのアタッチ処理を復活させる ★★★
+        // --- 復活！ ---
+        if let Err(e) = browser_event_manager::attach_drag_listeners(
+            Arc::clone(&self.world),
+            Arc::clone(&self.network_manager), // network_manager も渡す
+            // ★ 修正: attach_drag_listeners の引数に合わせる ★
+            // Entity(entity_usize), // entity_usize を Entity に変換して渡す
+            Arc::clone(&self.window_mousemove_closure),
+            Arc::clone(&self.window_mouseup_closure),
+            entity_usize, // entity_id として usize を渡す
+            &self.canvas, // canvas への参照を渡す (座標変換に必要)
+        ) {
+            // error!("Failed to attach drag listeners: {:?}", e);
+            println!("Failed to attach drag listeners: {:?}", e); // とりあえず println
+        }
+        // ★★★ ここまで復活 ★★★
+
+        // このログはリスナー削除後には不要かも
+        // info!("GameApp::handle_drag_start: Listeners attached (moved to browser_event_manager).");
     }
 
     /// ドラッグ終了時に JS から呼ばれる
@@ -386,14 +490,34 @@ impl GameApp {
 // --- GameApp の Drop 実装 (クリーンアップ用) ---
 impl Drop for GameApp {
     fn drop(&mut self) {
-        // log("GameApp is being dropped. Cleaning up listeners...");
-        // ★★★ 案A: とりあえずコンパイルエラーをなくすためにコメントアウト ★★★
-        /*
-        if let Err(e) = browser_event_manager::detach_all_listeners(&self.event_closures) {
-            // error!("Error detaching listeners during drop: {:?}", e);
+        println!("GameApp is being dropped. Cleaning up listeners...");
+
+        // ★★★ Canvas リスナーを解除 ★★★
+        if let Err(e) = browser_event_manager::detach_canvas_listeners(
+            &self.canvas,
+            &self.canvas_click_closure,
+            &self.canvas_dblclick_closure,
+            &self.canvas_mousedown_closure,
+        ) {
+            // ここでも console.error に出したいけど…
+            println!("Error detaching canvas listeners: {:?}", e);
         }
-        */
-        self.event_closures.lock().unwrap().clear();
-        // log("Listeners detached and closures cleared.");
+
+        // ★★★ Window (ドラッグ) リスナーを解除 ★★★
+        if let Err(e) = browser_event_manager::detach_drag_listeners(
+            &self.window_mousemove_closure,
+            &self.window_mouseup_closure,
+        ) {
+            println!("Error detaching window drag listeners: {:?}", e);
+        }
+
+        // ★★★ 削除: 以前の .clear() 呼び出し ★★★
+        // self.canvas_click_closure.lock().unwrap().clear();
+        // self.canvas_dblclick_closure.lock().unwrap().clear();
+        // self.canvas_mousedown_closure.lock().unwrap().clear();
+        // self.window_mousemove_closure.lock().unwrap().clear();
+        // self.window_mouseup_closure.lock().unwrap().clear();
+
+        println!("Listeners detached.");
     }
 } 

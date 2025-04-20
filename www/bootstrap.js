@@ -156,37 +156,35 @@ function setupEventListeners() {
         }
     });
 
-    // --- Canvas のリスナー --- ★ここから追加★
+    // --- Canvas のリスナー --- ★★★ Rust側で設定するため、以下のリスナーは削除 ★★★
     const canvas = document.getElementById('game-canvas');
     if (!canvas) {
         console.error("イベントリスナー設定失敗: Canvas 要素 'game-canvas' が見つかりません。");
         return;
     }
 
-    // -- クリックリスナー --
+    /* --- 削除: クリックリスナー ---
     canvas.addEventListener('click', (event) => {
         console.log("Canvas クリック！ ✨ イベント:", event);
-        // ★ 追加: ドラッグ中の場合はクリック処理を無視 ★
         if (isDragging) {
             console.log("  isDragging is true, ignoring click event to prevent conflict with drag end.");
             return;
         }
-        // ★ ここまで追加 ★
-
         const coords = getCanvasCoordinates(event);
         if (coords) {
             console.log(`>>> Canvas 内クリック座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
-            gameApp.handle_click(coords.x, coords.y); // ドラッグ中でなければ呼び出す
+            gameApp.handle_click(coords.x, coords.y);
         }
     });
+    */
 
-    // -- ダブルクリックリスナー (Rust の handle_double_click 呼び出し) --
+    /* --- 削除: ダブルクリックリスナー ---
     canvas.addEventListener('dblclick', (event) => {
         console.log("Canvas ダブルクリック！ 🖱️🖱️ イベント:", event);
         if (!gameApp) { console.error("GameApp 未初期化"); return; }
 
         const coords = getCanvasCoordinates(event);
-        if (!coords) return; // 座標が取れなければ何もしない
+        if (!coords) return;
 
         console.log(`>>> Canvas 内ダブルクリック座標: x=${coords.x.toFixed(2)}, y=${coords.y.toFixed(2)} <<<`);
 
@@ -213,10 +211,10 @@ function setupEventListeners() {
             console.log("  🤷 この座標にカードは見つかりませんでした。自動移動のためのダブルクリックは無視します。");
         }
     });
+    */
 
-    // -- マウスダウンリスナー (ドラッグ開始) --
+    /* --- 削除: マウスダウンリスナー (と、その中の Window リスナーアタッチ) ---
     canvas.addEventListener('mousedown', (event) => {
-        // ★ログ追加: 関数開始★
         console.log("[DEBUG] mousedown リスナー開始");
 
         if (!gameApp) { console.error("GameApp 未初期化"); return; }
@@ -228,7 +226,6 @@ function setupEventListeners() {
 
         let clickedEntityId = undefined;
         try {
-            // ★ログ追加: Rust 呼び出し直前★
             console.log(`[DEBUG] mousedown: gameApp.get_entity_id_at(${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
             clickedEntityId = gameApp.get_entity_id_at(coords.x, coords.y);
             console.log(`[DEBUG] mousedown: get_entity_id_at 応答: ${clickedEntityId}`);
@@ -243,30 +240,31 @@ function setupEventListeners() {
             draggedEntityId = clickedEntityId;
 
             try {
-                // ★ログ追加: Rust 呼び出し直前★
                 console.log(`[DEBUG] mousedown: gameApp.handle_drag_start(${draggedEntityId}, ${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) 呼び出し`);
                 gameApp.handle_drag_start(draggedEntityId, coords.x, coords.y);
                 console.log("[DEBUG] mousedown: handle_drag_start 呼び出し成功");
 
-                // ★★★ 追加: window に mousemove と mouseup リスナーをアタッチ ★★★
-                window.addEventListener('mousemove', handleMouseMove);
-                window.addEventListener('mouseup', handleMouseUp);
-                console.log("[DEBUG] mousedown: Window リスナー追加完了");
-                // ★★★ ここまで追加 ★★★
+                // ★★★ 削除: Rust側でやるため Window リスナーのアタッチ処理は不要 ★★★
+                // window.addEventListener('mousemove', handleMouseMove);
+                // window.addEventListener('mouseup', handleMouseUp);
+                // console.log("[DEBUG] mousedown: Window リスナー追加完了");
 
             } catch (error) {
                 console.error("💥 gameApp.handle_drag_start 呼び出しエラー:", error);
-                isDragging = false; // エラー発生時はドラッグ状態を解除
+                isDragging = false;
                 draggedEntityId = null;
             }
         } else {
             console.log("[DEBUG] mousedown: カードが見つからなかったためドラッグ開始せず");
         }
-        // ★ログ追加: 関数終了★
         console.log("[DEBUG] mousedown リスナー終了");
     });
+    */
 
-    console.log("🎧 Canvas イベントリスナー設定完了！");
+    // ★ 他のリスナー (mousemove, mouseup のヘルパー関数自体) はまだ残しておく
+    //   -> Rust 側の detach から呼ばれる可能性は低いが、コード整理するまでは一旦残す
+
+    console.log("🎧 Button イベントリスナー設定完了 (Canvas リスナーは Rust側で設定)");
 }
 
 // --- Canvas 座標取得ヘルパー関数 ---

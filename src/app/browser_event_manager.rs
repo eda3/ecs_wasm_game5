@@ -146,4 +146,49 @@ pub(crate) fn detach_drag_listeners(
     }
 
     Ok(())
+}
+
+/// Detaches the canvas-specific event listeners (click, dblclick, mousedown).
+pub(crate) fn detach_canvas_listeners(
+    canvas: &HtmlCanvasElement,
+    click_closure_arc: &Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    dblclick_closure_arc: &Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+    mousedown_closure_arc: &Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
+) -> Result<(), JsValue> {
+    log("Detaching canvas listeners...");
+
+    // --- Remove Click Listener ---
+    if let Some(closure) = click_closure_arc.lock().expect("Failed to lock click closure arc").take() {
+        canvas.remove_event_listener_with_callback(
+            "click",
+            closure.as_ref().unchecked_ref(),
+        )?;
+        log("  Detached canvas click listener.");
+    } else {
+        log("  Canvas click listener was already detached or never attached.");
+    }
+
+    // --- Remove DblClick Listener ---
+    if let Some(closure) = dblclick_closure_arc.lock().expect("Failed to lock dblclick closure arc").take() {
+        canvas.remove_event_listener_with_callback(
+            "dblclick",
+            closure.as_ref().unchecked_ref(),
+        )?;
+        log("  Detached canvas dblclick listener.");
+    } else {
+        log("  Canvas dblclick listener was already detached or never attached.");
+    }
+
+    // --- Remove MouseDown Listener ---
+    if let Some(closure) = mousedown_closure_arc.lock().expect("Failed to lock mousedown closure arc").take() {
+        canvas.remove_event_listener_with_callback(
+            "mousedown",
+            closure.as_ref().unchecked_ref(),
+        )?;
+        log("  Detached canvas mousedown listener.");
+    } else {
+        log("  Canvas mousedown listener was already detached or never attached.");
+    }
+
+    Ok(())
 } 
