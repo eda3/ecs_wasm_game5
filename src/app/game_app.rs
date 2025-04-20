@@ -36,11 +36,17 @@ use crate::app::renderer::{RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT};
 // ★追加: network_handler から ProcessedMessageResult をインポート★
 use super::network_handler::ProcessedMessageResult;
 
-// ★追加: state_getter モジュールを use する★
-use super::state_getter;
-
 // ★追加: drag_handler モジュールを use する★
 use super::drag_handler;
+
+// ★追加: state_getter モジュールを use する★
+use crate::app::state_getter;
+
+// ★追加: browser_event_manager モジュールを use する★
+use crate::app::browser_event_manager;
+
+// ★修正: Result を返すように変更 (listener attach のエラーハンドル)
+use wasm_bindgen::JsValue;
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]
@@ -247,11 +253,12 @@ impl GameApp {
     /// カードがダブルクリックされた時の処理 (JSから呼び出される元のメソッド)
     #[wasm_bindgen]
     pub fn handle_double_click(&self, entity_id: usize) {
-        println!("GameApp: handle_double_click がエンティティ ID: {} に対して呼ばれました。", entity_id);
-        super::event_handler::handle_double_click_logic( // app:: -> super::
+        log(&format!("GameApp: handle_double_click called for entity_id: {}", entity_id));
+        // event_handler のロジック関数を呼び出す
+        event_handler::handle_double_click_logic(
             entity_id,
-            Arc::clone(&self.world),
-            Arc::clone(&self.network_manager)
+            Arc::clone(&self.world), // Arc をクローンして渡す
+            Arc::clone(&self.network_manager) // Arc をクローンして渡す
         );
     }
 
@@ -394,9 +401,35 @@ impl GameApp {
     // start_x, start_y: ドラッグが開始された Canvas 上の座標 (f32)
     #[wasm_bindgen]
     pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) {
-        // ★ drag_handler モジュールの関数を呼び出す！★
-        // self.world は Arc<Mutex<World>> なので、参照を渡す
-        drag_handler::handle_drag_start(&self.world, entity_usize, start_x, start_y);
+        log(&format!(
+            "GameApp: handle_drag_start called for entity: {}, start: ({}, {})",
+            entity_usize,
+            start_x,
+            start_y
+        ));
+
+        // --- 1. Call drag_handler::handle_drag_start --- 
+        // (This finds the entity, creates DraggingInfo, etc.)
+        drag_handler::handle_drag_start(
+            &self.world, // Pass Arc directly
+            entity_usize,
+            start_x,
+            start_y
+        );
+
+        // --- 2. Attach window listeners using the new manager --- 
+        // Pass the necessary Arcs to the manager function
+        if let Err(e) = browser_event_manager::attach_drag_listeners(
+            Arc::clone(&self.world),
+            Arc::clone(&self.network_manager), // handle_drag_end in mouseup needs this
+            Arc::clone(&self.window_mousemove_closure), // Pass the Arc for the closure itself
+            Arc::clone(&self.window_mouseup_closure),   // Pass the Arc for the closure itself
+            entity_usize, // Pass the entity ID being dragged
+        ) {
+            error!("GameApp: Failed to attach drag listeners: {:?}", e);
+            // Optionally, reset drag state here if listeners couldn't be attached
+            // drag_handler::reset_drag_state(...) or similar?
+        }
     }
 
     /// ドラッグ終了時の処理 (マウスボタンが離された時)
@@ -417,136 +450,31 @@ impl GameApp {
     ///   - サーバーには通知しない。
     #[wasm_bindgen]
     pub fn handle_drag_end(&mut self, entity_usize: usize, end_x: f32, end_y: f32) {
-        let entity = Entity(entity_usize);
-        log(&format!("handle_drag_end called for entity: {:?}, drop coordinates: ({}, {})", entity, end_x, end_y));
-
-        let mut world = self.world.lock().expect("Failed to lock world for drag end");
-
-        // --- 1. DraggingInfo と元のスタック情報を取得 ---
-        // まず、対象エンティティから DraggingInfo を削除しつつ取得する。
-        // これがないとドラッグ中のカードではないので、何もせずに終了。
-        let dragging_info_opt = world.remove_component::<DraggingInfo>(entity);
-
-        let dragging_info = match dragging_info_opt {
-            Some(info) => {
-                log(&format!("  - Successfully removed DraggingInfo: {:?}", info));
-                info // `info` を返す
-            }
-            None => {
-                // DraggingInfo がない = このカードはドラッグされていなかった or 既にドラッグが終わっている
-                log(&format!("  - Warning: DraggingInfo not found for entity {:?}. Ignoring drag end.", entity));
-                return; // 何もせずに関数を抜ける
-            }
-        };
-
-        // 移動元のスタック情報を DraggingInfo から取得しておく
-        // (ルールチェックや、移動失敗時に戻すスタックの識別に使う)
-        // この時点ではまだコンポーネントは削除されていないはず
-        let original_stack_info = world.get_component::<StackInfo>(dragging_info.original_stack_entity)
-                                       .cloned(); // Option<StackInfo> -> cloned() で Option<StackInfo>
-
-        // --- 2. ドロップ先の要素を特定 ---
-        // Canvas の座標 (end_x, end_y) を World 座標に変換する必要があるか確認
-        // (今は renderer と同じ座標系と仮定)
-        // TODO: 必要なら座標変換処理を追加
-        log(&format!("  - Finding element at drop coordinates: ({}, {})", end_x, end_y));
-        // ★修正: find_element_at_position は存在しないため、find_clicked_element を使う★
-        let target_element = event_handler::find_clicked_element(&world, end_x, end_y);
-        log(&format!("  - Found target element: {:?}", target_element));
-
-        // --- 3. ドロップ先に基づいて処理を分岐 ---
-        match target_element {
-            // --- 3a. ドロップ先が有効なスタックだった場合 ---
-            Some(ClickTarget::Stack(target_stack_type)) => { // ★変数名を target_stack_type に変更★
-                log(&format!("  - Target is a stack area: {:?}", target_stack_type));
-
-                // ★修正: StackType から対応する Entity を検索する★
-                let target_stack_entity_opt = world.find_entity_by_stack_type(target_stack_type);
-
-                // ★修正: 見つかった Entity を使って StackInfo を取得する★
-                if let Some(target_stack_entity) = target_stack_entity_opt {
-                    log(&format!("    Found stack entity: {:?}", target_stack_entity));
-                    // ターゲットスタックの情報を取得 (Entity を使う！)
-                    let target_stack_info = world.get_component::<StackInfo>(target_stack_entity);
-
-                    if let Some(target_stack_info) = target_stack_info {
-                        // let target_stack_type = target_stack_info.stack_type; // ここは元の target_stack_type と同じはず
-                        log(&format!("    Target stack type from component: {:?}", target_stack_info.stack_type));
-
-                        // --- 3a-i. 移動ルールのチェック --- (ここから下は target_stack_entity と target_stack_type を使う)
-                        log("  - Checking move validity...");
-                        let original_stack_type_for_rules = original_stack_info.as_ref().map(|info| info.stack_type);
-                        let moved_card = world.get_component::<Card>(entity).expect("Moved entity must have Card component");
-
-                        let is_valid = match target_stack_type { // ルールチェックは StackType で行う
-                            StackType::Foundation(index) => {
-                                rules::can_move_to_foundation(&world, entity, index)
-                            }
-                            StackType::Tableau(index) => {
-                                rules::can_move_to_tableau(&world, entity, index)
-                            }
-                            _ => {
-                                log(&format!("  - Dropping onto {:?} is not allowed.", target_stack_type));
-                                false
-                            }
-                        };
-
-                        if is_valid { // 計算した is_valid の結果を使う
-                            // --- 3a-ii. 移動ルール OK の場合 ---
-                            log("  - Move is valid! Updating world and notifying server...");
-                            let target_stack_type_for_proto: protocol::StackType = target_stack_type.into();
-                            // ★ 修正: drag_handler の関数を呼び出す ★
-                            drag_handler::update_world_and_notify_server(
-                                world, // MutexGuard を渡す (self.world ではない)
-                                &self.network_manager, // NetworkManager の参照を渡す
-                                entity,
-                                target_stack_type, // World 更新には StackType を渡す
-                                target_stack_type_for_proto,
-                                &dragging_info,
-                                original_stack_info
-                            );
-                        } else {
-                            // --- 3a-iii. 移動ルール NG の場合 ---
-                            log("  - Move is invalid. Resetting card position.");
-                            // ★ 修正: drag_handler の関数を呼び出す ★
-                            drag_handler::reset_card_position(world, entity, &dragging_info);
-                        }
-                    } else {
-                        // target_stack_entity は見つかったが、StackInfo が取得できなかった場合 (通常はありえない)
-                        error(&format!("  - Error: StackInfo not found for target stack entity {:?}. Resetting card position.", target_stack_entity));
-                        // ★ 修正: drag_handler の関数を呼び出す ★
-                        drag_handler::reset_card_position(world, entity, &dragging_info);
-                    }
-                } else {
-                    // target_stack_type に対応する Entity が見つからなかった場合 (通常はありえない)
-                    error!("  - Error: Stack entity not found for type {:?}. Resetting card position.", target_stack_type);
-                    // ★ 修正: drag_handler の関数を呼び出す ★
-                    drag_handler::reset_card_position(world, entity, &dragging_info);
-                }
-            }
-            // --- 3b. ドロップ先がカードだった場合 (今はスタックへのドロップのみ想定) ---
-            Some(ClickTarget::Card(target_card_entity)) => {
-                log(&format!("  - Target is a card ({:?}). Invalid drop target. Resetting card position.", target_card_entity));
-                // カードの上は無効なドロップ先として扱う
-                // ★ 修正: drag_handler の関数を呼び出す ★
-                drag_handler::reset_card_position(world, entity, &dragging_info);
-            }
-            // --- 3c. ドロップ先が空の領域だった場合 ---
-            None => {
-                log("  - Target is empty space. Resetting card position.");
-                // 何もない場所へのドロップも無効
-                // ★ 修正: drag_handler の関数を呼び出す ★
-                drag_handler::reset_card_position(world, entity, &dragging_info);
-            }
-        }
-
-        // ドラッグ終了処理が終わったら、Window のリスナーを解除する
-        // (成功時も失敗時も解除する)
-        *self.window_mousemove_closure.lock().unwrap() = None;
-        *self.window_mouseup_closure.lock().unwrap() = None;
-        log("  - Removed window mousemove and mouseup listeners.");
-
-    } // handle_drag_end の終わり
+        log(&format!(
+            "GameApp: handle_drag_end called for entity: {}, end: ({}, {})",
+            entity_usize,
+            end_x,
+            end_y
+        ));
+        
+        // The actual drag end logic (updating world, notifying server) 
+        // is triggered by the mouseup listener which calls drag_handler::handle_drag_end.
+        
+        // The primary role of *this specific GameApp method* might be reduced, 
+        // but we still need to ensure listeners are cleaned up.
+        // The mouseup listener *should* call detach_drag_listeners itself.
+        // We could add a redundant call here for safety, but it might log warnings
+        // if the listener already detached itself.
+        log("GameApp::handle_drag_end - Relying on mouseup listener to call detach.");
+        
+        // If we needed manual cleanup unrelated to mouseup, it would go here:
+        // if let Err(e) = browser_event_manager::detach_drag_listeners(
+        //     &self.window_mousemove_closure,
+        //     &self.window_mouseup_closure,
+        // ) {
+        //     error!("GameApp: Error detaching listeners in handle_drag_end: {:?}", e);
+        // }
+    }
 
     /// JavaScript から呼び出される、ドラッグ中のカードの位置を一時的に更新するためのメソッドだよ！
     /// マウスの動きに合わせてカードの見た目を追従させるために使うんだ。
@@ -555,57 +483,17 @@ impl GameApp {
     ///         最終的な移動処理は handle_drag_end で行われる。
     #[wasm_bindgen]
     pub fn update_dragged_position(&mut self, entity_id: usize, mouse_x: f32, mouse_y: f32) {
-        // デバッグ用に、どのエンティティがどの座標に更新されようとしているかログ出力！
-        // console::log_3(&JsValue::from_str("update_dragged_position: entity="), &JsValue::from(entity_id), &JsValue::from(format!("mouse=({}, {})", mouse_x, mouse_y)));
-
-        let entity = Entity(entity_id);
-
-        // World のロックを取得 (Position と DraggingInfo を読み書きするから可変で)
-        let mut world_guard = match self.world.try_lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                // ロック失敗！エラーログを出して何もしない。
-                log::error!("Failed to lock world in update_dragged_position: {}", e);
-                return;
-            }
-        };
-
-        // --- ドラッグ情報 (オフセット) を取得 --- //
-        // ドラッグされているカードの DraggingInfo コンポーネントを取得する。
-        // これには、ドラッグ開始時のマウスカーソルとカード左上のズレ (オフセット) が記録されてるはず！
-        let dragging_info_opt = world_guard.get_component::<DraggingInfo>(entity);
-
-        if let Some(dragging_info) = dragging_info_opt {
-            // DraggingInfo が見つかった！ オフセットを使ってカードの新しい左上座標を計算するよ。
-            // カードの左上 X = マウスの X - オフセット X
-            // カードの左上 Y = マウスの Y - オフセット Y
-            // DraggingInfo のオフセットは f64 だけど、Position は f32 なのでキャストが必要だよ！
-            let new_card_x = mouse_x - dragging_info.offset_x as f32;
-            let new_card_y = mouse_y - dragging_info.offset_y as f32;
-
-            // --- Position コンポーネントを更新 --- //
-            // 移動させるカードの Position コンポーネントを可変 (mut) で取得する。
-            if let Some(position_component) = world_guard.get_component_mut::<Position>(entity) {
-                // Position コンポーネントの x と y を、計算した新しい座標で上書き！
-                position_component.x = new_card_x;
-                position_component.y = new_card_y;
-                // ログで更新後の座標を確認！ (コメントアウトしてもOK)
-                // log::info!("  Updated dragged Position for {:?} to ({}, {})", entity, new_card_x, new_card_y);
-            } else {
-                // Position コンポーネントが見つからないのはおかしい… エラーログ！
-                // ★修正: log マクロに引数を追加★
-                log::error!("  Failed to get Position component for dragged entity {:?} during update", entity);
-            }
-        } else {
-            // DraggingInfo が見つからないってことは、もうドラッグが終わってるか、何かおかしい。
-            // エラーログを出しておく。
-            // ★修正: log マクロに引数を追加★
-            log::error!("  DraggingInfo component not found for entity {:?} in update_dragged_position", entity);
-            // この場合、位置の更新は行わない。
-        }
-
-        // World のロックはこの関数のスコープを抜けるときに自動的に解除されるよ。
-        // drop(world_guard); // 明示的に書いてもOK！
+        // The actual update logic is handled by drag_handler::update_dragged_position,
+        // which is called by the mousemove listener.
+        log(&format!(
+            "GameApp: update_dragged_position called (likely redundant) for entity: {}, mouse: ({}, {})",
+            entity_id,
+            mouse_x,
+            mouse_y
+        ));
+        // We could potentially call the drag_handler function here too for consistency,
+        // but it's primarily driven by the listener now.
+        // drag_handler::update_dragged_position(&self.world, entity_id, mouse_x, mouse_y);
     }
 
 } // impl GameApp の終わり
