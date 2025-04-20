@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{window, Event, MouseEvent};
+use web_sys::{window, Event, MouseEvent, HtmlCanvasElement};
 use crate::ecs::world::World;
 use crate::network::NetworkManager;
 use crate::app::drag_handler; // update_dragged_position, handle_drag_end を呼び出すため
@@ -18,6 +18,7 @@ pub(crate) fn attach_drag_listeners(
     window_mousemove_closure_arc: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
     window_mouseup_closure_arc: Arc<Mutex<Option<Closure<dyn FnMut(Event)>>>>,
     entity_id: usize, // The entity being dragged
+    canvas: &HtmlCanvasElement, // ★ 追加: Canvas 要素への参照 ★
 ) -> Result<(), JsValue> {
     log(&format!("Attaching drag listeners for entity {}", entity_id));
 
@@ -25,22 +26,25 @@ pub(crate) fn attach_drag_listeners(
     {
         // Clone Arcs for the closure
         let world_arc_clone = Arc::clone(&world_arc);
+        let canvas_clone = canvas.clone();
         let window_mousemove_closure_arc_clone = Arc::clone(&window_mousemove_closure_arc);
         let window_mouseup_closure_arc_clone = Arc::clone(&window_mouseup_closure_arc); // mouseup closure might need access inside mousemove? Unlikely but pass for now.
 
         let mousemove_closure = Closure::wrap(Box::new(move |event: Event| {
             // Cast the generic Event to a MouseEvent
             if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
-                // Use clientX/Y for coordinates relative to the viewport
-                let mouse_x = mouse_event.client_x() as f32;
-                let mouse_y = mouse_event.client_y() as f32;
+                // ★★★ 座標変換ロジックを追加 ★★★
+                let rect = canvas_clone.get_bounding_client_rect();
+                let mouse_x = mouse_event.client_x() as f32 - rect.left() as f32;
+                let mouse_y = mouse_event.client_y() as f32 - rect.top() as f32;
+                // ★★★ ここまで ★★★
 
                 // Directly call the update function (which locks the world)
                 drag_handler::update_dragged_position(
                     &world_arc_clone, // Pass the cloned Arc
                     entity_id,
-                    mouse_x,
-                    mouse_y,
+                    mouse_x, // ★ 変換後の座標を使う！ ★
+                    mouse_y, // ★ 変換後の座標を使う！ ★
                 );
             } else {
                 error!("Failed to cast event to MouseEvent in mousemove listener");

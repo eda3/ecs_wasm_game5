@@ -3,9 +3,10 @@
 
 use std::sync::{Arc, Mutex};
 use crate::ecs::world::World;
-use crate::components::{Position, Card, DraggingInfo, StackInfo, Suit, Rank};
+use crate::components::{Position, Card, DraggingInfo, StackInfo, Suit, Rank, StackType};
 use crate::ecs::entity::Entity;
-use crate::{log}; // log マクロを使う
+use crate::log;
+use log::warn;
 use wasm_bindgen::JsValue;
 use web_sys::{HtmlCanvasElement, CanvasRenderingContext2d};
 // ★修正: config::layout の定数を直接使うためインポート★
@@ -144,98 +145,137 @@ pub fn render_game_rust(
     // --- ステップ3: World からカード情報を取得 & ソート --- 
     let world = world_arc.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock world mutex: {}", e)))?;
 
+    // --- 2. Collect render data for ALL cards --- 
     let card_entities = world.get_all_entities_with_component::<Card>();
-    let mut cards_to_render: Vec<(Entity, &Position, &Card, Option<&DraggingInfo>, Option<&StackInfo>)> = Vec::with_capacity(card_entities.len());
+    // ★ Vec に Position, Card, is_dragging, StackInfo(Option) を格納 ★
+    let mut card_render_list: Vec<(Entity, Position, Card, bool, Option<StackInfo>)> = Vec::with_capacity(card_entities.len());
 
-    for &entity in &card_entities {
+    for entity in &card_entities {
         if let (Some(pos), Some(card)) = (
-            world.get_component::<Position>(entity),
-            world.get_component::<Card>(entity)
+            world.get_component::<Position>(*entity),
+            world.get_component::<Card>(*entity)
         ) {
-            let dragging_info = world.get_component::<DraggingInfo>(entity);
-            let stack_info = world.get_component::<StackInfo>(entity);
-            cards_to_render.push((entity, pos, card, dragging_info, stack_info));
+            let is_dragging = world.get_component::<DraggingInfo>(*entity).is_some();
+            let stack_info_opt = world.get_component::<StackInfo>(*entity).cloned(); // Clone StackInfo
+            // ★ リストにクローンしたデータを追加 ★
+            card_render_list.push((*entity, pos.clone(), card.clone(), is_dragging, stack_info_opt));
         } else {
-            log(&format!("Warning: Skipping entity {:?} in render_game_rust because Card or Position component is missing.", entity));
+            warn!("Renderer: Entity {:?} missing Pos/Card, skipping.", entity);
         }
     }
 
-    cards_to_render.sort_by(|a, b| {
-        let (_, _, _, dragging_info_a_opt, stack_info_a_opt) = a;
-        let (_, _, _, dragging_info_b_opt, stack_info_b_opt) = b;
+    // --- 3. Sort cards for correct rendering order --- 
+    // ★ ソート処理を復活＆改良 ★
+    // 基本は StackType -> position_in_stack でソートする
+    // (Tableau など、重なり順が重要なスタックを意識)
+    card_render_list.sort_by(|a, b| {
+        let (_, _, _, _, stack_info_a_opt) = a;
+        let (_, _, _, _, stack_info_b_opt) = b;
 
-        let order_a = dragging_info_a_opt
-            .map(|di| di.original_position_in_stack)
-            .or_else(|| stack_info_a_opt.map(|si| si.position_in_stack as usize))
-            .unwrap_or(0);
-
-        let order_b = dragging_info_b_opt
-            .map(|di| di.original_position_in_stack)
-            .or_else(|| stack_info_b_opt.map(|si| si.position_in_stack as usize))
-            .unwrap_or(0);
-
-        order_a.cmp(&order_b)
+        // StackInfo がないものは最後に描画 (エラーケースなど)
+        match (stack_info_a_opt, stack_info_b_opt) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (None, Some(_)) => std::cmp::Ordering::Greater, // None は大きい (後)
+            (Some(_), None) => std::cmp::Ordering::Less,    // Some は小さい (先)
+            (Some(info_a), Some(info_b)) => {
+                // まず StackType で比較 (描画順: Stock -> Waste -> Foundation -> Tableau -> Hand)
+                let type_order_a = stack_type_draw_order(info_a.stack_type);
+                let type_order_b = stack_type_draw_order(info_b.stack_type);
+                match type_order_a.cmp(&type_order_b) {
+                    std::cmp::Ordering::Equal => {
+                        // 同じ StackType なら position_in_stack で比較 (小さい方が先)
+                        info_a.position_in_stack.cmp(&info_b.position_in_stack)
+                    }
+                    other => other,
+                }
+            }
+        }
     });
 
-    // --- ステップ4: カードの描画処理 --- 
-    // ★削除★ ログ不要
-    // log(&format!("App::Renderer: Rendering {} sorted cards...", cards_to_render.len()));
+    // --- 4. Draw cards in sorted order (handling dragged card) --- 
+    log(&format!("Renderer: Drawing {} sorted card entities...", card_render_list.len()));
+    // ★ ドラッグ中カード描画用変数を初期化 ★
+    let mut dragged_card_data: Option<(Position, Card)> = None;
 
-    // ソートされたカードリストをループで回して、1枚ずつ描画していくよ！
-    for (entity, pos, card, _dragging_info_opt, _stack_info_opt) in cards_to_render {
-        // ★削除★ ログが多すぎるのでコメントアウト！
-        // log(&format!("  Rendering card {:?} at ({}, {})", entity, pos.x, pos.y));
+    // ★ ソート済みリストをループ ★
+    for (_entity, pos, card, is_dragging, _stack_info_opt) in card_render_list {
+        // ★ ドラッグ中のカードは保存してスキップ ★
+        if is_dragging {
+            // log(&format!("  - Storing dragged card {:?} for later rendering.", _entity));
+            dragged_card_data = Some((pos, card)); // pos, card は move される
+            continue;
+        }
 
-        // --- 4.1: カードの基本の四角形を描画 --- 
-        // 角丸の四角を描画するヘルパー関数を呼ぶ
-        draw_rounded_rect(
-            context,
-            pos.x as f64, // Position の f32 を f64 にキャスト
-            pos.y as f64,
-            RENDER_CARD_WIDTH, // 描画用の定数を使う
-            RENDER_CARD_HEIGHT,
-            RENDER_CARD_CORNER_RADIUS,
-        )?;
-        context.set_fill_style(&JsValue::from_str(COLOR_CARD_BG)); // 背景色 (白)
-        context.fill();
-        context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER)); // 枠線の色
-        context.stroke();
+        // --- 通常のカード描画 (ドラッグ中でない場合) --- 
+        let card_x = pos.x as f64;
+        let card_y = pos.y as f64;
 
-        // --- 4.2: カードの内容を描画 (表向きか裏向きかで処理を分ける) ---
         if card.is_face_up {
-            // --- 表向きのカード --- 
-            // ★削除★ ログが多すぎるのでコメントアウト！
-            // log(&format!("    Card {:?} is face up ({:?}, {:?})", entity, card.rank, card.suit));
-            // 4.2.1: スートに基づいて文字色を決定
-            let text_color = match card.suit {
-                Suit::Heart | Suit::Diamond => COLOR_TEXT_RED,
-                Suit::Spade | Suit::Club => COLOR_TEXT_BLACK,
+            // ... (face-up card drawing logic - unchanged, uses pos and card) ...
+            context.save();
+            draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
+            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BG));
+            context.fill();
+            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.stroke();
+            context.restore();
+
+            let (text_color, suit_char) = match card.suit {
+                Suit::Heart | Suit::Diamond => (COLOR_TEXT_RED, get_suit_text(card.suit)),
+                Suit::Club | Suit::Spade => (COLOR_TEXT_BLACK, get_suit_text(card.suit)),
             };
+            let rank_char = get_rank_text(card.rank);
+
+            context.save();
             context.set_fill_style(&JsValue::from_str(text_color));
-
-            // 4.2.2: ランク (数字/文字) を描画
-            let rank_text = get_rank_text(card.rank); // ランクを文字列に変換 (ヘルパー関数)
             context.set_font(&format!("bold {}px {}", FONT_SIZE_RANK, FONT_FAMILY));
-            context.fill_text(
-                rank_text,
-                pos.x as f64 + RANK_OFFSET_X,
-                pos.y as f64 + RANK_OFFSET_Y,
-            )?;
-
-            // 4.2.3: スート (マーク) を描画
-            let suit_text = get_suit_text(card.suit); // スートを絵文字に変換 (ヘルパー関数)
-            context.set_font(&format!("{}px {}", FONT_SIZE_SUIT, FONT_FAMILY));
-            context.fill_text(
-                suit_text,
-                pos.x as f64 + SUIT_OFFSET_X,
-                pos.y as f64 + SUIT_OFFSET_Y,
-            )?;
-
+            context.fill_text(&format!("{} {}", rank_char, suit_char), card_x + RANK_OFFSET_X, card_y + RANK_OFFSET_Y)?;
+            context.restore();
         } else {
-            // --- 裏向きのカード --- 
-            // log(&format!("    Card {:?} is face down", entity)); // 必要ならこれもコメントアウト
+            // ... (face-down card drawing logic - unchanged, uses pos and card) ...
+            context.save();
+            draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
             context.set_fill_style(&JsValue::from_str(COLOR_CARD_BACK));
             context.fill();
+            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.stroke();
+            context.restore();
+        }
+        // --- 通常のカード描画ここまで ---
+    }
+
+    // --- 5. Draw the dragged card last (if any) --- 
+    if let Some((pos, card)) = dragged_card_data {
+        // log(&format!("Renderer: Drawing dragged card at ({}, {})", pos.x, pos.y));
+        let card_x = pos.x as f64;
+        let card_y = pos.y as f64;
+        // ... (dragged card drawing logic - unchanged) ...
+        if card.is_face_up {
+            context.save();
+            draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
+            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BG));
+            context.fill();
+            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.stroke();
+            context.restore();
+            let (text_color, suit_char) = match card.suit {
+                Suit::Heart | Suit::Diamond => (COLOR_TEXT_RED, get_suit_text(card.suit)),
+                Suit::Club | Suit::Spade => (COLOR_TEXT_BLACK, get_suit_text(card.suit)),
+            };
+            let rank_char = get_rank_text(card.rank);
+            context.save();
+            context.set_fill_style(&JsValue::from_str(text_color));
+            context.set_font(&format!("bold {}px {}", FONT_SIZE_RANK, FONT_FAMILY));
+            context.fill_text(&format!("{} {}", rank_char, suit_char), card_x + RANK_OFFSET_X, card_y + RANK_OFFSET_Y)?; 
+            context.restore();
+        } else {
+            context.save();
+            draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
+            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BACK));
+            context.fill();
+            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.stroke();
+            context.restore();
         }
     }
 
@@ -297,5 +337,16 @@ fn get_suit_text(suit: Suit) -> &'static str {
         Suit::Diamond => "♦", // ダイヤ
         Suit::Spade => "♠",   // スペード
         Suit::Club => "♣",    // クラブ
+    }
+}
+
+// ★ 追加: StackType の描画順序を決めるヘルパー関数 ★
+fn stack_type_draw_order(stack_type: StackType) -> u8 {
+    match stack_type {
+        StackType::Stock => 0,
+        StackType::Waste => 1,
+        StackType::Foundation(_) => 2, // Foundation は Tableau より先に描画
+        StackType::Tableau(_) => 3,    // Tableau は Foundation の後
+        StackType::Hand => 4,         // Hand は最後 (もし使うなら)
     }
 } 

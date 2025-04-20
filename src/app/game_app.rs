@@ -393,40 +393,29 @@ impl GameApp {
         }
     }
 
-    // ドラッグ開始時の処理
-    // entity: ドラッグが開始されたカードの Entity ID (usize)
-    // start_x, start_y: ドラッグが開始された Canvas 上の座標 (f32)
-    #[wasm_bindgen]
+    /// ドラッグ開始時の処理。必要なリスナーをアタッチする。
     pub fn handle_drag_start(&mut self, entity_usize: usize, start_x: f32, start_y: f32) {
         log(&format!(
-            "GameApp: handle_drag_start called for entity: {}, start: ({}, {})",
-            entity_usize,
-            start_x,
-            start_y
+            "GameApp::handle_drag_start: Entity {}, Start: ({}, {})",
+            entity_usize, start_x, start_y
         ));
 
-        // --- 1. Call drag_handler::handle_drag_start --- 
-        // (This finds the entity, creates DraggingInfo, etc.)
-        drag_handler::handle_drag_start(
-            &self.world, // Pass Arc directly
-            entity_usize,
-            start_x,
-            start_y
-        );
+        // --- 1. ドラッグ対象の情報を World に追加 --- 
+        drag_handler::handle_drag_start(&self.world, entity_usize, start_x, start_y);
 
-        // --- 2. Attach window listeners using the new manager --- 
-        // Pass the necessary Arcs to the manager function
+        // --- 2. MouseMove と MouseUp リスナーを Window にアタッチ --- 
+        // (エラーハンドリングは簡単のために unwrap を使うけど、本当はちゃんと処理すべき)
         if let Err(e) = browser_event_manager::attach_drag_listeners(
             Arc::clone(&self.world),
-            Arc::clone(&self.network_manager), // handle_drag_end in mouseup needs this
-            Arc::clone(&self.window_mousemove_closure), // Pass the Arc for the closure itself
-            Arc::clone(&self.window_mouseup_closure),   // Pass the Arc for the closure itself
-            entity_usize, // Pass the entity ID being dragged
+            Arc::clone(&self.network_manager),
+            Arc::clone(&self.window_mousemove_closure),
+            Arc::clone(&self.window_mouseup_closure),
+            entity_usize,
+            &self.canvas, // ★ 追加: self.canvas への参照を渡す ★
         ) {
             error!("GameApp: Failed to attach drag listeners: {:?}", e);
-            // Optionally, reset drag state here if listeners couldn't be attached
-            // drag_handler::reset_drag_state(...) or similar?
         }
+        log("GameApp::handle_drag_start: Listeners attached.");
     }
 
     /// ドラッグ終了時の処理 (マウスボタンが離された時)
