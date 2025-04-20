@@ -62,7 +62,7 @@ impl GameApp {
         // log() は lib.rs で定義されているため、ここでは直接使えない
         // 必要なら crate::log() などで参照するか、GameApp 内で log を呼ぶ関数を用意する
         // println! マクロなどは使える
-        println!("GameApp: Initializing..."); // 代わりに println! を使用
+        println!("GameApp: 初期化中..."); // 代わりに println! を使用
 
         // --- World, Network, Canvas の初期化は init_handler に委譲 ---
         let world_arc = super::init_handler::initialize_world(); // app:: -> super::
@@ -81,7 +81,7 @@ impl GameApp {
         let window_mousemove_closure_arc = Arc::new(Mutex::new(None));
         let window_mouseup_closure_arc = Arc::new(Mutex::new(None));
 
-        println!("GameApp: Initialization complete.");
+        println!("GameApp: 初期化完了。");
         Self {
             world: world_arc,
             network_manager: network_manager_arc,
@@ -165,7 +165,7 @@ impl GameApp {
     #[wasm_bindgen]
     pub fn get_world_state_json(&self) -> Result<String, JsValue> {
         // デバッグ用にコンソールに出力！ (JavaScript の console.log みたいなもの)
-        println!("GameApp: get_world_state_json called. Preparing world state...");
+        println!("GameApp: get_world_state_json が呼ばれました。World の状態を準備中...");
 
         // 1. World の Mutex をロックする！ 🔑
         //   - `self.world` は `Arc<Mutex<World>>` 型だよ。複数の場所から安全に World を使うための仕組み。
@@ -179,7 +179,7 @@ impl GameApp {
             .map_err(|e| JsValue::from(Error::new(&format!("Failed to lock world: {}", e))))?;
 
         // --- 2. プレイヤー (`Player`) データの収集 ---
-        println!("  Collecting player data...");
+        println!("  プレイヤーデータを収集中...");
         // `world.get_all_entities_with_component::<Player>()` で Player コンポーネントを持つ全エンティティIDを取得。
         let player_entities = world.get_all_entities_with_component::<Player>();
         // `iter()`: エンティティIDのリストをイテレータ（順番に処理できるやつ）に変換。
@@ -201,10 +201,10 @@ impl GameApp {
                 })
             })
             .collect();
-        println!("    Found {} players.", players.len());
+        println!("    プレイヤー {} 人発見。", players.len());
 
         // --- 3. カード (`Card`) データの収集 ---
-        println!("  Collecting card data...");
+        println!("  カードデータを収集中...");
         // Player と同様に、Card コンポーネントを持つ全エンティティIDを取得。
         let card_entities = world.get_all_entities_with_component::<Card>();
         // `filter_map` を使って、必要なコンポーネント (Card, StackInfo, Position) が
@@ -236,16 +236,16 @@ impl GameApp {
                 } else {
                     // 必要なコンポーネントが揃っていなかった場合 (普通はありえないはずだけど念のため)
                     // エラーログを出力して、このエンティティはスキップ (`None` を返す)
-                    eprintln!("Warning: Could not retrieve all required components (Card, StackInfo, Position) for entity {:?}. Skipping.", entity);
+                    eprintln!("警告: エンティティ {:?} に必要なコンポーネント (Card, StackInfo, Position) が全て取得できませんでした。スキップします。", entity);
                     None
                 }
             })
             .collect(); // イテレータの結果を Vec<CardData> に集める。
-        println!("    Found {} cards with complete data.", cards.len());
+        println!("    完全なデータを持つカード {} 枚発見。", cards.len());
 
 
         // --- 4. GameStateData の構築 ---
-        println!("  Constructing GameStateData...");
+        println!("  GameStateData を構築中...");
         // 集めたプレイヤーデータとカードデータを使って、`GameStateData` を作るよ！
         let game_state_data = GameStateData {
             players, // さっき集めた players リスト
@@ -254,14 +254,14 @@ impl GameApp {
         };
 
         // --- 5. JSON 文字列へのシリアライズ ---
-        println!("  Serializing GameStateData to JSON string...");
+        println!("  GameStateData を JSON 文字列にシリアライズ中...");
         // `serde_json::to_string` を使って `GameStateData` を JSON 文字列に変換！ ✨
         // これも失敗する可能性があるので `Result` が返ってくる。
         serde_json::to_string(&game_state_data)
             // `map_err` で、もし `serde_json` がエラー (Err) を返したら...
             .map_err(|e| {
                 // エラー内容をコンソールに出力 (eprintln! はエラー出力用)
-                eprintln!("Error serializing GameStateData to JSON: {}", e);
+                eprintln!("GameStateData の JSON シリアライズエラー: {}", e);
                 // JavaScript の Error オブジェクトを作って JsValue に変換して返す！
                 JsValue::from(Error::new(&format!("Failed to serialize game state: {}", e)))
             })
@@ -286,7 +286,7 @@ impl GameApp {
     /// カードがダブルクリックされた時の処理 (JSから呼び出される元のメソッド)
     #[wasm_bindgen]
     pub fn handle_double_click(&self, entity_id: usize) {
-        println!("GameApp: handle_double_click called for entity_id: {}", entity_id);
+        println!("GameApp: handle_double_click がエンティティ ID: {} に対して呼ばれました。", entity_id);
         super::event_handler::handle_double_click_logic( // app:: -> super::
             entity_id,
             Arc::clone(&self.world),
@@ -322,7 +322,7 @@ impl GameApp {
         let world = match self.world.lock() {
             Ok(w) => w,
             Err(e) => {
-                error(&format!("Failed to lock world in handle_click: {}", e));
+                error(&format!("handle_click 内で World のロックに失敗: {}", e));
                 return; // ロック失敗したら何もできないので終了
             }
         };
@@ -337,18 +337,86 @@ impl GameApp {
         match clicked_element {
             Some(event_handler::ClickTarget::Card(entity)) => {
                 // カードがクリックされた！
-                log(&format!("Clicked on Card: {:?}", entity));
+                log(&format!("カードをクリック: {:?}", entity));
                 // TODO: カードクリック時の処理 (ドラッグ開始など) をここに追加！
             }
             Some(event_handler::ClickTarget::Stack(stack_type)) => {
                 // スタックエリアがクリックされた！
-                log(&format!("Clicked on Stack area: {:?}", stack_type));
+                log(&format!("スタックエリアをクリック: {:?}", stack_type));
                 // TODO: スタッククリック時の処理 (山札をめくるなど) をここに追加！
             }
             None => {
                 // 何もないところがクリックされた！
-                log("Clicked on empty space.");
+                log("空きスペースをクリック。");
                 // TODO: 背景クリック時の処理 (もし必要なら)
+            }
+        }
+    }
+
+    /// JavaScript から呼び出して、指定された Canvas 座標 (x, y) にある
+    /// 一番手前の「カード」の Entity ID を取得するための関数だよ！
+    /// ダブルクリックされた時に「どのカードがクリックされたか」を JS 側で知るために使うんだ。
+    ///
+    /// # 引数
+    /// * `x`: 判定したい Canvas 上の X 座標 (f32)。
+    /// * `y`: 判定したい Canvas 上の Y 座標 (f32)。
+    ///
+    /// # 戻り値
+    /// * `Option<usize>`:
+    ///   - `Some(entity_id)`: 指定座標にカードが見つかった場合、そのカードの Entity ID (usize) を返すよ。
+    ///   - `None`: 指定座標にカードが見つからなかった場合 (スタックや背景だった場合)。
+    ///   JS側では number | undefined として受け取れる！
+    ///
+    /// # 処理の流れ
+    /// 1. `World` のロックを取得する。失敗したらエラーログを出して `None` を返すよ。
+    /// 2. `event_handler::find_clicked_element` 関数を呼び出して、指定座標の要素を特定する。
+    /// 3. `find_clicked_element` の結果を `match` で判定する。
+    ///    - `Some(ClickTarget::Card(entity))` だったら、そのカードの ID (`entity.0`) を `Some()` で包んで返す。
+    ///    - それ以外 (`Some(ClickTarget::Stack(_))` や `None`) だったら、`None` を返す。
+    /// 4. World のロックを早めに解除する (`drop`)。
+    #[wasm_bindgen]
+    pub fn get_entity_id_at(&self, x: f32, y: f32) -> Option<usize> {
+        // まずは World のロックを取得するよ。ロックは大事！🔒
+        let world = match self.world.lock() {
+            Ok(w) => w,
+            Err(e) => {
+                // ロックに失敗したらエラーログを出して None (何も見つからなかった) を返す。
+                error(&format!("get_entity_id_at 内で World のロックに失敗: {}", e));
+                return None;
+            }
+        };
+
+        // event_handler モジュールの find_clicked_element 関数を呼び出して、
+        // 指定された座標 (x, y) に何があるか調べてもらう！🔍
+        let clicked_element = event_handler::find_clicked_element(&world, x, y);
+
+        // World のロックはここで解除！🔓 もう World のデータは必要ないからね。
+        // drop(world) を明示的に書くことで、ロックが早く解除されることを保証するよ。
+        drop(world);
+
+        // find_clicked_element から返ってきた結果 (Option<ClickTarget>) を match で判定！
+        match clicked_element {
+            // Some(ClickTarget::Card(entity)) が返ってきたら…
+            Some(event_handler::ClickTarget::Card(entity)) => {
+                // それはカードがクリックされたってこと！🎉
+                // カードの Entity ID (entity は Entity(usize) というタプル構造体なので、中の usize を .0 で取り出す) を Some で包んで返す。
+                // これで JS 側は、どのカードがクリックされたか ID を知ることができるね！
+                log(&format!("get_entity_id_at: 座標 ({}, {}) でカードエンティティ {:?} を発見。", x, y, entity));
+                Some(entity.0) // entity.0 は usize 型
+            }
+            // Some(ClickTarget::Stack(stack_type)) が返ってきたら…
+            Some(event_handler::ClickTarget::Stack(stack_type)) => {
+                // それはスタックの空きエリアがクリックされたってことだね。
+                // 今回はカードの ID だけが欲しいので、スタックの場合は None を返す。
+                log(&format!("get_entity_id_at: 座標 ({}, {}) でスタックエリア {:?} を発見。None を返します。", x, y, stack_type));
+                None
+            }
+            // None が返ってきたら…
+            None => {
+                // それは背景とか、何もない場所がクリックされたってこと。
+                // もちろんカードじゃないので None を返す。
+                log(&format!("get_entity_id_at: 座標 ({}, {}) では何も見つからず。None を返します。", x, y));
+                None
             }
         }
     }
@@ -357,10 +425,10 @@ impl GameApp {
 // GameApp が不要になった時に WebSocket 接続を閉じる処理 (Drop トレイト)
 impl Drop for GameApp {
     fn drop(&mut self) {
-        println!("GameApp: Dropping GameApp instance. Disconnecting WebSocket...");
+        println!("GameApp: GameApp インスタンスを破棄中。WebSocket を切断します...");
         match self.network_manager.lock() {
             Ok(mut nm) => nm.disconnect(),
-            Err(e) => eprintln!("GameApp: Failed to lock NetworkManager for disconnect: {:?}", e),
+            Err(e) => eprintln!("GameApp: 切断のために NetworkManager のロックに失敗: {:?}", e),
         }
     }
 } 

@@ -55,7 +55,7 @@ async function main() {
         setInterval(updateStatusDisplay, 1000); // 1秒ごとに更新
 
         // --- ここから Canvas クリックイベントの処理を追加！ ---
-        console.log("Setting up Canvas click listener...🖱️");
+        console.log("Canvas クリックリスナー設定中...🖱️");
 
         // 1. HTML から Canvas 要素を取得！
         // `document.getElementById()` は、HTML の中で指定された ID を持つ要素を探してきてくれる関数だよ。
@@ -64,10 +64,10 @@ async function main() {
 
         // 2. Canvas がちゃんと見つかったかチェック！ (もし見つからなかったらエラー出す)
         if (!canvas) {
-            console.error("CRITICAL ERROR: Canvas element with id 'game-canvas' not found! 😱 Make sure it exists in your index.html!");
+            console.error("致命的エラー: ID 'game-canvas' の Canvas 要素が見つかりません！😱 index.html に存在するか確認してください！");
             // Canvas がないと何もできないので処理中断するけど、init 関数自体は完了させたいので return はしない。
         } else {
-            console.log("Canvas element found! 👍");
+            console.log("Canvas 要素発見！👍");
 
             // 3. Canvas にクリックイベントリスナーを追加！
             // `addEventListener('click', callback)` は、指定した要素 (canvas) で
@@ -76,7 +76,7 @@ async function main() {
             // アロー関数は `this` の扱いがシンプルで書きやすいからモダン JS ではよく使うよ！✨
             canvas.addEventListener('click', (event) => {
                 // --- クリックイベントが発生した時の処理をここに書く！ ---
-                console.log("Canvas clicked! ✨ Event:", event); // クリックされたことをログに出力！ event オブジェクトの中身も見てみよ！
+                console.log("Canvas クリック！ ✨ イベント:", event); // クリックされたことをログに出力！ event オブジェクトの中身も見てみよ！
 
                 // 4. Canvas の画面上の位置とサイズを取得！
                 // `getBoundingClientRect()` は、要素 (canvas) が画面のどこに表示されてるかの情報 (左上の x, y 座標、幅、高さなど) をくれるメソッドだよ。
@@ -100,7 +100,7 @@ async function main() {
 
                 // 7. 計算結果をコンソールに出力！
                 // `` (バッククォート) で囲むと、文字列の中に ${変数名} って書くだけで変数の値を埋め込めるテンプレートリテラルが使えるよ！超便利！💖
-                console.log(`>>> Clicked inside Canvas at: x=${canvasX.toFixed(2)}, y=${canvasY.toFixed(2)} <<<`); // `toFixed(2)` で小数点以下2桁まで表示！見やすい！
+                console.log(`>>> Canvas 内クリック座標: x=${canvasX.toFixed(2)}, y=${canvasY.toFixed(2)} <<<`); // `toFixed(2)` で小数点以下2桁まで表示！見やすい！
 
                 // --- TODO: 次のステップ！ ---
                 // ここで計算した canvasX, canvasY を使って、どのカードやスタックがクリックされたか判定するロジックを
@@ -109,40 +109,68 @@ async function main() {
                 // 今回はログ出力まで！👍
             });
 
-            // 🌟🌟🌟 新しく追加！ Canvas にダブルクリックイベントリスナーを追加！ 🌟🌟🌟
-            // 'dblclick' イベントが発生した時に実行される関数を設定するよ！
-            // 基本的な流れはシングルクリックの時と同じだよ！
+            // 🌟🌟🌟 Canvas にダブルクリックイベントリスナーを追加！ 🌟🌟🌟
             canvas.addEventListener('dblclick', (event) => {
                 // --- ダブルクリックイベントが発生した時の処理 ---
-                console.log("Canvas double-clicked! 🖱️🖱️ Event:", event); // ダブルクリックされたことをログに出力！
+                console.log("Canvas ダブルクリック！ 🖱️🖱️ イベント:", event); // ダブルクリックログ
 
-                // 1. Canvas の画面上の位置とサイズを取得 (シングルクリックと同じ)
-                // これがないと正確な Canvas 内座標が分からないからね！
+                // まず、gameApp がちゃんと使えるかチェック！ (ないと Rust 呼べない！)
+                if (!gameApp) {
+                    console.error("GameApp が初期化されていません！ダブルクリックを処理できません。");
+                    return; // 何もせず終了
+                }
+
+                // 1. Canvas の画面上の位置とサイズを取得
                 const rect = canvas.getBoundingClientRect();
 
-                // 2. ダブルクリックされた画面上の座標を取得 (シングルクリックと同じ)
+                // 2. ダブルクリックされた画面上の座標を取得
                 const mouseX = event.clientX;
                 const mouseY = event.clientY;
 
-                // 3. Canvas 内のローカル座標を計算 (シングルクリックと同じ)
-                // これで Canvas のどこがダブルクリックされたか分かる！
+                // 3. Canvas 内のローカル座標を計算
                 const canvasX = mouseX - rect.left;
                 const canvasY = mouseY - rect.top;
+                console.log(`>>> Canvas 内ダブルクリック座標: x=${canvasX.toFixed(2)}, y=${canvasY.toFixed(2)} <<<`); // 座標ログ
 
-                // 4. 計算結果をコンソールに出力！
-                console.log(`>>> Double-Clicked inside Canvas at: x=${canvasX.toFixed(2)}, y=${canvasY.toFixed(2)} <<<`);
+                // 4. ★★★ Rust に問い合わせて、クリック座標にあるカードのIDを取得！ ★★★
+                // さっき Rust 側に作った get_entity_id_at(x, y) 関数を呼び出すよ！
+                // この関数は、もしカードがあればそのID (number) を、なければ undefined を返すよ。
+                let clickedEntityId = undefined; // 結果を保存する変数を用意 (最初は undefined)
+                try {
+                    console.log(`  📞 Rust 呼び出し中: gameApp.get_entity_id_at(${canvasX.toFixed(2)}, ${canvasY.toFixed(2)})`);
+                    clickedEntityId = gameApp.get_entity_id_at(canvasX, canvasY);
+                    console.log(`  Rust からの応答 Entity ID: ${clickedEntityId}`); // Rust からの返り値をログに！
+                } catch (error) {
+                    console.error("💥 gameApp.get_entity_id_at 呼び出しエラー:", error);
+                    return; // エラーが起きたら処理中断
+                }
 
-                // --- TODO: 次のステップ！ (ダブルクリック編) ---
-                // ここで、Rust 側の「ダブルクリック処理用の関数」を呼び出すことになるよ！
-                // 例: gameApp.handle_double_click(canvasX, canvasY); みたいな感じかな？
-                // でも、計画書の次のタスクだから、今回はログ出力まで！👍
-                // 実際には、まずこの座標 (canvasX, canvasY) を使って「どのカードがクリックされたか」を
-                // Rust 側に問い合わせて (find_clicked_element を使うとか？)、その結果 (カードの ID) を
-                // gameApp.handle_double_click(entityId) に渡す、みたいな流れになるはず！ちょっと複雑！🤯
+                // 5. ★★★ カードIDが取得できたら、Rustのダブルクリック処理を呼び出す！ ★★★
+                // clickedEntityId が undefined じゃなかったら = カードが見つかったってこと！
+                if (clickedEntityId !== undefined) {
+                    // カードが見つかった場合の処理
+                    console.log(`  ✅ カード発見！ Entity ID: ${clickedEntityId}。Rust のダブルクリックハンドラーを呼び出します...`);
+                    try {
+                        // Rust 側の GameApp::handle_double_click(entity_id) 関数を呼び出す！
+                        // これで、Rust 側で自動移動のロジックが動くはず！ (移動先が見つかればメッセージ送信！)
+                        console.log(`  🚀 Rust 呼び出し中: gameApp.handle_double_click(${clickedEntityId})`);
+                        gameApp.handle_double_click(clickedEntityId);
+                        console.log("  Rust の handle_double_click 関数呼び出し成功！");
+                        // 注意: 画面の更新は、この後サーバーから GameStateUpdate が来て、
+                        //       それを受け取って Rust 側が再描画 (render_game_rust) をすることで行われる想定だよ！
+                        //       だから、ここではJS側で描画処理は呼ばないよ。
+                    } catch (error) {
+                        console.error("💥 gameApp.handle_double_click 呼び出しエラー:", error);
+                        // エラーが起きても処理は続行する（かもしれない）
+                    }
+                } else {
+                    // カードが見つからなかった場合 (スタックか背景をダブルクリックした)
+                    console.log("  🤷 この座標にカードは見つかりませんでした。自動移動のためのダブルクリックは無視します。");
+                }
             });
 
-            console.log("Canvas click listener setup complete! Ready for clicks! ✅🖱️");
-            console.log("Canvas double-click listener setup complete! Ready for double-clicks! ✅🖱️🖱️");
+            console.log("Canvas クリックリスナー設定完了！クリック待機中！ ✅🖱️");
+            console.log("Canvas ダブルクリックリスナー設定完了！ダブルクリック待機中！ ✅🖱️🖱️");
         } // if (canvas) の終わり
 
     } catch (error) {
@@ -167,14 +195,14 @@ function setupEventListeners() {
 
     // 「サーバーに接続」ボタン
     connectButton.addEventListener('click', () => {
-        console.log("🖱️ Connect button clicked");
+        console.log("🖱️ 接続ボタンクリック");
         gameApp.connect(); // Rust 側の connect() を呼び出す！
         // TODO: 接続試行中の表示とか？
     });
 
     // 「ゲームに参加」ボタン
     joinButton.addEventListener('click', () => {
-        console.log("🖱️ Join button clicked");
+        console.log("🖱️ 参加ボタンクリック");
         // とりあえず仮のプレイヤー名で参加！ 本当は入力させるべきだね。
         const playerName = prompt("プレイヤー名を入力してください:", "ギャルゲーマー");
         if (playerName) { // prompt でキャンセルされなかったら
@@ -185,10 +213,10 @@ function setupEventListeners() {
 
     // 「カードを配る」ボタン
     dealButton.addEventListener('click', () => {
-        console.log("🖱️ Deal button clicked");
+        console.log("🖱️ 配るボタンクリック");
         try {
             gameApp.deal_initial_cards(); // Rust 側の deal_initial_cards() を呼び出す！
-            console.log("🃏 Cards dealt on Rust side.");
+            console.log("🃏 Rust 側でカード配布完了。");
             gameApp.render_game_rust();
         } catch (e) {
             console.error("カード配布または描画中にエラー:", e);
@@ -197,10 +225,10 @@ function setupEventListeners() {
 
     // 「状態取得(Console)」ボタン (描画も行うように変更！)
     getStateButton.addEventListener('click', () => {
-        console.log("🖱️ Get State button clicked");
+        console.log("🖱️ 状態取得ボタンクリック");
         try {
             const stateJson = gameApp.get_world_state_json(); // Rust 側のメソッド呼び出し
-            console.log("--- World State (JSON) ---");
+            console.log("--- World 状態 (JSON) ---");
             console.log(JSON.parse(stateJson)); // JSON 文字列をパースしてオブジェクトとして表示
             console.log("-------------------------");
             gameApp.render_game_rust();
@@ -252,7 +280,7 @@ function updateStatusDisplay() {
     try {
         const stateDidChange = gameApp.process_received_messages();
         if (stateDidChange) {
-            console.log("State changed according to Rust, calling Rust render function...");
+            console.log("Rust によると状態が変更されました。Rust の描画関数を呼び出します...");
             // ★修正: renderGame() の代わりに render_game_rust() を呼び出す！★
             gameApp.render_game_rust();
         }
@@ -289,7 +317,7 @@ function renderGame() {
 
         // 3. 状態データ (gameState.cards) を元にカード要素を作成して配置
         if (gameState.cards && Array.isArray(gameState.cards)) {
-            console.log(`  Rendering ${gameState.cards.length} cards...`);
+            console.log(`  カード ${gameState.cards.length} 枚を描画中...`);
             gameState.cards.forEach(cardData => {
                 // カード要素 (div) を作成
                 const cardElement = document.createElement('div');
@@ -338,7 +366,7 @@ function renderGame() {
                 // 作成したカード要素をゲームエリアに追加
                 gameAreaDiv.appendChild(cardElement);
             });
-            console.log("  Card elements added to game area.");
+            console.log("  カード要素をゲームエリアに追加しました。");
         } else {
             console.warn("gameState に cards 配列が含まれていません。");
             gameAreaDiv.innerHTML = '<p>カード情報がありません。</p>';
@@ -353,7 +381,7 @@ function renderGame() {
 
 // --- ★ 新しい関数: カードクリック処理 ★ ---
 function handleCardClick(cardData, cardElement) {
-    console.log(`🖱️ Card clicked! Entity ID: ${cardData.entity_id}`, cardData);
+    console.log(`🖱️ カードクリック！ Entity ID: ${cardData.entity_id}`, cardData);
 
     // TODO: クリックされたカードに応じたゲームロジックを呼び出す
     // 例: gameApp.card_clicked(cardData.entity_id);
@@ -365,16 +393,16 @@ function handleCardClick(cardData, cardElement) {
     });
     // クリックされたカードに selected クラスを追加
     cardElement.classList.add('selected');
-    console.log('  Added .selected class to clicked card.');
+    console.log('  クリックされたカードに .selected クラスを追加しました。');
 }
 
 // --- ★ 新しい関数: カードダブルクリック処理 ★ ---
 function handleCardDoubleClick(cardData, cardElement) {
-    console.log(`🖱️🖱️ Card double-clicked! Entity ID: ${cardData.entity_id}`, cardData);
+    console.log(`🖱️🖱️ カードダブルクリック！ Entity ID: ${cardData.entity_id}`, cardData);
 
     // gameApp が存在するかチェック
     if (!gameApp) {
-        console.error("GameApp is not initialized. Cannot handle double click.");
+        console.error("GameApp が初期化されていません。ダブルクリックを処理できません。");
         return;
     }
 
@@ -382,17 +410,17 @@ function handleCardDoubleClick(cardData, cardElement) {
     if (cardData.is_face_up) {
         try {
             // Rust側の handle_double_click を呼び出す！ Entity ID を渡すよ！
-            console.log(`  Calling gameApp.handle_double_click with entity ID: ${cardData.entity_id}`);
+            console.log(`  gameApp.handle_double_click をエンティティ ID: ${cardData.entity_id} で呼び出し中`);
             gameApp.handle_double_click(cardData.entity_id);
-            console.log("  gameApp.handle_double_click called successfully.");
+            console.log("  gameApp.handle_double_click 呼び出し成功。");
             // 注: Rust側でメッセージが送信された後、サーバーからの GameStateUpdate を待って
             //     renderGame() が呼ばれることで画面が更新されるはず！なので、ここでは描画しない。
         } catch (error) {
-            console.error("Error calling gameApp.handle_double_click:", error);
+            console.error("gameApp.handle_double_click 呼び出し中にエラー:", error);
             // 必要ならユーザーにエラー表示
         }
     } else {
-        console.log("  Card is face down, ignoring double click for auto-move.");
+        console.log("  カードは裏向きなので、自動移動のためのダブルクリックは無視します。");
     }
 }
 
@@ -400,7 +428,7 @@ function handleCardDoubleClick(cardData, cardElement) {
 function handleMouseDown(event, cardData, cardElement) {
     // ドラッグできるのは表向きのカードのみ (今は Stock 以外全部OKにしてみる)
     if (cardData.is_face_up && cardData.stack_type !== 'Stock') {
-        console.log(`🖱️ Drag start detected on card Entity ID: ${cardData.entity_id}`);
+        console.log(`🖱️ カードドラッグ開始検出 Entity ID: ${cardData.entity_id}`);
         event.preventDefault();
         isDragging = true;
         draggedCardElement = cardElement;
@@ -418,7 +446,7 @@ function handleMouseDown(event, cardData, cardElement) {
         // --- ★追加ここまで★ ---
 
     } else {
-        console.log(`Card Entity ID: ${cardData.entity_id} is not draggable (face down or stock).`);
+        console.log(`カード Entity ID: ${cardData.entity_id} はドラッグできません (裏向きまたは山札)。`);
     }
 }
 
@@ -453,7 +481,7 @@ function handleMouseUp(event) {
 
     const currentDraggedEntityId = draggedEntityId; // リスナー削除前にIDを保持
 
-    console.log(`🖱️ Drag end detected on card Entity ID: ${currentDraggedEntityId} at (${event.clientX}, ${event.clientY})`);
+    console.log(`🖱️ カードドラッグ終了検出 Entity ID: ${currentDraggedEntityId} at (${event.clientX}, ${event.clientY})`);
 
     // ドラッグ中の見た目を元に戻す
     draggedCardElement.classList.remove('dragging');
@@ -462,31 +490,31 @@ function handleMouseUp(event) {
     // ★超重要: document に追加したリスナーを削除！★
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
-    console.log("  Removed mousemove and mouseup listeners from document.");
+    console.log("  mousemove と mouseup リスナーを document から削除しました。");
 
     // --- ドロップ位置から移動先スタックを判定 --- ★ 修正箇所
     const targetStack = findDropTargetStack(event.clientX, event.clientY);
     if (targetStack) {
-        console.log("  Drop target identified:", targetStack);
+        console.log("  ドロップターゲット特定:", targetStack);
 
         // --- ★ここから追加: MakeMove メッセージを送信！★ ---
         if (gameApp && currentDraggedEntityId !== null) {
             try {
                 // targetStack オブジェクトを JSON 文字列に変換する必要がある！
                 const targetStackJson = JSON.stringify(targetStack);
-                console.log(`  Calling gameApp.send_make_move with entity ID: ${currentDraggedEntityId}, target: ${targetStackJson}`);
+                console.log(`  gameApp.send_make_move をエンティティ ID: ${currentDraggedEntityId}, ターゲット: ${targetStackJson} で呼び出し中`);
                 gameApp.send_make_move(currentDraggedEntityId, targetStackJson);
-                console.log("  gameApp.send_make_move called successfully.");
+                console.log("  gameApp.send_make_move 呼び出し成功。");
             } catch (error) {
-                console.error("Error calling gameApp.send_make_move:", error);
+                console.error("gameApp.send_make_move 呼び出し中にエラー:", error);
             }
         } else {
-            console.error("Cannot send move: gameApp not ready or draggedEntityId is null.");
+            console.error("移動を送信できません: gameApp が準備できていないか、draggedEntityId が null です。");
         }
         // --- ★追加ここまで★ ---
 
     } else {
-        console.log("  Dropped outside any valid target area.");
+        console.log("  有効なターゲットエリア外にドロップされました。");
         // TODO: カードを元の位置に戻すアニメーションとか？ (今回は renderGame を呼べば状態更新で戻るはず)
         //       即座に見た目を戻したい場合は、元の位置を保存しておいてスタイルを戻す必要あり
         //       今はサーバーからの状態更新を待つ形にする
@@ -498,7 +526,7 @@ function handleMouseUp(event) {
     draggedEntityId = null;
     offsetX = 0;
     offsetY = 0;
-    console.log("  Dragging state reset.");
+    console.log("  ドラッグ状態をリセットしました。");
 }
 
 // --- ★ 新しい関数: ドロップ位置から移動先スタックを判定するロジック ★ ---
@@ -519,7 +547,7 @@ function findDropTargetStack(dropX, dropY) {
         const foundationY = 10;
         if (dropAreaX >= foundationX && dropAreaX <= foundationX + cardWidth &&
             dropAreaY >= foundationY && dropAreaY <= foundationY + cardHeight) {
-            console.log(`Drop potentially over Foundation area ${i}`);
+            console.log(`ドロップ候補: 組札エリア ${i}`);
             // StackType オブジェクトを返す (Rust 側の形式に合わせる)
             return { Foundation: i };
         }
@@ -532,7 +560,7 @@ function findDropTargetStack(dropX, dropY) {
         // 判定エリア: とりあえず列の開始位置のカード1枚分の高さにする
         if (dropAreaX >= tableauX && dropAreaX <= tableauX + cardWidth &&
             dropAreaY >= tableauY && dropAreaY <= tableauY + cardHeight) {
-            console.log(`Drop potentially over Tableau area ${i}`);
+            console.log(`ドロップ候補: 場札エリア ${i}`);
             // StackType オブジェクトを返す
             return { Tableau: i };
         }
