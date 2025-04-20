@@ -14,7 +14,7 @@ use crate::logic::auto_move::find_automatic_foundation_move;
 use crate::protocol::{self, ClientMessage}; // protocol モジュールと ClientMessage をインポート
 use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
 use serde_json;
-use itertools::Itertools; // グループ化とかで便利なイテレータ操作を追加！
+// use itertools::Itertools; // ★ max_by を使うので不要になった ★
 // use crate::app::AppEvent; // ★ AppEvent が見つからないため一旦コメントアウト
 // use crate::components::dragging_info::DraggingInfo; // 現状未使用
 // use web_sys::MouseEvent; // 現状未使用
