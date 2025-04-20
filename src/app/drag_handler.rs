@@ -108,8 +108,6 @@ pub fn handle_drag_end(
     entity_usize: usize,
     end_x: f32,
     end_y: f32,
-    // ★削除: Closure Arc は handle_drag_end では直接使わない ★
-    // ★ 引数リストからも削除されていることを確認 ★
 ) {
     let entity = Entity(entity_usize);
     log(&format!("handle_drag_end logic started for entity: {:?}, end: ({}, {})", entity, end_x, end_y));
@@ -152,7 +150,7 @@ pub fn handle_drag_end(
 
     // --- 3. ドロップ先の要素を特定 ---
     log(&format!("  - Finding element at drop coordinates: ({}, {})", end_x, end_y));
-    let target_element = event_handler::find_clicked_element(&world, end_x, end_y);
+    let target_element = event_handler::find_clicked_element(&world, end_x, end_y, Some(entity));
     log(&format!("  - Found target element: {:?}", target_element));
 
     // --- 4. ドロップ先に基づいて処理を分岐 ---

@@ -23,9 +23,11 @@ pub const STACK_X_OFFSET: f32 = 100.0; // 各スタック間の X 方向の間�
 pub const WASTE_POS_X: f32 = STOCK_POS_X + STACK_X_OFFSET; // Stock の右隣
 pub const WASTE_POS_Y: f32 = STOCK_POS_Y; // Stock と同じ高さ
 
-pub const FOUNDATION_START_X: f32 = WASTE_POS_X + STACK_X_OFFSET; // Waste の右隣から Foundation 開始
-pub const FOUNDATION_START_Y: f32 = STOCK_POS_Y; // Stock/Waste と同じ高さに揃える
-pub const FOUNDATION_X_OFFSET: f32 = STACK_X_OFFSET; // 上で定義した共通の間隔を使う
+// pub const FOUNDATION_START_X: f32 = WASTE_POS_X + STACK_X_OFFSET; // Waste の右隣から Foundation 開始 (★古い定義★)
+pub const FOUNDATION_START_X: f32 = 500.0; // ★ 修正: もっと右に配置 ★
+pub const FOUNDATION_START_Y: f32 = STOCK_POS_Y; // Stock/Waste と同じ高さに揃える (★変更なし★)
+// pub const FOUNDATION_X_OFFSET: f32 = STACK_X_OFFSET; // 上で定義した共通の間隔を使う (★古い定義★)
+pub const FOUNDATION_X_OFFSET: f32 = 90.0; // ★ 修正: 少し狭める ★
 
 // ★修正: Tableau の開始位置も調整 (Stock/Waste/Foundation とのバランス)★
 pub const TABLEAU_START_X: f32 = STOCK_POS_X; // Stock と同じ X 座標から開始 (7列配置する)

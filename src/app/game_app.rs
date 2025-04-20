@@ -445,7 +445,7 @@ impl GameApp {
             }
         };
 
-        let clicked_element = event_handler::find_clicked_element(&*world_guard, x, y);
+        let clicked_element = event_handler::find_clicked_element(&*world_guard, x, y, None);
         // log(&format!("  >>> Click target identified as: {:?}", clicked_element));
 
         match clicked_element {
@@ -500,7 +500,7 @@ impl GameApp {
             }
         };
 
-        match event_handler::find_topmost_clicked_card(&world, x, y) {
+        match event_handler::find_topmost_clicked_card(&world, x, y, None) {
             Some(ClickTarget::Card(entity)) => {
                 // log(&format!("get_entity_id_at: 座標 ({}, {}) でカードエンティティ {:?} を発見。", x, y, entity));
                 Some(entity.0)

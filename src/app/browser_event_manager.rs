@@ -67,22 +67,25 @@ pub(crate) fn attach_drag_listeners(
         let network_manager_arc_clone = Arc::clone(&network_manager_arc);
         let _window_mousemove_closure_arc_clone = Arc::clone(&window_mousemove_closure_arc); // Need to detach this listener
         let _window_mouseup_closure_arc_clone = Arc::clone(&window_mouseup_closure_arc);   // Need to detach this listener
+        let canvas_clone = canvas.clone(); // ★ canvas も clone する ★
 
         let mouseup_closure = Closure::wrap(Box::new(move |event: Event| {
             log(&format!("MouseUp triggered for entity {}", entity_id));
             // Cast the generic Event to a MouseEvent
             if let Ok(mouse_event) = event.dyn_into::<MouseEvent>() {
-                let end_x = mouse_event.client_x() as f32;
-                let end_y = mouse_event.client_y() as f32;
+                // ★★★ 座標変換ロジックを追加 ★★★
+                let rect = canvas_clone.get_bounding_client_rect();
+                let end_x = mouse_event.client_x() as f32 - rect.left() as f32;
+                let end_y = mouse_event.client_y() as f32 - rect.top() as f32;
+                // ★★★ ここまで ★★★
 
                 // --- Call handle_drag_end logic ---
-                // This logic now resides directly in drag_handler
                 drag_handler::handle_drag_end(
                     &world_arc_clone,
                     &network_manager_arc_clone,
                     entity_id,
-                    end_x,
-                    end_y,
+                    end_x, // ★ 変換後の座標を使う！ ★
+                    end_y, // ★ 変換後の座標を使う！ ★
                 );
 
                 // ★ Detachment is now called from within handle_drag_end or here? ★
