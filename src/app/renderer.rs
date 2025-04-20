@@ -63,7 +63,7 @@ pub fn render_game_rust(
     // log("  Drawing stack placeholders...");
     context.begin_path();
     context.rect(STOCK_POS_X as f64, STOCK_POS_Y as f64, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT);
-    context.set_stroke_style(&JsValue::from_str(COLOR_PLACEHOLDER_BORDER));
+    context.set_stroke_style_str(COLOR_PLACEHOLDER_BORDER);
     context.set_line_width(1.0);
     context.stroke();
     context.set_line_dash(&JsValue::from(js_sys::Array::new())).unwrap();
@@ -201,9 +201,9 @@ pub fn render_game_rust(
             // ... (face-up card drawing logic - unchanged, uses pos and card) ...
             context.save();
             draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
-            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BG));
+            context.set_fill_style_str(COLOR_CARD_BG);
             context.fill();
-            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.set_stroke_style_str(COLOR_CARD_BORDER);
             context.stroke();
             context.restore();
 
@@ -214,7 +214,7 @@ pub fn render_game_rust(
             let rank_char = get_rank_text(card.rank);
 
             context.save();
-            context.set_fill_style(&JsValue::from_str(text_color));
+            context.set_fill_style_str(text_color);
             context.set_font(&format!("bold {}px {}", FONT_SIZE_RANK, FONT_FAMILY));
             context.fill_text(&format!("{} {}", rank_char, suit_char), card_x + RANK_OFFSET_X, card_y + RANK_OFFSET_Y)?;
             context.restore();
@@ -222,9 +222,9 @@ pub fn render_game_rust(
             // ... (face-down card drawing logic - unchanged, uses pos and card) ...
             context.save();
             draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
-            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BACK));
+            context.set_fill_style_str(COLOR_CARD_BACK);
             context.fill();
-            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.set_stroke_style_str(COLOR_CARD_BORDER);
             context.stroke();
             context.restore();
         }
@@ -240,9 +240,9 @@ pub fn render_game_rust(
         if card.is_face_up {
             context.save();
             draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
-            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BG));
+            context.set_fill_style_str(COLOR_CARD_BG);
             context.fill();
-            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.set_stroke_style_str(COLOR_CARD_BORDER);
             context.stroke();
             let (text_color, suit_char) = match card.suit {
                 Suit::Heart | Suit::Diamond => (COLOR_TEXT_RED, get_suit_text(card.suit)),
@@ -250,16 +250,16 @@ pub fn render_game_rust(
             };
             let rank_char = get_rank_text(card.rank);
             context.save();
-            context.set_fill_style(&JsValue::from_str(text_color));
+            context.set_fill_style_str(text_color);
             context.set_font(&format!("bold {}px {}", FONT_SIZE_RANK, FONT_FAMILY));
             context.fill_text(&format!("{} {}", rank_char, suit_char), card_x + RANK_OFFSET_X, card_y + RANK_OFFSET_Y)?; 
             context.restore();
         } else {
             context.save();
             draw_rounded_rect(context, card_x, card_y, RENDER_CARD_WIDTH, RENDER_CARD_HEIGHT, RENDER_CARD_CORNER_RADIUS)?;
-            context.set_fill_style(&JsValue::from_str(COLOR_CARD_BACK));
+            context.set_fill_style_str(COLOR_CARD_BACK);
             context.fill();
-            context.set_stroke_style(&JsValue::from_str(COLOR_CARD_BORDER));
+            context.set_stroke_style_str(COLOR_CARD_BORDER);
             context.stroke();
             context.restore();
         }
