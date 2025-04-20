@@ -1,9 +1,9 @@
-// src/system.rs
+// src/ecs/system.rs
 
 // これまで作った World を使うからインポートするよ。
-use crate::world::World;
-use std::collections::HashMap;
-use crate::entity::Entity;
+use crate::ecs::world::World;
+// use std::collections::HashMap; // テスト内でのみ使用するため、ここでは不要
+// use crate::ecs::entity::Entity; // テスト内でのみ使用するため、ここでは不要
 
 /// System（システム）トレイトだよ！
 ///
@@ -39,9 +39,9 @@ pub trait System {
 #[cfg(test)]
 mod tests {
     use super::*; // 親モジュールの System トレイトを使う
-    use crate::component::Component; // テスト用にダミーコンポーネントを作る
-    use crate::world::World; // World を使う
-    use crate::entity::Entity; // ★★★ Entity をインポート！ ★★★
+    use crate::ecs::component::Component; // テスト用にダミーコンポーネントを作る
+    use crate::ecs::world::World; // World を使う
+    use crate::ecs::entity::Entity; // ★★★ Entity をインポート！ ★★★
     use std::collections::HashMap; // HashMap も使う
 
     // --- テスト用のダミーコンポーネント ---

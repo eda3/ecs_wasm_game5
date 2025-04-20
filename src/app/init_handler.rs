@@ -3,11 +3,12 @@
 
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
-use crate::world::World;
+// use crate::ecs::entity::Entity; // このファイル内では直接使われていない
+use crate::ecs::world::World;
 use crate::network::{NetworkManager, ConnectionStatus};
 use crate::systems::deal_system::DealInitialCardsSystem;
 use crate::protocol::{GameStateData, ClientMessage, CardData, PositionData, ServerMessage};
-use crate::components::{self, Card, StackInfo, Position, StackType};
+use crate::components::{self, Card, StackInfo, Position, /*StackType*/}; // StackType は直接使われていない
 use crate::{log, error}; // log と error マクロを使う
 use crate::app::network_handler; // send_serialized_message を使うために必要
 use wasm_bindgen::JsValue;

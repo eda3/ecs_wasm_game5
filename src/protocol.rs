@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 
 // ゲーム内の型もメッセージで使うからインポートしておくね！
 // (TODO: もしこれらの型が Serialize/Deserialize を実装してなかったら、後で追加する必要があるよ！)
-use crate::entity::Entity; // エンティティID (どのカードかを示すためとか)
+use crate::ecs::entity::Entity; // エンティティID (どのカードかを示すためとか)
 use crate::components::card::{Suit, Rank}; // カードのスートやランク
 // ★修正: StackType を pub use する！★
 pub use crate::components::stack::StackType; // スタックの種類 (場札、組札、山札など)

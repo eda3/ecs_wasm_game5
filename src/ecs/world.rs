@@ -1,4 +1,4 @@
-// src/world.rs
+// src/ecs/world.rs
 
 // === Rust 標準ライブラリからのインポート ===
 // Any: 実行時に型情報を扱うためのトレイト。コンポーネントストレージを型に関係なく保持するために使う。
@@ -11,9 +11,9 @@ use std::collections::HashSet;
 
 // === このクレート (プロジェクト) 内の他のモジュールからのインポート ===
 // Entity: エンティティを表す単純な構造体 (通常はIDをラップしたもの)。
-use crate::entity::Entity;
+use crate::ecs::entity::Entity;
 // Component: 全てのコンポーネントが実装すべきマーカートレイト (中身は空でもOK)。ジェネリクスでコンポーネント型を制約するのに使う。
-use crate::component::Component;
+use crate::ecs::component::Component;
 
 /// コンポーネントストレージとその操作をまとめた内部的な構造体だよ！✨
 /// これを使うことで、`World` の `component_stores` で型情報を隠蔽しつつも、

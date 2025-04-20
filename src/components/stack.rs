@@ -31,7 +31,7 @@ pub enum StackType {
 /// カードエンティティにこれを持たせることで、そのカードがどこにあるか、
 /// そのスタックの中で何番目か、などを管理するよ。
 /// Component トレイトを実装して、ECS で使えるようにする。
-use crate::component::Component;
+use crate::ecs::component::Component;
 
 #[derive(Debug, Clone)] // デバッグ表示とクローンができるように
 pub struct StackInfo {

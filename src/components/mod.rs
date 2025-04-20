@@ -16,6 +16,9 @@ pub use player::Player;
 pub use position::Position;
 pub use stack::{StackInfo, StackType};
 pub use dragging_info::DraggingInfo; // ★追加: DraggingInfo も use 宣言！
+// ★追加: cell と player_turn も必要なら pub use する
+// pub use cell::{Cell, CellState};
+// pub use player_turn::PlayerTurn;
 
 // 次に game_state.rs を作ったら、ここに `pub mod game_state;` を追加する感じ！
 // 他のコンポーネントファイルも同様に追加していくよ。整理整頓！🧹✨ 

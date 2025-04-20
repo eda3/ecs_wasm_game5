@@ -3,9 +3,9 @@
 // serde を使う宣言！カード情報をネットワークで送ったり保存したりする時に使うかも！
 use serde::{Serialize, Deserialize};
 // Component トレイトを使う宣言！このファイルで作る構造体がコンポーネントであることを示すため！
-use crate::component::Component; // `crate::` はプロジェクトのルートから、って意味ね！
+use crate::ecs::component::Component; // `crate::` はプロジェクトのルートから、って意味ね！
 use wasm_bindgen::prelude::*;
-use rand::{seq::SliceRandom, thread_rng};
+// use rand::{seq::SliceRandom, thread_rng}; // logic/deck.rs に移動したため不要
 
 /// カードのスート（マーク）を表す列挙型だよ！❤️♦️♣️♠️
 ///

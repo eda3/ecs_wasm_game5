@@ -15,10 +15,7 @@ use wasm_bindgen::prelude::*;
 // use std::collections::VecDeque; // game_app.rs に移動
 
 // 自分で作ったモジュールたち！ これでコードを整理してるんだ。
-pub mod entity;
-pub mod component;
-pub mod world;
-pub mod system;
+pub mod ecs;
 pub mod components;
 pub mod systems;
 pub mod network;

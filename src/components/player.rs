@@ -3,7 +3,7 @@
 // serde を使う宣言！プレイヤー情報をネットワークで送受信するかも！
 use serde::{Serialize, Deserialize};
 // Component トレイトを使う宣言！Player がコンポーネントであることを示す！
-use crate::component::Component;
+use crate::ecs::component::Component;
 
 /// プレイヤーを表すコンポーネントだよ！👤
 ///
@@ -38,7 +38,7 @@ impl Component for Player {}
 #[cfg(test)]
 mod tests {
     use super::*; // Player を使う
-    use crate::component::Component; // Component トレイト
+    use crate::ecs::component::Component; // Component トレイト
 
     #[test]
     fn create_player_component() {

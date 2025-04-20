@@ -1,9 +1,17 @@
-use crate::{ // 必要なモジュールや型をインポート
-    components::{card::{Card, Suit, Rank}, position::Position, game_state::{GameState, GameStatus}, stack::{StackInfo, StackType}},
+use crate::components::{ // components はそのまま
+    card::{Card, Suit, Rank},
+    position::Position,
+    game_state::{GameState, GameStatus},
+    stack::{StackInfo, StackType}
+};
+use crate::ecs::{ // ★修正: crate:: を crate::ecs:: に変更！
     entity::Entity,
     system::System,
     world::World,
 };
+// use crate::components::dragging_info::DraggingInfo; // 未使用
+// use crate::logic::rules; // 未使用 (check_move_validity 内のロジックで直接使われる想定？)
+// use crate::log; // 未使用
 
 // --- StackType Enum (移動元・移動先の種類を示す) ---
 // TODO: この enum をどこか適切な場所 (e.g., components/mod.rs や components/stack.rs?) に定義する

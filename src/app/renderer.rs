@@ -2,9 +2,9 @@
 //! GameApp の描画関連ロジック。
 
 use std::sync::{Arc, Mutex};
-use crate::world::World;
+use crate::ecs::world::World;
 use crate::components::{Position, Card, DraggingInfo, StackInfo, Suit, Rank};
-use crate::entity::Entity;
+use crate::ecs::entity::Entity;
 use crate::{log}; // log マクロを使う
 use wasm_bindgen::JsValue;
 use web_sys::{HtmlCanvasElement, CanvasRenderingContext2d};

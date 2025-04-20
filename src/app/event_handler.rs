@@ -2,15 +2,21 @@
 //! ユーザー入力やUIイベントに関連する GameApp のロジック。
 
 use std::sync::{Arc, Mutex};
-use crate::world::World;
+use crate::ecs::world::World;
 use crate::network::NetworkManager;
-use crate::entity::Entity;
+use crate::ecs::entity::Entity;
 use crate::components::card::Card;
-use crate::components::stack::StackType;
+// use crate::components::stack::StackType; // 未使用
 use crate::logic::auto_move::find_automatic_foundation_move;
 use crate::protocol::{self, ClientMessage}; // protocol モジュールと ClientMessage をインポート
 use crate::{log, error}; // log と error マクロをインポート (lib.rs から)
 use serde_json;
+// use crate::app::AppEvent; // ★ AppEvent が見つからないため一旦コメントアウト
+// use crate::components::position::Position; // 現状未使用
+// use crate::components::dragging_info::DraggingInfo; // 現状未使用
+// use web_sys::MouseEvent; // 現状未使用
+// use wasm_bindgen::JsValue; // 現状未使用
+// use web_sys::console; // 現状未使用
 
 /// ダブルクリック時の実際のロジック (lib.rs の GameApp::handle_double_click_logic から移動)
 pub fn handle_double_click_logic(

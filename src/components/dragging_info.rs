@@ -1,8 +1,8 @@
 // src/components/dragging_info.rs
 
 use serde::{Deserialize, Serialize};
-use crate::entity::Entity;
-use crate::component::Component; // Component トレイトを使うためにインポート
+use crate::ecs::entity::Entity;
+use crate::ecs::component::Component; // Component トレイトを使うためにインポート
 
 /// ドラッグ中のカードに関する情報を表すコンポーネントだよ！🖱️➡️🃏
 /// これは内部的な状態管理に使うもので、Wasm 公開は不要かも？ (一旦 #[wasm_bindgen] は付けない)

@@ -7,9 +7,12 @@
 use crate::components::card::{Card, Suit, Rank}; // ★修正: Color を削除！ (このファイル内で CardColor を定義してるから)
 use crate::components::stack::{StackType, StackInfo}; // components の StackInfo, StackType を使う！
 // use crate::world::World;                        // ゲーム世界の全体像 <-- これは使わない！
-use crate::entity::Entity;                      // エンティティID (これは crate::entity のもの)
-use crate::log;
-use crate::world::World; // 自作 World を使うため
+use crate::ecs::entity::Entity; // 自作 World を使うため
+use crate::ecs::world::World; // 自作 World を使うため
+// use crate::components::cell::{Cell, CellState}; // ★削除: cell.rs を削除したため不要
+// use crate::components::player_turn::PlayerTurn; // ★削除: player_turn.rs を削除したため不要
+use wasm_bindgen::JsValue; // ★ JsValue を使うために追加
+use web_sys::console;      // ★ console を使うために追加
 // use hecs::{World as HecsWorld, Entity as HecsEntity}; // <-- これを削除！
 
 // TODO: 必要に応じて他のコンポーネントや型もインポートする！
@@ -61,7 +64,7 @@ pub fn can_move_to_foundation(
         Some(card) => card,
         // カードが見つからなかった… 移動元が不明なので false を返す。
         None => {
-            log(&format!("[Rules Error] 移動元エンティティ {:?} に Card コンポーネントが見つかりません！", card_to_move_entity));
+            console::log_1(&JsValue::from_str(&format!("[Rules Error] 移動元エンティティ {:?} に Card コンポーネントが見つかりません！", card_to_move_entity)));
             return false;
         }
     };
@@ -76,7 +79,7 @@ pub fn can_move_to_foundation(
         // 無効なインデックス (0-3 以外) が指定されたなどでスートが見つからなかった…
         // この組札には置けないので false を返す。
         None => {
-            log(&format!("[Rules Error] 無効な Foundation インデックス {} が指定されました！", target_foundation_index));
+            console::log_1(&JsValue::from_str(&format!("[Rules Error] 無効な Foundation インデックス {} が指定されました！", target_foundation_index)));
             return false;
         }
     };
@@ -113,7 +116,7 @@ pub fn can_move_to_foundation(
                 // カードコンポーネントが見つからなかった…😱
                 // ルール判断できないので false を返す。
                 None => {
-                    log(&format!("[Rules Error] 移動先トップエンティティ {:?} に Card コンポーネントが見つかりません！", target_top_card_entity));
+                    console::log_1(&JsValue::from_str(&format!("[Rules Error] 移動先トップエンティティ {:?} に Card コンポーネントが見つかりません！", target_top_card_entity)));
                     return false;
                 }
             };
@@ -158,7 +161,7 @@ pub fn can_move_to_tableau(
         // カードコンポーネントが見つからなかった…🥺
         // 移動元のカード情報がないとルールを判断できないので、即座に false (移動不可) を返すよ。
         None => {
-            log(&format!("[Rules Error] 移動元エンティティ {:?} に Card コンポーネントが見つかりません！", card_to_move_entity));
+            console::log_1(&JsValue::from_str(&format!("[Rules Error] 移動元エンティティ {:?} に Card コンポーネントが見つかりません！", card_to_move_entity)));
             return false;
         }
     };
@@ -184,7 +187,7 @@ pub fn can_move_to_tableau(
                 // カードコンポーネントが見つからなかった…😱
                 // 移動先のカード情報がないとルールを判断できないので、false (移動不可) を返すよ。
                 None => {
-                    log(&format!("[Rules Error] 移動先トップエンティティ {:?} に Card コンポーネントが見つかりません！", target_top_card_entity));
+                    console::log_1(&JsValue::from_str(&format!("[Rules Error] 移動先トップエンティティ {:?} に Card コンポーネントが見つかりません！", target_top_card_entity)));
                     return false;
                 }
             };

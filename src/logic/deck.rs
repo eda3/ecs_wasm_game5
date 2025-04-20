@@ -1,7 +1,8 @@
 // src/logic/deck.rs
 
-use crate::components::card::{Card, Rank, Suit, ALL_RANKS, ALL_SUITS};
-use rand::{seq::SliceRandom, thread_rng};
+use crate::components::card::{Card, /*Rank, Suit,*/ ALL_RANKS, ALL_SUITS};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 /// 標準的な52枚のカードデッキ（ソリティア用）を生成する関数だよ！🃏
 ///

@@ -2,17 +2,20 @@
 //! GameApp の状態更新（主にサーバーからの情報反映）に関するロジック。
 
 use std::sync::{Arc, Mutex}; // Arc と Mutex を使う
-use crate::world::World;
-use crate::protocol::{self, GameStateData}; // protocol モジュールと GameStateData をインポート
-use crate::entity::Entity;
+// use std::collections::VecDeque; // 現状未使用
+use crate::ecs::world::World;
+use crate::ecs::entity::Entity;
+// use crate::network::{NetworkManager, ConnectionStatus}; // 現状未使用
+use crate::protocol::{/*self,*/ GameStateData}; // protocol モジュールと GameStateData をインポート (selfは不要)
 use crate::components::{
-    card::Card,
+    card::{Card, /*Rank, Suit*/}, // Rank, Suit は未使用
     position::Position,
-    stack::{StackInfo, StackType},
+    stack::{StackInfo, /*StackType*/}, // StackTypeは apply_card_data 内で直接は使わない
     player::Player, // Player コンポーネントも使う
     dragging_info::DraggingInfo, // DraggingInfo もクリア対象
 };
-use crate::log; // log マクロを使う
+// use crate::protocol::{ServerMessage, ClientMessage, PlayerId, PlayerData, CardData, PositionData}; // GameStateData 以外は未使用
+use crate::{log, /*error*/}; // error は未使用
 
 /// サーバーから受け取った GameStateData を World に反映させる内部関数。
 /// (lib.rs の GameApp::apply_game_state から移動)

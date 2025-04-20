@@ -1,14 +1,16 @@
 // src/systems/win_condition_system.rs
-use crate::{
-    components::{
-        card::Card,
-        stack::{StackInfo, StackType},
-        game_state::{GameState, GameStatus},
-    },
+use crate::components::{
+    card::Card,
+    stack::{StackInfo, StackType},
+    game_state::{GameState, GameStatus},
+};
+use crate::ecs::{
     entity::Entity,
     system::System,
     world::World,
 };
+// use crate::logic::rules::check_win_condition; // 未使用 (WinConditionSystem内の同名メソッドを使うため)
+// use crate::log; // 未使用
 // TODO: 将来的に StackType など、カードの場所を示すコンポーネントが必要になる
 // use crate::components::stack::StackType;
 

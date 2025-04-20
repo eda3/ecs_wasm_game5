@@ -9,10 +9,10 @@ use wasm_bindgen::closure::Closure;
 use web_sys::{Event, HtmlCanvasElement, CanvasRenderingContext2d};
 use js_sys::Error;
 
-use crate::world::World;
-use crate::network::{NetworkManager, ConnectionStatus};
+use crate::ecs::world::World;
+use crate::network::{NetworkManager, /*ConnectionStatus*/};
 use crate::protocol::{
-    ServerMessage, PlayerId, GameStateData, PlayerData, CardData, PositionData, StackType
+    ServerMessage, PlayerId, GameStateData, PlayerData, CardData, PositionData, /*StackType*/
 };
 use crate::systems::deal_system::DealInitialCardsSystem;
 use crate::components::dragging_info::DraggingInfo;
@@ -20,7 +20,13 @@ use crate::components::card::Card;
 use crate::components::stack::StackInfo;
 use crate::components::position::Position;
 use crate::components::player::Player;
-use crate::entity::Entity;
+// use crate::ecs::entity::Entity; // 未使用
+// use crate::app::init_handler; // 未使用 (super:: で直接呼ぶため)
+// use crate::app::network_handler; // 未使用 (super:: で直接呼ぶため)
+// use crate::app::event_handler; // 未使用 (super:: で直接呼ぶため)
+// use crate::app::state_handler; // 未使用 (super:: で直接呼ぶため)
+// use crate::app::renderer; // 未使用 (super:: で直接呼ぶため)
+// use crate::app::app_state::AppState; // ★ app_state が見つからないため一旦コメントアウト
 
 // --- ゲーム全体のアプリケーション状態を管理する構造体 ---
 #[wasm_bindgen]

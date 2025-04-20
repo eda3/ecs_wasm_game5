@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use crate::network::NetworkManager;
 use crate::protocol::{ClientMessage, ServerMessage};
-use crate::entity::Entity;
+use crate::ecs::entity::Entity;
 use crate::components::stack::StackType;
-use crate::world::World; // process_received_messages が state_handler を呼ぶために必要
+use crate::ecs::world::World; // process_received_messages が state_handler を呼ぶために必要
 use crate::protocol::PlayerId;
 use crate::app::state_handler; // apply_game_state を呼び出すために必要
 use crate::{log, error}; // log と error マクロを使う

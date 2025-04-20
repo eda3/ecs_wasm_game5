@@ -5,20 +5,20 @@
 // `crate::` は、このプロジェクト (クレート) の一番上の階層から見てるって意味だよ！
 
 // World: エンティティやコンポーネントを管理する、アタシたちのゲーム世界の"神様"みたいな存在！🌍
-use crate::world::World;
+use crate::ecs::world::World;
 // components モジュールの中の card, position, stack サブモジュールにあるものをまとめて使う宣言！
 // Card: カードのスートやランク、表か裏かの情報を持つデータ部品。
 // Position: エンティティの画面上の座標 (x, y) を持つデータ部品。
 // StackInfo: カードがどの場所 (山札？場札？) の何番目にあるかの情報を持つデータ部品。
 // StackType: `StackInfo` の中で使う、場所の種類 (山札、場札、組札、捨て札) を表すマーカー。
-use crate::components::{card::{self, Card, Suit, Rank}, position::Position, stack::{StackInfo, StackType}};
+use crate::components::{card::{/*self, */Card, /*Suit, Rank*/}, position::Position, stack::{StackInfo, StackType}}; // self, Suit, Rank は削除 (Card は使ってる)
 // Entity: ゲーム世界のモノ (カードとかプレイヤーとか) を識別するためのユニークなID。
-use crate::entity::Entity;
+use crate::ecs::entity::Entity;
 // rand クレート (外部ライブラリ) から、ランダム系の機能をもらうよ！
 // SliceRandom: 配列 (スライス) の要素をシャッフルする機能 (`shuffle` メソッド) を提供してくれる。
-use rand::seq::SliceRandom;
+// use rand::seq::SliceRandom; // logic/deck.rs の shuffle_deck を使うため不要
 // thread_rng: OSが提供する、暗号学的に安全な乱数生成器を使うための関数。
-use rand::thread_rng;
+// use rand::thread_rng; // logic/deck.rs の shuffle_deck を使うため不要
 // config::layout モジュールから、カード配置の座標とかオフセットの定数をもらうよ！レイアウト調整はこっちでやるのがスマート！✨
 use crate::config::layout::*;
 // logic::deck モジュールから、デッキ作成とシャッフルのヘルパー関数をもらうよ！ロジックは別ファイルに分けるのがお作法！👍

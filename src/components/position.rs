@@ -3,7 +3,7 @@
 // serde を使う宣言！位置情報をネットワークで送ったり保存したりするかも！
 use serde::{Serialize, Deserialize};
 // Component トレイトを使う宣言！Position がコンポーネントであることを示す！
-use crate::component::Component;
+use crate::ecs::component::Component;
 
 /// 2D空間での位置を表すコンポーネントだよ！ (x, y) 座標を持つよ。📍
 ///
@@ -32,7 +32,7 @@ impl Component for Position {}
 #[cfg(test)]
 mod tests {
     use super::*; // 上で定義した Position を使う
-    use crate::component::Component; // Component トレイトもテストで使う
+    use crate::ecs::component::Component; // Component トレイトもテストで使う
 
     #[test]
     fn create_position_component() {

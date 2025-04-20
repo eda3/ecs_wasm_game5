@@ -3,11 +3,12 @@
 //! どのカードがどこに自動で移動できるか、とかを判断するんだ。
 
 // --- 必要なものをインポート ---
-use crate::components::card::{Card, Suit, Rank}; // components の Card, Suit, Rank を使う
-use crate::components::stack::{StackType, StackInfo}; // components の StackType, StackInfo を使う
-use crate::entity::Entity; // Entity ID (crate::entity のもの)
-use crate::log;           // ログ出力用 (TODO: logマクロが使えるか確認)
-use crate::world::World; // 自作 World を使うため
+// use crate::components::card::{Card, Suit, Rank}; // 関数内で Card, Suit, Rank は直接使わなくなったため不要
+use crate::components::stack::{StackType, /*StackInfo*/}; // StackInfo は使わないので削除
+use crate::ecs::entity::Entity; // components の Entity を使う
+use crate::ecs::world::World; // 自作 World を使うため
+use wasm_bindgen::JsValue; // ★ JsValue を使うために追加
+use web_sys::console;      // ★ console を使うために追加
 // use crate::rules::can_move_to_foundation; // ⛔️ 古いパス！
 // use crate::logic::rules::can_move_to_foundation; // ✨ 新しいパスに修正！ rules モジュールは logic の下にお引越ししたよ！
 // ↑ rules モジュールの関数を直接使うので、use文を追加
@@ -35,7 +36,7 @@ pub fn find_automatic_foundation_move(
     card_to_move_entity: Entity // 引数を &Card から Entity に変更！
 ) -> Option<StackType> {
     // どのカードをチェックしているか、Entity ID をログに出力するよ。
-    log(&format!("[AutoMove] Finding automatic foundation move for Entity {:?}...", card_to_move_entity));
+    console::log_1(&JsValue::from_str(&format!("[AutoMove] Finding automatic foundation move for Entity {:?}...", card_to_move_entity)));
 
     // 4つの Foundation (インデックス 0 から 3 まで) を順番にチェックするループだよ。
     for i in 0..4u8 { // u8 型の 0 から 3 までループする。
@@ -52,7 +53,7 @@ pub fn find_automatic_foundation_move(
         if rules::can_move_to_foundation(world, card_to_move_entity, i) {
             // 移動可能な Foundation が見つかった！🎉
             // どの Foundation に移動できるかログに出力する。
-            log(&format!("  Found valid foundation [{}] for Entity {:?}.", i, card_to_move_entity));
+            console::log_1(&JsValue::from_str(&format!("  Found valid foundation [{}] for Entity {:?}.", i, card_to_move_entity)));
             // 移動先の Foundation の StackType (例: StackType::Foundation(0)) を
             // Option::Some で包んで返す。これで関数は終了するよ。
             return Some(StackType::Foundation(i));
@@ -62,7 +63,7 @@ pub fn find_automatic_foundation_move(
     }
 
     // ループが最後まで終わっても、移動可能な Foundation が見つからなかった場合。
-    log(&format!("  No suitable foundation found for Entity {:?}.", card_to_move_entity));
+    console::log_1(&JsValue::from_str(&format!("  No suitable foundation found for Entity {:?}.", card_to_move_entity)));
     // Option::None を返して、移動先がなかったことを示すよ。
     None
 }
@@ -72,11 +73,11 @@ pub fn find_automatic_foundation_move(
 mod tests {
     use super::*; // このモジュール内の要素 (find_automatic_foundation_move など) を使う
     use crate::world::World; // 自作World
-    use crate::components::card::{Card, Suit, Rank}; // Card関連
-    use crate::components::stack::{StackType, StackInfo}; // Stack関連
+    use crate::components::card::{Card, Suit, Rank}; // Card関連 (テストでは使う！)
+    use crate::components::stack::{StackType, StackInfo}; // Stack関連 (テストでは StackInfo も使う！)
     use crate::entity::Entity; // Entity を使う
     use crate::logic::rules; // rules モジュールも使う (テストデータ作成などで)
-    use crate::log; // log マクロを使うため (wasm環境外のテストではprintln!の方が良いかも)
+    // use crate::log; // log マクロは使わないので削除！
 
     // ヘルパー: テスト用の World に Foundation カードを追加する (仮)
     fn add_card_to_world(world: &mut World, suit: Suit, rank: Rank, stack_type: StackType, pos: u8) -> Entity {
@@ -105,13 +106,13 @@ mod tests {
         let three_hearts_entity = add_card_to_world(&mut world, Suit::Heart, Rank::Three, StackType::Tableau(1), 0);
 
         // --- シナリオ 1: 全 Foundation が空 ---
-        log("Scenario 1: All foundations empty");
+        println!("Scenario 1: All foundations empty");
         assert_eq!(find_automatic_foundation_move(&world, ace_hearts_entity), Some(StackType::Foundation(0)), "Scenario 1: Ace of Hearts entity should move to empty Heart foundation (idx 0)");
         assert_eq!(find_automatic_foundation_move(&world, ace_spades_entity), Some(StackType::Foundation(3)), "Scenario 1: Ace of Spades entity should move to empty Spade foundation (idx 3)");
         assert_eq!(find_automatic_foundation_move(&world, two_hearts_entity), None, "Scenario 1: Two of Hearts entity cannot move to any empty foundation");
 
         // --- シナリオ 2: Heart Foundation に Ace of Hearts がある ---
-        log("Scenario 2: Ace of Hearts on Foundation 0");
+        println!("Scenario 2: Ace of Hearts on Foundation 0");
         // Foundation にカードを追加 (返り値の Entity ID は使わないけど、追加はする)
         let _foundation_ace_h = add_card_to_world(&mut world, Suit::Heart, Rank::Ace, StackType::Foundation(0), 0);
         assert_eq!(find_automatic_foundation_move(&world, two_hearts_entity), Some(StackType::Foundation(0)), "Scenario 2: Two of Hearts entity should move to Heart foundation with Ace");
@@ -120,7 +121,7 @@ mod tests {
         //       現状だと前のテストの Entity が残ってしまう可能性がある
 
         // --- シナリオ 3: Heart Foundation に Ace と Two がある ---
-        log("Scenario 3: Ace and Two of Hearts on Foundation 0");
+        println!("Scenario 3: Ace and Two of Hearts on Foundation 0");
         // 前のテストの Foundation Ace は残ってるはず…？ (World リセットしてないので)
         // なので Two だけ追加
         let _foundation_two_h = add_card_to_world(&mut world, Suit::Heart, Rank::Two, StackType::Foundation(0), 1);

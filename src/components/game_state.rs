@@ -2,8 +2,8 @@
 
 // serde を使う宣言！ゲーム状態を保存したり通信したりするかも！
 use serde::{Serialize, Deserialize};
-// Component トレイトを使う宣言！GameState がコンポーネントであることを示す！
-use crate::component::Component;
+// Component トレイトを使うからインポートするよ
+use crate::ecs::component::Component;
 
 /// ゲーム全体の現在の状態を表す列挙型だよ！
 ///
